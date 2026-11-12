@@ -225,19 +225,28 @@ public class FinanceDailyActivityDto
 
 public class FinancePoSummaryDto
 {
+    public int Id { get; set; }
     public string Scope { get; set; } = "AllPos";
     public string PoNumber { get; set; } = string.Empty;
+    public int? SupplierId { get; set; }
     public string Supplier { get; set; } = string.Empty;
+    public string MaterialName { get; set; } = "مواد خرسانية / ركام";
+    public string Unit { get; set; } = "طن";
     public string Destination { get; set; } = string.Empty;
     public decimal TonPrice { get; set; }
+    public decimal UnitPrice => TonPrice;
     public DateTime OrderDate { get; set; }
+    public DateTime? ExpectedDeliveryDate { get; set; }
     public decimal ExpectedQuantity { get; set; }
+    public decimal OrderedQuantity => ExpectedQuantity;
     public decimal ExpectedPrice { get; set; }
+    public decimal TotalValue => ExpectedPrice;
     public decimal DeliveredQuantity { get; set; }
     public decimal DeliveredPrice { get; set; }
     public decimal RemainingQuantity { get; set; }
     public decimal RemainingPrice { get; set; }
     public decimal Quantity => ExpectedQuantity;
+    public string? Notes { get; set; }
     public int TransportationTransactionsCount { get; set; }
     public int TransportationMovementsCount => TransportationTransactionsCount;
     public decimal TransportationWasteQuantity { get; set; }
@@ -363,9 +372,13 @@ public class PurchaseOrderDetailDto
 {
     public int Id { get; set; }
     public string PoNumber { get; set; } = string.Empty;
+    public int? SupplierId { get; set; }
     public string Supplier { get; set; } = string.Empty;
+    public string MaterialName { get; set; } = "مواد خرسانية / ركام";
+    public string Unit { get; set; } = "طن";
     public string Destination { get; set; } = string.Empty;
     public DateTime OrderDate { get; set; }
+    public DateTime? ExpectedDeliveryDate { get; set; }
     public decimal Quantity { get; set; }
     public decimal TonPrice { get; set; }
     public decimal TotalValue { get; set; }

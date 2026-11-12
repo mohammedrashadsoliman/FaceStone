@@ -359,3 +359,298 @@ public class DailyProductionShiftInfoDto
     public string Today { get; set; } = DateTime.Today.ToString("yyyy-MM-dd");
 }
 
+public class AvailableWarehouseBatchDto
+{
+    public int WarehouseBatchId { get; set; }
+    public string BatchNumber { get; set; } = string.Empty;
+    public int ProductionReferenceNumber { get; set; }
+    public string SampleCode { get; set; } = string.Empty;
+    public int RawMaterialId { get; set; }
+    public string MaterialName { get; set; } = string.Empty;
+    public string MaterialClassification { get; set; } = string.Empty;
+    public int StorageLocationId { get; set; }
+    public string StorageLocationName { get; set; } = string.Empty;
+    public decimal InitialQuantity { get; set; }
+    public decimal AvailableQuantity { get; set; }
+    public string Unit { get; set; } = "طن";
+    public DateTime ImportDate { get; set; }
+    public string Status { get; set; } = string.Empty;
+}
+
+public class CreateProductionProcessMaterialItemDto
+{
+    public int WarehouseBatchId { get; set; }
+    public decimal ConsumedQuantity { get; set; }
+}
+
+public class CreateProductionProcessRequestDto
+{
+    public int? ProductionOrderId { get; set; }
+    public DateTime? ProductionDate { get; set; }
+    public int? StorageLocationId { get; set; }
+    public string? Notes { get; set; }
+    public string? MaterialsJson { get; set; }
+    public List<CreateProductionProcessMaterialItemDto> Materials { get; set; } = new();
+}
+
+public class CreateFinishedProductRequestDto
+{
+    public int? ProductionProcessId { get; set; }
+    public int ProductionOrderId { get; set; }
+    public string FinishedProductName { get; set; } = string.Empty;
+    public string ManufactureNumber { get; set; } = string.Empty;
+    public decimal ManufacturedQuantity { get; set; }
+    public string Unit { get; set; } = "طن";
+    public int? DestinationStorageLocationId { get; set; }
+    public string? DestinationStorageLocationName { get; set; }
+    public DateTime? ProductionDate { get; set; }
+    public string? Notes { get; set; }
+}
+
+public class ProductionProcessMaterialDto
+{
+    public int Id { get; set; }
+    public int ProductionProcessId { get; set; }
+    public int WarehouseBatchId { get; set; }
+    public string BatchNumber { get; set; } = string.Empty;
+    public int? LaboratoryReportId { get; set; }
+    public int ProductionReferenceNumber { get; set; }
+    public string SampleCode { get; set; } = string.Empty;
+    public int RawMaterialId { get; set; }
+    public string MaterialName { get; set; } = string.Empty;
+    public string MaterialClassification { get; set; } = string.Empty;
+    public int StorageLocationId { get; set; }
+    public string StorageLocationName { get; set; } = string.Empty;
+    public decimal AvailableQuantityBefore { get; set; }
+    public decimal ConsumedQuantity { get; set; }
+    public decimal RemainingQuantityAfter { get; set; }
+    public string Unit { get; set; } = "طن";
+    public DateTime CreatedAt { get; set; }
+}
+
+public class ProductionFinishedProductDto
+{
+    public int Id { get; set; }
+    public int ProductionProcessId { get; set; }
+    public string ProcessNumber { get; set; } = string.Empty;
+    public int? ProductionOrderId { get; set; }
+    public string? ProductionOrderNumber { get; set; }
+    public string FinishedProductName { get; set; } = string.Empty;
+    public string ManufactureNumber { get; set; } = string.Empty;
+    public decimal ManufacturedQuantity { get; set; }
+    public string Unit { get; set; } = "طن";
+    public int? DestinationStorageLocationId { get; set; }
+    public string? DestinationStorageLocationName { get; set; }
+    public DateTime ProductionDate { get; set; }
+    public string? Notes { get; set; }
+    public string? WeighbridgeAttachmentPath { get; set; }
+    public string? WeighbridgeFileName { get; set; }
+    public string? WeighbridgeFileType { get; set; }
+    public long WeighbridgeFileSize { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public string CreatedBy { get; set; } = string.Empty;
+}
+
+public class ProductionProcessDetailDto
+{
+    public int Id { get; set; }
+    public string ProcessNumber { get; set; } = string.Empty;
+    public DateTime ProductionDate { get; set; }
+    public int? StorageLocationId { get; set; }
+    public string? StorageLocationName { get; set; }
+    public decimal TotalInputQuantity { get; set; }
+    public decimal TotalOutputQuantity { get; set; }
+    public decimal TotalWasteQuantity { get; set; }
+    public decimal WastePercentage { get; set; }
+    public string Unit { get; set; } = "طن";
+    public string Status { get; set; } = string.Empty;
+    public string ResponsibleEmployee { get; set; } = string.Empty;
+    public string? Notes { get; set; }
+    public string? IncomingWeighbridgePath { get; set; }
+    public string? IncomingWeighbridgeFileName { get; set; }
+    public string? IncomingWeighbridgeFileType { get; set; }
+    public long IncomingWeighbridgeFileSize { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public string CreatedBy { get; set; } = string.Empty;
+    public List<ProductionProcessMaterialDto> Materials { get; set; } = new();
+    public List<ProductionFinishedProductDto> FinishedProducts { get; set; } = new();
+}
+
+public class EligibleProductionProcessDto
+{
+    public int Id { get; set; }
+    public string ProcessNumber { get; set; } = string.Empty;
+    public int? ProductionOrderId { get; set; }
+    public string? ProductionOrderNumber { get; set; }
+    public string TargetProductName { get; set; } = string.Empty;
+    public decimal TotalInputQuantity { get; set; }
+    public decimal TotalOutputQuantity { get; set; }
+    public decimal RemainingInputQuantity { get; set; }
+    public string Unit { get; set; } = "طن";
+    public DateTime ProductionDate { get; set; }
+    public string ResponsibleEmployee { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public List<ProductionProcessMaterialDto> ConsumedMaterials { get; set; } = new();
+}
+
+public class ProductionTraceabilityResultDto
+{
+    public ProductionProcessDetailDto Process { get; set; } = new();
+    public int? ProductionOrderId { get; set; }
+    public string? ProductionOrderNumber { get; set; }
+    public List<int> RelatedReferenceNumbers { get; set; } = new();
+    public List<string> RelatedBatchNumbers { get; set; } = new();
+    public List<string> RelatedManufactureNumbers { get; set; } = new();
+    public List<string> Warehouses { get; set; } = new();
+    public List<string> RawMaterialsSummary { get; set; } = new();
+    public decimal TotalConsumed { get; set; }
+    public decimal TotalManufactured { get; set; }
+    public decimal TotalWaste { get; set; }
+    public decimal WastePercentage { get; set; }
+}
+
+public class LaboratoryAvailableRawMaterialBatchDto
+{
+    public int WarehouseBatchId { get; set; }
+    public string BatchNumber { get; set; } = string.Empty;
+    public int ProductionReferenceNumber { get; set; }
+    public string SampleCode { get; set; } = string.Empty;
+    public int RawMaterialId { get; set; }
+    public string RawMaterialName { get; set; } = string.Empty;
+    public string MaterialClassification { get; set; } = string.Empty;
+    public int StorageLocationId { get; set; }
+    public string StorageLocationName { get; set; } = string.Empty;
+    public decimal CurrentQuantity { get; set; }
+    public decimal AvailableQuantity { get; set; }
+    public string ComplyStatus { get; set; } = string.Empty;
+    public DateTime? ExpiryDate { get; set; }
+}
+
+public class CreateProductionOrderFormulaItemDto
+{
+    public int WarehouseBatchId { get; set; }
+    public decimal RequestedQuantity { get; set; }
+    public string? MaterialType { get; set; }
+    public string Unit { get; set; } = "طن";
+}
+
+public class CreateLaboratoryProductionOrderRequestDto
+{
+    public string ProductName { get; set; } = string.Empty;
+    public string? ProductDescription { get; set; }
+    public decimal RequiredQuantity { get; set; }
+    public string Unit { get; set; } = "طن";
+    public int? StorageLocationId { get; set; }
+    public string? ProductionInstructions { get; set; }
+    public string? Notes { get; set; }
+    public List<CreateProductionOrderFormulaItemDto> Items { get; set; } = new();
+}
+
+public class EligibleProductionOrderForFinishedDto
+{
+    public int Id { get; set; }
+    public string OrderNumber { get; set; } = string.Empty;
+    public string ProductName { get; set; } = string.Empty;
+    public string? ProductDescription { get; set; }
+    public decimal RequestedQuantity { get; set; }
+    public string Unit { get; set; } = "طن";
+    public decimal TotalPlannedRawMaterialQuantity { get; set; }
+    public decimal TotalTransferredQuantity { get; set; }
+    public int? LinkedProductionProcessId { get; set; }
+    public string? LinkedProductionProcessNumber { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public string StatusArabic { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
+    public string FormattedDate { get; set; } = string.Empty;
+    public string? ProductionInstructions { get; set; }
+    public int FinishedProductsCount { get; set; }
+    public List<LaboratoryProductionOrderItemDto> Items { get; set; } = new();
+    public List<LaboratoryProductionOrderTransferDto> Transfers { get; set; } = new();
+}
+
+public class ConfirmWarehouseTransferItemDto
+{
+    public int ProductionOrderItemId { get; set; }
+    public int WarehouseBatchId { get; set; }
+    public decimal TransferQuantity { get; set; }
+    public decimal TransferredQuantity { get => TransferQuantity; set => TransferQuantity = value; }
+}
+
+public class ConfirmWarehouseTransferRequestDto
+{
+    public int ProductionOrderId { get; set; }
+    public string? Notes { get; set; }
+    public List<ConfirmWarehouseTransferItemDto> Items { get; set; } = new();
+}
+
+public class LaboratoryProductionOrderItemDto
+{
+    public int Id { get; set; }
+    public int WarehouseBatchId { get; set; }
+    public string BatchNumber { get; set; } = string.Empty;
+    public int ProductionReferenceNumber { get; set; }
+    public string SampleCode { get; set; } = string.Empty;
+    public int RawMaterialId { get; set; }
+    public string MaterialName { get; set; } = string.Empty;
+    public string MaterialType { get; set; } = string.Empty;
+    public string StorageLocationName { get; set; } = string.Empty;
+    public decimal AvailableQuantityBefore { get; set; }
+    public decimal CurrentWarehouseBatchQuantity { get; set; }
+    public decimal AvailableWarehouseQuantity => CurrentWarehouseBatchQuantity;
+    public decimal AvailableQuantity => CurrentWarehouseBatchQuantity;
+    public decimal RequestedQuantity { get; set; }
+    public decimal IssuedQuantity { get; set; }
+    public decimal TransferredQuantity => IssuedQuantity;
+    public decimal RemainingToTransfer => Math.Max(0, RequestedQuantity - IssuedQuantity);
+    public string Unit { get; set; } = "طن";
+}
+
+public class LaboratoryProductionOrderTransferDto
+{
+    public int Id { get; set; }
+    public int ProductionOrderItemId { get; set; }
+    public int WarehouseBatchId { get; set; }
+    public string BatchNumber { get; set; } = string.Empty;
+    public string MaterialName { get; set; } = string.Empty;
+    public decimal TransferredQuantity { get; set; }
+    public string Unit { get; set; } = "طن";
+    public string StorageLocationName { get; set; } = string.Empty;
+    public string ConfirmedBy { get; set; } = string.Empty;
+    public DateTime ConfirmedAt { get; set; }
+    public string? TransferTransactionNumber { get; set; }
+    public string? Notes { get; set; }
+}
+
+public class LaboratoryProductionOrderSummaryDto
+{
+    public int Id { get; set; }
+    public string OrderNumber { get; set; } = string.Empty;
+    public string ProductName { get; set; } = string.Empty;
+    public string? ProductDescription { get; set; }
+    public decimal RequestedQuantity { get; set; }
+    public decimal RequiredQuantity => RequestedQuantity;
+    public string Unit { get; set; } = "طن";
+    public int StorageLocationId { get; set; }
+    public string StorageLocationName { get; set; } = string.Empty;
+    public decimal TotalPlannedRawMaterialQuantity { get; set; }
+    public decimal TotalTransferredQuantity { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public string StatusArabic { get; set; } = string.Empty;
+    public string LaboratoryManagerName { get; set; } = string.Empty;
+    public int FormulaVersion { get; set; }
+    public int? LinkedProductionProcessId { get; set; }
+    public string? LinkedProductionProcessNumber { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public int ItemsCount { get; set; }
+}
+
+public class LaboratoryProductionOrderDetailDto : LaboratoryProductionOrderSummaryDto
+{
+    public string? ProductionInstructions { get; set; }
+    public string? Notes { get; set; }
+    public List<LaboratoryProductionOrderItemDto> Items { get; set; } = new();
+    public List<LaboratoryProductionOrderTransferDto> Transfers { get; set; } = new();
+    public ProductionProcessDetailDto? LinkedProcess { get; set; }
+}
+
+

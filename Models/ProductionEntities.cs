@@ -39,6 +39,16 @@ public class ProductionOrder
     /// </summary>
     public string ProductName { get; set; } = string.Empty;
 
+    public string? ProductDescription { get; set; }
+    public string? LaboratoryManagerName { get; set; }
+    public Guid? LaboratoryManagerId { get; set; }
+    public string? ProductionInstructions { get; set; }
+    public int FormulaVersion { get; set; } = 1;
+    public decimal TotalPlannedRawMaterialQuantity { get; set; }
+    public decimal TotalTransferredQuantity { get; set; }
+    public int? LinkedProductionProcessId { get; set; }
+    public string? LinkedProductionProcessNumber { get; set; }
+
     /// <summary>
     /// Requested target output quantity (TON)
     /// </summary>
@@ -113,6 +123,10 @@ public class ProductionOrder
     /// Recorded production outputs under this order
     /// </summary>
     public ICollection<ProductionOutput> Outputs { get; set; } = new List<ProductionOutput>();
+
+    public ICollection<ProductionOrderTransfer> Transfers { get; set; } = new List<ProductionOrderTransfer>();
+    public ICollection<ProductionOrderFormulaVersion> FormulaVersions { get; set; } = new List<ProductionOrderFormulaVersion>();
+    public ICollection<ProductionFinishedProduct> FinishedProducts { get; set; } = new List<ProductionFinishedProduct>();
 }
 
 /// <summary>
@@ -129,6 +143,13 @@ public class ProductionOrderItem
     public RawMaterial? RawMaterial { get; set; }
 
     public string MaterialName { get; set; } = string.Empty;
+    public string? MaterialType { get; set; }
+
+    public int? WarehouseBatchId { get; set; }
+    public WarehouseBatch? WarehouseBatch { get; set; }
+    public string? BatchNumber { get; set; }
+    public int? ProductionReferenceNumber { get; set; }
+    public string? SampleCode { get; set; }
 
     /// <summary>
     /// Requested quantity (TON)
@@ -145,9 +166,14 @@ public class ProductionOrderItem
     /// </summary>
     public decimal ConsumedQuantity { get; set; }
 
+    public decimal AvailableQuantityBefore { get; set; }
+
     public string Unit { get; set; } = "طن";
 
     public int? StorageLocationId { get; set; }
+    public StorageLocation? StorageLocation { get; set; }
+    public string? StorageLocationName { get; set; }
+
     public int? LaboratoryRawMaterialReportId { get; set; }
 
     public string? Notes { get; set; }
@@ -374,6 +400,256 @@ public class ProductionRework
 
     public string ResponsibleEmployee { get; set; } = string.Empty;
     public Guid? ResponsibleUserId { get; set; }
+
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public string CreatedBy { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Production Process (عملية الإنتاج)
+/// Unique root operation grouping multiple Warehouse references and batches, recording raw material consumption,
+/// finished goods manufacturing, automatic waste tracking, and weighbridge documentation.
+/// </summary>
+public class ProductionProcess
+{
+    public int Id { get; set; }
+
+    /// <summary>
+    /// Unique Process Tracking Identifier (e.g. PRD-2026-000001)
+    /// </summary>
+    public string ProcessNumber { get; set; } = string.Empty;
+
+    public DateTime ProductionDate { get; set; } = DateTime.UtcNow;
+
+    public int? StorageLocationId { get; set; }
+    public StorageLocation? StorageLocation { get; set; }
+    public string? StorageLocationName { get; set; }
+
+    public decimal TotalInputQuantity { get; set; }
+    public decimal TotalOutputQuantity { get; set; }
+    public decimal TotalWasteQuantity { get; set; }
+    public decimal WastePercentage { get; set; }
+    public string Unit { get; set; } = "طن";
+
+    /// <summary>
+    /// IN_PROGRESS | COMPLETED | ON_HOLD
+    /// </summary>
+    public string Status { get; set; } = "IN_PROGRESS";
+
+    public int? ProductionOrderId { get; set; }
+    public ProductionOrder? ProductionOrder { get; set; }
+    public string? ProductionOrderNumber { get; set; }
+
+    public string ResponsibleEmployee { get; set; } = string.Empty;
+    public Guid? ResponsibleUserId { get; set; }
+
+    public string? Notes { get; set; }
+
+    /// <summary>
+    /// Incoming Raw Materials Weighbridge attachment (PDF/JPG/PNG)
+    /// </summary>
+    public string? IncomingWeighbridgePath { get; set; }
+    public string? IncomingWeighbridgeFileName { get; set; }
+    public string? IncomingWeighbridgeFileType { get; set; }
+    public long IncomingWeighbridgeFileSize { get; set; }
+
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public string CreatedBy { get; set; } = string.Empty;
+
+    public ICollection<ProductionProcessMaterial> Materials { get; set; } = new List<ProductionProcessMaterial>();
+    public ICollection<ProductionFinishedProduct> FinishedProducts { get; set; } = new List<ProductionFinishedProduct>();
+    public ICollection<ProductionAttachment> Attachments { get; set; } = new List<ProductionAttachment>();
+    public ICollection<ProductionWasteRecord> WasteRecords { get; set; } = new List<ProductionWasteRecord>();
+}
+
+/// <summary>
+/// Consumed Raw Material item for a Production Process, linked to a specific Warehouse Batch and Laboratory Reference
+/// </summary>
+public class ProductionProcessMaterial
+{
+    public int Id { get; set; }
+
+    public int ProductionProcessId { get; set; }
+    public ProductionProcess? ProductionProcess { get; set; }
+
+    public int WarehouseBatchId { get; set; }
+    public WarehouseBatch? WarehouseBatch { get; set; }
+    public string BatchNumber { get; set; } = string.Empty;
+
+    public int? LaboratoryReportId { get; set; }
+    public int ProductionReferenceNumber { get; set; }
+    public string SampleCode { get; set; } = string.Empty;
+
+    public int RawMaterialId { get; set; }
+    public RawMaterial? RawMaterial { get; set; }
+    public string MaterialName { get; set; } = string.Empty;
+    public string MaterialClassification { get; set; } = string.Empty;
+
+    public int StorageLocationId { get; set; }
+    public StorageLocation? StorageLocation { get; set; }
+    public string StorageLocationName { get; set; } = string.Empty;
+
+    public decimal AvailableQuantityBefore { get; set; }
+    public decimal ConsumedQuantity { get; set; }
+    public decimal RemainingQuantityAfter { get; set; }
+    public string Unit { get; set; } = "طن";
+
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>
+/// Finished Product manufactured from a Production Process (المنتج النهائي)
+/// </summary>
+public class ProductionFinishedProduct
+{
+    public int Id { get; set; }
+
+    public int ProductionProcessId { get; set; }
+    public ProductionProcess? ProductionProcess { get; set; }
+
+    /// <summary>
+    /// Direct relationship to authorizing Production Order
+    /// </summary>
+    public int? ProductionOrderId { get; set; }
+    public ProductionOrder? ProductionOrder { get; set; }
+    public string? ProductionOrderNumber { get; set; }
+
+    public string FinishedProductName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Distinct Manufacture Business Identifier (e.g. MFG-2026-0001)
+    /// </summary>
+    public string ManufactureNumber { get; set; } = string.Empty;
+
+    public decimal ManufacturedQuantity { get; set; }
+    public string Unit { get; set; } = "طن";
+
+    /// <summary>
+    /// مكان تخزين المنتج النهائي بالمستودع المحدد
+    /// </summary>
+    public int? DestinationStorageLocationId { get; set; }
+    public StorageLocation? DestinationStorageLocation { get; set; }
+    public string? DestinationStorageLocationName { get; set; }
+
+    public DateTime ProductionDate { get; set; } = DateTime.UtcNow;
+
+    public string? Notes { get; set; }
+
+    /// <summary>
+    /// Finished Product Weighbridge attachment (PDF/JPG/PNG)
+    /// </summary>
+    public string? WeighbridgeAttachmentPath { get; set; }
+    public string? WeighbridgeFileName { get; set; }
+    public string? WeighbridgeFileType { get; set; }
+    public long WeighbridgeFileSize { get; set; }
+
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public string CreatedBy { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Physical weighbridge or quality attachment for a Production Process / Finished Product
+/// </summary>
+public class ProductionAttachment
+{
+    public int Id { get; set; }
+
+    public int ProductionProcessId { get; set; }
+    public ProductionProcess? ProductionProcess { get; set; }
+
+    public int? FinishedProductId { get; set; }
+    public ProductionFinishedProduct? FinishedProduct { get; set; }
+
+    /// <summary>
+    /// IncomingWeighbridge | FinishedProductWeighbridge
+    /// </summary>
+    public string AttachmentType { get; set; } = string.Empty;
+
+    public string FilePath { get; set; } = string.Empty;
+    public string FileName { get; set; } = string.Empty;
+    public string FileType { get; set; } = string.Empty;
+    public long FileSize { get; set; }
+
+    public string UploadedBy { get; set; } = string.Empty;
+    public DateTime UploadedAt { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>
+/// Mass balance waste calculation audit record
+/// </summary>
+public class ProductionWasteRecord
+{
+    public int Id { get; set; }
+
+    public int ProductionProcessId { get; set; }
+    public ProductionProcess? ProductionProcess { get; set; }
+
+    public decimal TotalInputQuantity { get; set; }
+    public decimal TotalOutputQuantity { get; set; }
+    public decimal WasteQuantity { get; set; }
+    public decimal WastePercentage { get; set; }
+    public string Unit { get; set; } = "طن";
+
+    public DateTime CalculatedAt { get; set; } = DateTime.UtcNow;
+    public string CalculatedBy { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Physical Warehouse Transfer event fulfilling raw materials for a Production Order
+/// </summary>
+public class ProductionOrderTransfer
+{
+    public int Id { get; set; }
+
+    public int ProductionOrderId { get; set; }
+    public ProductionOrder? ProductionOrder { get; set; }
+
+    public int ProductionOrderItemId { get; set; }
+    public ProductionOrderItem? ProductionOrderItem { get; set; }
+
+    public int WarehouseBatchId { get; set; }
+    public WarehouseBatch? WarehouseBatch { get; set; }
+    public string BatchNumber { get; set; } = string.Empty;
+
+    public int RawMaterialId { get; set; }
+    public RawMaterial? RawMaterial { get; set; }
+    public string MaterialName { get; set; } = string.Empty;
+    public int? ProductionReferenceNumber { get; set; }
+
+    public int? StorageOperationId { get; set; }
+    public StorageOperation? StorageOperation { get; set; }
+    public string? TransferTransactionNumber { get; set; }
+
+    public decimal TransferredQuantity { get; set; }
+    public string Unit { get; set; } = "طن";
+
+    public int StorageLocationId { get; set; }
+    public StorageLocation? StorageLocation { get; set; }
+    public string StorageLocationName { get; set; } = string.Empty;
+
+    public string ConfirmedBy { get; set; } = string.Empty;
+    public Guid? ConfirmedByUserId { get; set; }
+    public DateTime ConfirmedAt { get; set; } = DateTime.UtcNow;
+    public string? Notes { get; set; }
+}
+
+/// <summary>
+/// Preserved historical manufacturing formula version for a Production Order
+/// </summary>
+public class ProductionOrderFormulaVersion
+{
+    public int Id { get; set; }
+
+    public int ProductionOrderId { get; set; }
+    public ProductionOrder? ProductionOrder { get; set; }
+
+    public int VersionNumber { get; set; } = 1;
+    public string ProductName { get; set; } = string.Empty;
+    public string? ProductDescription { get; set; }
+    public decimal TargetOutputQuantity { get; set; }
+    public decimal TotalInputQuantity { get; set; }
+    public string Unit { get; set; } = "طن";
+    public string FormulaJson { get; set; } = string.Empty;
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public string CreatedBy { get; set; } = string.Empty;

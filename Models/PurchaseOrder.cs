@@ -18,6 +18,32 @@ public class PurchaseOrder
     public string Supplier { get; set; } = string.Empty;
 
     /// <summary>
+    /// Foreign Key to independent Supplier entity
+    /// </summary>
+    public int? SupplierId { get; set; }
+    public virtual Supplier? SupplierEntity { get; set; }
+
+    /// <summary>
+    /// اسم المادة أو الصنف (Material Name)
+    /// </summary>
+    public string MaterialName { get; set; } = "مواد خرسانية / ركام";
+
+    /// <summary>
+    /// وحدة القياس (Unit)
+    /// </summary>
+    public string Unit { get; set; } = "طن";
+
+    /// <summary>
+    /// الكمية المسلمة المسترجعة آلياً من الفواتير المعتمدة فقط
+    /// </summary>
+    public decimal DeliveredQuantity { get; set; } = 0m;
+
+    /// <summary>
+    /// تاريخ التوريد المتوقع
+    /// </summary>
+    public DateTime? ExpectedDeliveryDate { get; set; }
+
+    /// <summary>
     /// تاريخ أمر الشراء - Purchase Order Date
     /// </summary>
     public DateTime OrderDate { get; set; }
@@ -68,6 +94,11 @@ public class PurchaseOrder
     public decimal RemainingQuantity { get; set; }
 
     /// <summary>
+    /// حالة أمر الشراء ("نشط" | "مكتمل")
+    /// </summary>
+    public string Status { get; set; } = "نشط";
+
+    /// <summary>
     /// حالة السداد - Payment Status ("غير مدفوع" | "مدفوع جزئياً" | "مدفوع بالكامل")
     /// </summary>
     public string PaymentStatus { get; set; } = "غير مدفوع";
@@ -101,4 +132,9 @@ public class PurchaseOrder
     /// سجل تدقيق تغييرات حالة السداد
     /// </summary>
     public ICollection<PurchaseOrderPaymentAudit> PaymentAudits { get; set; } = new List<PurchaseOrderPaymentAudit>();
+
+    /// <summary>
+    /// الفواتير المرتبطة بأمر الشراء
+    /// </summary>
+    public virtual ICollection<Invoice> Invoices { get; set; } = new List<Invoice>();
 }

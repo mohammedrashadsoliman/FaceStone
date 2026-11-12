@@ -52,9 +52,32 @@
       this.userRoleEl = document.getElementById('trans-user-role');
       this.userAvatarEl = document.getElementById('trans-user-avatar');
 
-      // Step 1: PO Entry
+      // Step 1: Warehouse Export Selection (The ONLY source option)
+      this.transportSourceMode = 'EXPORT';
+      this.exportSearchFilter = document.getElementById('trans-export-search-filter');
+      this.exportInputWrap = document.getElementById('trans-export-input-wrap');
+      this.exportSelect = document.getElementById('trans-export-select');
+      this.exportDetailsCard = document.getElementById('trans-export-details-card');
+      this.cardExpNum = document.getElementById('trans-card-exp-num');
+      this.cardExpType = document.getElementById('trans-card-exp-type');
+      this.cardExpTypeBadge = document.getElementById('trans-card-exp-type-badge');
+      this.cardMaterial = document.getElementById('trans-card-material');
+      this.cardClient = document.getElementById('trans-card-client');
+      this.cardDest = document.getElementById('trans-card-dest');
+      this.cardLocation = document.getElementById('trans-card-location');
+      this.cardTotalQty = document.getElementById('trans-card-total-qty');
+      this.cardAllocQty = document.getElementById('trans-card-alloc-qty');
+      this.cardRemQty = document.getElementById('trans-card-rem-qty');
+      this.cardRef = document.getElementById('trans-card-ref');
+      this.cardBatch = document.getElementById('trans-card-batch');
+      this.cardPoInfo = document.getElementById('trans-card-po-info');
+      this.cardDate = document.getElementById('trans-card-date');
+      this.eligibleExports = [];
+      this.selectedExport = null;
+      this.selectedExportItem = null;
+      this.currentExport = null;
+
       this.poLookupForm = document.getElementById('trans-po-lookup-form');
-      this.poEntryInput = document.getElementById('trans-po-entry-input');
       this.poContinueBtn = document.getElementById('trans-po-continue-btn');
       this.poSpinner = document.getElementById('trans-po-spinner');
       this.poContinueText = document.getElementById('trans-po-continue-text');
@@ -63,13 +86,25 @@
       this.poErrorDesc = document.getElementById('trans-po-error-desc');
       this.poErrorClose = document.getElementById('trans-po-error-close');
 
-      // Step 2: Form Header & Summary Bar
+      // Step 2: Form Header & Summary Bar (Section 1: Warehouse Export Information)
       this.btnChangePo = document.getElementById('trans-btn-change-po');
-      this.verifiedPoBadge = document.getElementById('trans-verified-po-badge');
       this.summaryPo = document.getElementById('trans-summary-po');
+      this.summaryExportType = document.getElementById('trans-summary-export-type');
+      this.summaryMaterial = document.getElementById('trans-summary-material');
+      this.summaryRefBatch = document.getElementById('trans-summary-ref-batch');
+      this.summaryTotalQty = document.getElementById('trans-summary-total-qty');
+      this.summaryAllocQty = document.getElementById('trans-summary-alloc-qty');
+      this.summaryRemQty = document.getElementById('trans-summary-rem-qty');
       this.summarySupplier = document.getElementById('trans-summary-supplier');
       this.summaryDestination = document.getElementById('trans-summary-destination');
       this.summarySource = document.getElementById('trans-summary-source');
+      this.exportItemsSection = document.getElementById('trans-export-items-section');
+      this.exportItemsTbody = document.getElementById('trans-export-items-tbody');
+      this.remainingAfterDisplay = document.getElementById('trans-remaining-after-display');
+      this.quantityLimitWarning = document.getElementById('trans-quantity-limit-warning');
+
+      // Section 2: Project Code (Optional)
+      this.projectCodeSelect = document.getElementById('trans-project-code-select');
 
       // Form Container & Alert
       this.form = document.getElementById('trans-entry-form');
@@ -206,16 +241,31 @@
       this.btnNewPo = document.getElementById('trans-btn-new-po');
       this.btnViewRecentFromSuccess = document.getElementById('trans-btn-view-recent-from-success');
 
-      // Recent Transactions Table
+      // Recent Transactions Table & Filter Controls
       this.recentTableBody = document.getElementById('trans-recent-tbody');
+      this.tableSearchInput = document.getElementById('trans-table-search-input');
+      this.filterExportType = document.getElementById('trans-filter-export-type');
+      this.filterProjectCode = document.getElementById('trans-filter-project-code');
+      this.filterStatus = document.getElementById('trans-filter-status');
+      this.allRecentRecords = [];
 
       this.bindEvents();
       this.setupAttachmentHandlers();
       this.loadConfig();
+      this.loadEligibleExports();
     }
 
     bindEvents() {
-      // Step 1: PO Lookup
+      // Step 1: Export Search & Selection (Warehouse Export is the ONLY source)
+      this.exportSearchFilter?.addEventListener('input', () => {
+        this.filterExportOptions();
+      });
+
+      this.exportSelect?.addEventListener('change', () => {
+        this.onExportSelected(this.exportSelect.value);
+      });
+
+      // Step 1: Form Submit (Continue to Step 2)
       this.poLookupForm?.addEventListener('submit', (e) => {
         e.preventDefault();
         this.handlePoLookup();
@@ -225,16 +275,11 @@
         if (this.poErrorAlert) this.poErrorAlert.style.display = 'none';
       });
 
-      // Quick PO Chips
-      document.querySelectorAll('.trans-po-chip').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const po = btn.getAttribute('data-po');
-          if (this.poEntryInput && po) {
-            this.poEntryInput.value = po;
-            this.handlePoLookup();
-          }
-        });
-      });
+      // Filter bar listeners for recent table
+      this.tableSearchInput?.addEventListener('input', () => this.applyTableFilters());
+      this.filterExportType?.addEventListener('change', () => this.applyTableFilters());
+      this.filterProjectCode?.addEventListener('change', () => this.applyTableFilters());
+      this.filterStatus?.addEventListener('change', () => this.applyTableFilters());
 
       // Change PO button
       this.btnChangePo?.addEventListener('click', () => {
@@ -460,6 +505,7 @@
         if (res && res.success && res.data) {
           this.config = res.data;
           this.populateDropdowns(res.data);
+          this.populateProjectCodes(res.data.projectCodes || []);
         }
       } catch (err) {
         console.error('Failed to load transportation config:', err);
@@ -482,51 +528,356 @@
       }
     }
 
+    populateProjectCodes(codes) {
+      if (!Array.isArray(codes)) return;
+
+      // 1. Populate form select (Section 2)
+      if (this.projectCodeSelect) {
+        const currentVal = this.projectCodeSelect.value;
+        this.projectCodeSelect.innerHTML = '<option value="">-- غير محدد (بدون كود مشروع - شحنة عامة) --</option>';
+        codes.forEach(p => {
+          const opt = document.createElement('option');
+          opt.value = p.id;
+          opt.setAttribute('data-code', p.code);
+          const clientPart = p.clientName ? ` (${p.clientName})` : '';
+          opt.textContent = `[${p.code}] ${p.projectName}${clientPart}`;
+          this.projectCodeSelect.appendChild(opt);
+        });
+        if (currentVal) this.projectCodeSelect.value = currentVal;
+      }
+
+      // 2. Populate filter dropdown in recent records table
+      if (this.filterProjectCode) {
+        const currentVal = this.filterProjectCode.value;
+        this.filterProjectCode.innerHTML = [
+          '<option value="all">كل أكواد المشاريع</option>',
+          '<option value="none">غير محدد (بدون كود)</option>',
+          ...codes.map(p => `<option value="${p.code}">[${p.code}] ${p.projectName}</option>`)
+        ].join('');
+        if (currentVal) this.filterProjectCode.value = currentVal;
+      }
+    }
+
+    filterExportOptions() {
+      if (!this.exportSelect) return;
+      const term = (this.exportSearchFilter?.value || '').trim().toLowerCase();
+      const currentSelectedVal = this.exportSelect.value;
+
+      const filtered = !term ? this.eligibleExports : this.eligibleExports.filter(exp => {
+        const num = (exp.exportTransactionNumber || `${exp.transactionNumber}`).toLowerCase();
+        const client = (exp.clientName || '').toLowerCase();
+        const mat = (exp.materialType || exp.materialName || '').toLowerCase();
+        const dest = (exp.destinationName || '').toLowerCase();
+        const ref = (exp.sampleCode || exp.batchNumber || exp.manufactureNumber || '').toLowerCase();
+        return num.includes(term) || client.includes(term) || mat.includes(term) || dest.includes(term) || ref.includes(term);
+      });
+
+      if (filtered.length === 0) {
+        this.exportSelect.innerHTML = '<option value="">-- لا توجد أذونات صرف مطابقة لبحثك --</option>';
+        if (this.exportDetailsCard) this.exportDetailsCard.style.display = 'none';
+        this.selectedExport = null;
+        return;
+      }
+
+      this.exportSelect.innerHTML = [
+        '<option value="">-- اختر إذن صرف المستودع المعتمد --</option>',
+        ...filtered.map(exp => {
+          const typeLabel = exp.exportType === 'FINISHED_PRODUCT' ? 'منتج نهائي' : 'مواد خام';
+          const rem = Number(exp.remainingTransportationQuantity !== undefined ? exp.remainingTransportationQuantity : (exp.remainingQuantity || 0)).toFixed(3);
+          const client = this.escapeHtml(exp.clientName || 'عميل');
+          const mat = this.escapeHtml(exp.materialType || exp.materialName || (exp.items && exp.items[0]?.materialName) || 'بضاعة');
+          return `<option value="${exp.exportTransactionNumber}">${exp.exportTransactionNumber} | [${typeLabel}] ${client} - ${mat} (رصيد: ${rem} طن)</option>`;
+        })
+      ].join('');
+
+      if (currentSelectedVal && filtered.some(e => e.exportTransactionNumber === currentSelectedVal)) {
+        this.exportSelect.value = currentSelectedVal;
+        this.onExportSelected(currentSelectedVal);
+      }
+    }
+
+    async loadEligibleExports() {
+      if (!this.exportSelect) return;
+      try {
+        const res = await window.ChatApi?.getEligibleTransportationExports();
+        if (res && res.success && Array.isArray(res.data)) {
+          this.eligibleExports = res.data;
+          this.filterExportOptions();
+        }
+      } catch (err) {
+        console.error('Failed to load eligible exports for transportation:', err);
+      }
+    }
+
+    onExportSelected(txNumber) {
+      if (!txNumber) {
+        this.selectedExport = null;
+        if (this.exportDetailsCard) this.exportDetailsCard.style.display = 'none';
+        return;
+      }
+
+      const exp = this.eligibleExports.find(e => 
+        e.exportTransactionNumber === txNumber || 
+        e.transactionNumber == txNumber || 
+        `#${e.transactionNumber}` === txNumber
+      );
+      if (!exp) return;
+      this.selectedExport = exp;
+
+      const isFinished = exp.exportType === 'FINISHED_PRODUCT';
+      const typeLabel = isFinished ? 'منتج نهائي' : 'مواد خام';
+      const matName = exp.materialType || exp.materialName || (exp.items && exp.items[0]?.materialName) || 'بضاعة';
+      const total = Number(exp.totalExportQuantity || exp.originalExportQuantity || 0);
+      const alloc = Number(exp.transportedQuantity !== undefined ? exp.transportedQuantity : (exp.previouslyAllocatedQuantity || 0));
+      const rem = Number(exp.remainingTransportationQuantity !== undefined ? exp.remainingTransportationQuantity : (exp.remainingQuantity || 0));
+
+      if (this.exportDetailsCard) this.exportDetailsCard.style.display = 'block';
+      if (this.cardExpNum) this.cardExpNum.textContent = exp.exportTransactionNumber;
+      if (this.cardExpType) this.cardExpType.textContent = typeLabel;
+      if (this.cardExpTypeBadge) {
+        this.cardExpTypeBadge.textContent = typeLabel;
+        this.cardExpTypeBadge.style.background = isFinished ? '#2563EB' : '#059669';
+      }
+      if (this.cardMaterial) this.cardMaterial.textContent = matName;
+      if (this.cardClient) this.cardClient.textContent = exp.clientName || 'عميل';
+      if (this.cardDest) this.cardDest.textContent = exp.destinationName || '-';
+      if (this.cardLocation) this.cardLocation.textContent = exp.storageLocationName || '-';
+      if (this.cardTotalQty) this.cardTotalQty.textContent = `${total.toFixed(3)} طن`;
+      if (this.cardAllocQty) this.cardAllocQty.textContent = `${alloc.toFixed(3)} طن`;
+      if (this.cardRemQty) this.cardRemQty.textContent = `${rem.toFixed(3)} طن`;
+
+      const refNum = exp.sampleCode || (exp.productionReferenceNumber ? `#${exp.productionReferenceNumber}` : null) || (exp.items && exp.items[0]?.sampleCode) || '—';
+      if (this.cardRef) this.cardRef.textContent = refNum;
+
+      const batch = exp.batchNumber || (exp.items && exp.items.map(i => i.batchNumber).filter(Boolean).join(', ')) || '—';
+      if (this.cardBatch) this.cardBatch.textContent = batch;
+
+      const poInfo = exp.manufactureNumber || exp.productionOrderNumber || (exp.productionOrderId ? `PO-${exp.productionOrderId}` : '—');
+      if (this.cardPoInfo) this.cardPoInfo.textContent = poInfo;
+
+      if (this.cardDate) {
+        this.cardDate.textContent = this.formatDateTimeDisplay(exp.exportDate || exp.transactionDate);
+      }
+    }
+
+    showFormStepForExport(exp) {
+      this.currentExport = exp;
+      this.currentPo = null;
+
+      if (this.stepPoEntry) this.stepPoEntry.style.display = 'none';
+      if (this.stepSuccess) this.stepSuccess.style.display = 'none';
+      if (this.stepForm) this.stepForm.style.display = 'block';
+
+      const companyName = exp.clientName || 'عميل';
+      const destination = exp.destinationName || 'وجهة العميل';
+      const isFinished = exp.exportType === 'FINISHED_PRODUCT';
+      const typeLabel = isFinished ? 'منتج نهائي' : 'مواد خام';
+      const matName = exp.materialType || exp.materialName || (exp.items && exp.items[0]?.materialName) || 'بضاعة';
+      const totalQty = Number(exp.totalExportQuantity || exp.originalExportQuantity || 0).toFixed(3);
+      const allocQty = Number(exp.transportedQuantity !== undefined ? exp.transportedQuantity : (exp.previouslyAllocatedQuantity || 0)).toFixed(3);
+      const rem = exp.remainingTransportationQuantity !== undefined ? exp.remainingTransportationQuantity : (exp.remainingQuantity || 0);
+      const remQty = Number(rem).toFixed(3);
+
+      const refOrSample = exp.sampleCode || (exp.items && exp.items[0]?.sampleCode);
+      const batchOrMfg = exp.manufactureNumber || exp.batchNumber || (exp.items && exp.items[0]?.batchNumber);
+      const refBatchText = [refOrSample, batchOrMfg].filter(Boolean).join(' / ') || '—';
+
+      // Section 1: Warehouse Export Info Box
+      if (this.summaryPo) this.summaryPo.textContent = exp.exportTransactionNumber;
+      if (this.summaryExportType) this.summaryExportType.textContent = typeLabel;
+      if (this.summaryMaterial) this.summaryMaterial.textContent = matName;
+      if (this.summaryRefBatch) this.summaryRefBatch.textContent = refBatchText;
+      if (this.summaryTotalQty) this.summaryTotalQty.textContent = `${totalQty} طن`;
+      if (this.summaryAllocQty) this.summaryAllocQty.textContent = `${allocQty} طن`;
+      if (this.summaryRemQty) this.summaryRemQty.textContent = `${remQty} طن`;
+      if (this.summarySupplier) this.summarySupplier.textContent = `${companyName} (${destination})`;
+      if (this.summaryDestination) this.summaryDestination.textContent = destination;
+      if (this.summarySource) this.summarySource.textContent = exp.storageLocationName ? `مستودع: ${exp.storageLocationName}` : 'Face stone (المستودع الرئيسي)';
+
+      // Render Multi-line Items Table if present
+      this.renderExportItemsTable(exp.items || []);
+
+      // Section 2: Project Code (Optional) - auto-select if project matches destination
+      if (this.projectCodeSelect) {
+        let matched = '';
+        if (destination) {
+          for (let i = 0; i < this.projectCodeSelect.options.length; i++) {
+            const opt = this.projectCodeSelect.options[i];
+            if (opt.value && opt.textContent.includes(destination)) {
+              matched = opt.value;
+              break;
+            }
+          }
+        }
+        this.projectCodeSelect.value = matched;
+      }
+
+      // Section 2: Daily Supply PO display
+      if (this.dailyPoDisplay) this.dailyPoDisplay.value = exp.exportTransactionNumber;
+
+      // Section 3: Prepopulated & Read-only fields
+      if (this.companyInput) {
+        this.companyInput.value = companyName;
+        this.companyInput.readOnly = true;
+      }
+      if (this.destinationInput) {
+        this.destinationInput.value = destination;
+        this.destinationInput.readOnly = true;
+      }
+
+      // Material Type
+      if (this.materialSelect) {
+        const matLower = (matName || '').toLowerCase();
+        if (matLower.includes('slurry')) {
+          this.materialSelect.value = 'slurry';
+        } else {
+          this.materialSelect.value = 'powder';
+        }
+      }
+
+      // Default transaction number & clear weighbridge codes
+      if (this.txNumberInput) {
+        this.txNumberInput.value = (exp.transactionNumber || 1);
+      }
+      if (this.wbInternalCodeInput) this.wbInternalCodeInput.value = '';
+      if (this.wbExternalCodeInput) this.wbExternalCodeInput.value = '';
+
+      // Set default current timestamps
+      this.setDefaultTimestamps();
+
+      // Recalculate weights & initialize preview
+      this.recalculateAllWeights();
+      this.hideAlert();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    renderExportItemsTable(items) {
+      if (!this.exportItemsSection || !this.exportItemsTbody) return;
+
+      if (!Array.isArray(items) || items.length === 0) {
+        this.exportItemsSection.style.display = 'none';
+        this.selectedExportItem = null;
+        return;
+      }
+
+      // Show table
+      this.exportItemsSection.style.display = 'block';
+      this.exportItemsTbody.innerHTML = '';
+
+      // Default selected item is the first one with remaining > 0, or items[0]
+      const defaultItem = items.find(i => Number(i.remainingQuantity !== undefined ? i.remainingQuantity : (i.remainingTransportableQuantity || 0)) > 0) || items[0];
+      this.selectedExportItem = defaultItem;
+
+      items.forEach((item, idx) => {
+        const isSelected = this.selectedExportItem && this.selectedExportItem.id === item.id;
+        const exportedQty = Number(item.quantity || item.originalExportQuantity || 0).toFixed(3);
+        const allocQty = Number(item.previouslyAllocatedQuantity !== undefined ? item.previouslyAllocatedQuantity : (item.transportedQuantity || 0)).toFixed(3);
+        const remQty = Number(item.remainingQuantity !== undefined ? item.remainingQuantity : (item.remainingTransportableQuantity || 0)).toFixed(3);
+        const refOrBatch = [item.sampleCode, item.batchNumber || item.manufactureNumber].filter(Boolean).join(' / ') || '—';
+
+        const tr = document.createElement('tr');
+        tr.id = `trans-item-row-${item.id}`;
+        tr.style.cursor = 'pointer';
+        tr.style.transition = 'background 0.2s';
+        if (isSelected) {
+          tr.style.background = '#EFF6FF';
+          tr.style.fontWeight = 'bold';
+        }
+
+        tr.innerHTML = `
+          <td style="padding: 8px 10px; border: 1px solid #E2E8F0;">
+            <input type="radio" name="trans-selected-item-radio" value="${item.id}" ${isSelected ? 'checked' : ''} style="cursor: pointer; width: 18px; height: 18px;" />
+          </td>
+          <td style="padding: 8px 10px; border: 1px solid #E2E8F0;">${idx + 1}</td>
+          <td style="padding: 8px 10px; border: 1px solid #E2E8F0; font-weight: 700; color: #1E3A8A;">${this.escapeHtml(item.materialName || 'خامة')}</td>
+          <td style="padding: 8px 10px; border: 1px solid #E2E8F0; font-family: monospace;">${this.escapeHtml(refOrBatch)}</td>
+          <td style="padding: 8px 10px; border: 1px solid #E2E8F0; font-family: monospace;">${exportedQty} طن</td>
+          <td style="padding: 8px 10px; border: 1px solid #E2E8F0; font-family: monospace; color: #D97706;">${allocQty} طن</td>
+          <td style="padding: 8px 10px; border: 1px solid #E2E8F0; font-family: monospace; font-weight: 800; color: #059669;">${remQty} طن</td>
+        `;
+
+        tr.addEventListener('click', () => {
+          const radio = tr.querySelector('input[type="radio"]');
+          if (radio) radio.checked = true;
+          this.onExportItemSelected(item.id);
+        });
+
+        this.exportItemsTbody.appendChild(tr);
+      });
+    }
+
+    onExportItemSelected(itemId) {
+      if (!this.currentExport || !Array.isArray(this.currentExport.items)) return;
+      const item = this.currentExport.items.find(i => i.id === itemId);
+      if (!item) return;
+
+      this.selectedExportItem = item;
+
+      // Highlight selected row in table
+      if (this.exportItemsTbody) {
+        const rows = this.exportItemsTbody.querySelectorAll('tr');
+        rows.forEach(r => {
+          r.style.background = '';
+          r.style.fontWeight = 'normal';
+        });
+        const activeRow = document.getElementById(`trans-item-row-${item.id}`);
+        if (activeRow) {
+          activeRow.style.background = '#EFF6FF';
+          activeRow.style.fontWeight = 'bold';
+        }
+      }
+
+      // Update summary card with this specific item's metadata and balances
+      if (this.summaryMaterial) this.summaryMaterial.textContent = item.materialName || 'بضاعة';
+      const refOrSample = item.sampleCode || this.currentExport.sampleCode;
+      const batchOrMfg = item.manufactureNumber || item.batchNumber;
+      if (this.summaryRefBatch) this.summaryRefBatch.textContent = [refOrSample, batchOrMfg].filter(Boolean).join(' / ') || '—';
+
+      const exported = Number(item.quantity || item.originalExportQuantity || 0).toFixed(3);
+      const allocated = Number(item.previouslyAllocatedQuantity !== undefined ? item.previouslyAllocatedQuantity : (item.transportedQuantity || 0)).toFixed(3);
+      const remaining = Number(item.remainingQuantity !== undefined ? item.remainingQuantity : (item.remainingTransportableQuantity || 0)).toFixed(3);
+
+      if (this.summaryTotalQty) this.summaryTotalQty.textContent = `${exported} طن`;
+      if (this.summaryAllocQty) this.summaryAllocQty.textContent = `${allocated} طن`;
+      if (this.summaryRemQty) this.summaryRemQty.textContent = `${remaining} طن`;
+
+      // Update remaining balance preview
+      const currentNet = Number(this.netWeightDisplay?.value || 0);
+      this.updateRemainingPreview(currentNet);
+    }
+
+    updateRemainingPreview(currentNet) {
+      const availableRem = this.selectedExportItem 
+        ? Number(this.selectedExportItem.remainingQuantity !== undefined ? this.selectedExportItem.remainingQuantity : (this.selectedExportItem.remainingTransportableQuantity || 0))
+        : Number(this.currentExport ? (this.currentExport.remainingTransportationQuantity !== undefined ? this.currentExport.remainingTransportationQuantity : (this.currentExport.remainingQuantity || 0)) : 0);
+
+      const net = Math.max(0, Number(currentNet) || 0);
+      const remAfter = Math.max(0, availableRem - net);
+
+      if (this.remainingAfterDisplay) {
+        this.remainingAfterDisplay.textContent = remAfter.toFixed(3);
+      }
+
+      if (this.quantityLimitWarning) {
+        if (net > availableRem && availableRem > 0) {
+          this.quantityLimitWarning.style.display = 'block';
+          this.quantityLimitWarning.textContent = `⚠️ تنبيه: الوزن الصافي للشحنة (${net.toFixed(3)} طن) يتجاوز الرصيد المتاح للنقل (${availableRem.toFixed(3)} طن)! يرجى تصحيح أوزان الميزان.`;
+        } else if (availableRem <= 0) {
+          this.quantityLimitWarning.style.display = 'block';
+          this.quantityLimitWarning.textContent = `⚠️ تنبيه: تم استنفاد كامل الرصيد المتاح للنقل لهذا البند مسبقاً.`;
+        } else {
+          this.quantityLimitWarning.style.display = 'none';
+        }
+      }
+    }
+
     showPoEntryStep() {
       if (this.stepPoEntry) this.stepPoEntry.style.display = 'block';
       if (this.stepForm) this.stepForm.style.display = 'none';
       if (this.stepSuccess) this.stepSuccess.style.display = 'none';
       if (this.poErrorAlert) this.poErrorAlert.style.display = 'none';
-      if (this.poEntryInput) {
-        this.poEntryInput.value = '';
-        setTimeout(() => this.poEntryInput.focus(), 100);
-      }
-    }
-
-    showFormStep(poData) {
-      this.currentPo = poData;
-      if (this.stepPoEntry) this.stepPoEntry.style.display = 'none';
-      if (this.stepSuccess) this.stepSuccess.style.display = 'none';
-      if (this.stepForm) this.stepForm.style.display = 'block';
-
-      const companyName = poData.companyName || poData.supplier || 'FaceStone Partner';
-      const destination = poData.destination || 'Cairo Factory';
-
-      // Summary Bar (Strictly NO Total Quantity and NO Remaining Quantity)
-      if (this.summaryPo) this.summaryPo.textContent = poData.poNumber;
-      if (this.summarySupplier) this.summarySupplier.textContent = companyName;
-      if (this.summaryDestination) this.summaryDestination.textContent = destination;
-      if (this.verifiedPoBadge) this.verifiedPoBadge.textContent = poData.poNumber;
-
-      // Section 2: Daily Supply PO display
-      if (this.dailyPoDisplay) this.dailyPoDisplay.value = poData.poNumber;
-
-      // Section 3: Prepopulated & Read-only PO fields
-      if (this.companyInput) this.companyInput.value = companyName;
-      if (this.destinationInput) this.destinationInput.value = destination;
-
-      // Source fixed
-      if (this.sourceDisplay) this.sourceDisplay.value = 'Face stone (Full Concrete Solutions)';
-
-      // Auto-generate Transaction Number & Weighbridge Codes PER PO
-      this.assignNextTransactionAndCodes(poData);
-
-      // Set default current timestamps
-      this.setDefaultTimestamps();
-
-      // Recalculate weights
-      this.recalculateAllWeights();
-      this.hideAlert();
+      if (this.exportSearchFilter) this.exportSearchFilter.value = '';
+      this.loadEligibleExports();
     }
 
     assignNextTransactionAndCodes(poData) {
@@ -592,40 +943,27 @@
     }
 
     async handlePoLookup() {
-      const poNum = this.poEntryInput?.value?.trim();
-      if (!poNum) {
-        this.showPoError('رقم أمر الشراء مطلوب', 'يرجى إدخال رقم أمر الشراء للمتابعة.');
+      // Warehouse Export is the ONLY source for transportation operations
+      if (!this.selectedExport) {
+        const val = this.exportSelect?.value;
+        if (val) {
+          this.onExportSelected(val);
+        }
+      }
+
+      if (!this.selectedExport) {
+        this.showPoError('إذن الصرف مطلوب', 'يرجى اختيار إذن صرف مستودع معتمد ومتاح للنقل للمتابعة.');
         return;
       }
 
-      this.setPoLookupLoading(true);
-      if (this.poErrorAlert) this.poErrorAlert.style.display = 'none';
-
-      try {
-        const res = await window.ChatApi?.getTransportationPurchaseOrder(poNum);
-        if (res && res.success && res.data) {
-          this.showFormStep(res.data);
-        } else {
-          const msg = res?.message || 'Purchase Order not found.';
-          if (msg.includes('no remaining quantity') || msg.includes('الكمية المتبقية')) {
-            this.showPoError('This Purchase Order has no remaining quantity.', 'هذا الأمر مستنفد بالكامل ولا توجد به كمية متبقية قابلة للتوريد.');
-          } else {
-            this.showPoError('Purchase Order not found.', 'أمر الشراء غير مسجل في قاعدة البيانات. يرجى التحقق من الرقم والمحاولة مرة أخرى.');
-          }
-        }
-      } catch (err) {
-        console.error('Error looking up PO:', err);
-        this.showPoError('Purchase Order not found.', 'أمر الشراء غير مسجل في قاعدة البيانات.');
-      } finally {
-        this.setPoLookupLoading(false);
-      }
+      this.showFormStepForExport(this.selectedExport);
     }
 
     showPoError(title, desc) {
       if (this.poErrorTitle) this.poErrorTitle.textContent = title;
       if (this.poErrorDesc) this.poErrorDesc.textContent = desc;
       if (this.poErrorAlert) this.poErrorAlert.style.display = 'flex';
-      this.poEntryInput?.focus();
+      this.exportSelect?.focus();
     }
 
     setPoLookupLoading(isLoading) {
@@ -693,10 +1031,17 @@
         if (this.wasteDisplay) this.wasteDisplay.value = waste.toFixed(3);
         if (this.netWeightDisplay) this.netWeightDisplay.value = netWeight.toFixed(3);
         if (this.quantityDisplay) this.quantityDisplay.value = netWeight.toFixed(3);
+        this.updateRemainingPreview(netWeight);
       } else {
         if (this.wasteDisplay) this.wasteDisplay.value = '0.000';
         if (this.netWeightDisplay) this.netWeightDisplay.value = '0.000';
-        if (this.quantityDisplay) this.quantityDisplay.value = '0.000';
+        if (this.quantityDisplay) {
+          const availableRem = this.selectedExportItem 
+            ? Number(this.selectedExportItem.remainingQuantity !== undefined ? this.selectedExportItem.remainingQuantity : (this.selectedExportItem.remainingTransportableQuantity || 0))
+            : Number(this.currentExport ? (this.currentExport.remainingTransportationQuantity !== undefined ? this.currentExport.remainingTransportationQuantity : (this.currentExport.remainingQuantity || 0)) : 0);
+          this.quantityDisplay.value = availableRem > 0 ? availableRem.toFixed(3) : '0.000';
+        }
+        this.updateRemainingPreview(0);
       }
     }
 
@@ -886,12 +1231,19 @@
         isValid = false;
       }
 
-      // PO Quantity Check: Net Weight <= PO Remaining Quantity (Requirement 9)
-      if (this.currentPo) {
-        const netWeight = parseFloat(this.netWeightDisplay?.value) || 0;
-        const remaining = parseFloat(this.currentPo.remainingQuantity) || 0;
-        if (netWeight > remaining) {
-          this.showAlert(`Net weight exceeds the remaining quantity of this PO. (الوزن الصافي ${netWeight} طن يتجاوز الكمية المتبقية ${remaining} طن).`, 'error');
+      // Warehouse Export Balance Check: Net Weight <= Remaining Balance
+      const netWeight = parseFloat(this.netWeightDisplay?.value) || 0;
+      if (this.currentExport) {
+        const itemRem = this.selectedExportItem 
+          ? (parseFloat(this.selectedExportItem.remainingQuantity !== undefined ? this.selectedExportItem.remainingQuantity : this.selectedExportItem.remainingTransportableQuantity) || 0)
+          : null;
+        const totalRemaining = parseFloat(this.currentExport.remainingTransportationQuantity !== undefined ? this.currentExport.remainingTransportationQuantity : this.currentExport.remainingQuantity) || 0;
+
+        if (itemRem !== null && netWeight > itemRem) {
+          this.showAlert(`الوزن الصافي للشحنة (${netWeight} طن) يتجاوز الرصيد المتبقي للبند المحدد '${this.selectedExportItem.materialName}' (${itemRem} طن).`, 'error');
+          isValid = false;
+        } else if (netWeight > totalRemaining) {
+          this.showAlert(`الوزن الصافي للشحنة (${netWeight} طن) يتجاوز الرصيد المتبقي المتاح للنقل في إذن الصرف (${totalRemaining} طن).`, 'error');
           isValid = false;
         }
       }
@@ -926,8 +1278,41 @@
         formData.append('carNumber', this.carInput.value.trim());
         formData.append('driverName', this.driverSelect.value.trim());
         formData.append('source', 'Face stone (Full Concrete Solutions)');
-        formData.append('poNumber', this.currentPo?.poNumber || '');
-        formData.append('destination', this.destinationInput?.value || this.currentPo?.destination || 'Cairo Factory');
+        
+        if (this.currentExport) {
+          formData.append('storageOperationId', this.currentExport.storageOperationId || this.currentExport.id);
+          if (this.selectedExportItem?.id) {
+            formData.append('storageOperationItemId', this.selectedExportItem.id);
+          }
+          formData.append('exportTransactionNumber', this.currentExport.exportTransactionNumber);
+          formData.append('exportType', this.currentExport.exportType || 'RAW_MATERIAL');
+          formData.append('poNumber', this.currentExport.exportTransactionNumber);
+          if (this.currentExport.productionOrderId) formData.append('productionOrderId', this.currentExport.productionOrderId);
+          if (this.currentExport.productionProcessId) formData.append('productionProcessId', this.currentExport.productionProcessId);
+          const mfg = this.selectedExportItem?.manufactureNumber || this.currentExport.manufactureNumber;
+          if (mfg) formData.append('manufactureNumber', mfg);
+          const batch = this.selectedExportItem?.batchNumber || this.currentExport.batchNumber || (this.currentExport.items && this.currentExport.items[0]?.batchNumber);
+          if (batch) formData.append('batchNumber', batch);
+          const sample = this.selectedExportItem?.sampleCode || this.currentExport.sampleCode || (this.currentExport.items && this.currentExport.items[0]?.sampleCode);
+          if (sample) formData.append('sampleCode', sample);
+          if (this.currentExport.storageLocationId) formData.append('sourceStorageLocationId', this.currentExport.storageLocationId);
+          if (this.currentExport.storageLocationName) formData.append('sourceStorageLocationName', this.currentExport.storageLocationName);
+        } else if (this.editingTx) {
+          if (this.editingTx.storageOperationId) formData.append('storageOperationId', this.editingTx.storageOperationId);
+          formData.append('exportTransactionNumber', this.editingTx.exportTransactionNumber || this.editingTx.poNumber);
+          formData.append('exportType', this.editingTx.exportType || 'RAW_MATERIAL');
+          formData.append('poNumber', this.editingTx.exportTransactionNumber || this.editingTx.poNumber);
+        }
+
+        // Section 2: Project Code (Optional)
+        if (this.projectCodeSelect && this.projectCodeSelect.value) {
+          const selectedOpt = this.projectCodeSelect.options[this.projectCodeSelect.selectedIndex];
+          formData.append('projectCodeId', this.projectCodeSelect.value);
+          const codeVal = selectedOpt?.getAttribute('data-code') || '';
+          if (codeVal) formData.append('projectCode', codeVal);
+        }
+
+        formData.append('destination', this.destinationInput?.value || this.currentExport?.destinationName || 'Cairo Factory');
         formData.append('materialType', this.materialSelect.value.trim());
 
         // Weights (Entered ONLY in Section 1)
@@ -1068,7 +1453,7 @@
         if (isResubmit) {
           cmNotice.innerHTML = '🔄 <strong>تمت إعادة تقديم الطلب بنجاح</strong> — عاد الطلب إلى قائمة انتظار التحكم والمراقبة (PENDING) للمراجعة والتدقيق.';
         } else {
-          cmNotice.innerHTML = '⏳ حالة النموذج: <strong>قيد مراجعة وتدقيق قسم التحكم والمراقبة</strong> — لن يتم اعتماد الحركة أو ترحيلها حتى يتم قبولها من موظف الرقابة.';
+          cmNotice.innerHTML = '✅ <strong>تم اعتماد حركة النقل تلقائياً بنجاح</strong> — تم تحديث رصيد إذن الصرف وترحيل السجل مباشرة.';
         }
       }
 
@@ -1077,46 +1462,94 @@
 
     async loadRecentTransactions() {
       if (!this.recentTableBody) return;
-      this.recentTableBody.innerHTML = '<tr><td colspan="17" class="trans-empty-row">جاري تحميل سجل الحركات...</td></tr>';
+      this.recentTableBody.innerHTML = '<tr><td colspan="14" class="trans-empty-row">جاري تحميل سجل الحركات...</td></tr>';
 
       try {
-        const res = await window.ChatApi?.getRecentTransportationTransactions(20);
+        const res = await window.ChatApi?.getRecentTransportationTransactions(50);
         if (res && res.success && res.data) {
-          this.renderRecentTable(res.data);
+          this.allRecentRecords = res.data;
+          this.applyTableFilters();
         } else {
-          this.recentTableBody.innerHTML = '<tr><td colspan="17" class="trans-empty-row">لا توجد حركات مسجلة حالياً.</td></tr>';
+          this.allRecentRecords = [];
+          this.recentTableBody.innerHTML = '<tr><td colspan="14" class="trans-empty-row">لا توجد حركات مسجلة حالياً.</td></tr>';
         }
       } catch (err) {
         console.error('Failed to load recent transportation records:', err);
-        this.recentTableBody.innerHTML = '<tr><td colspan="17" class="trans-empty-row error">تعذر تحميل السجل. يرجى إعادة المحاولة.</td></tr>';
+        this.recentTableBody.innerHTML = '<tr><td colspan="14" class="trans-empty-row error">تعذر تحميل السجل. يرجى إعادة المحاولة.</td></tr>';
       }
+    }
+
+    applyTableFilters() {
+      if (!this.allRecentRecords) return;
+      const search = (this.tableSearchInput?.value || '').trim().toLowerCase();
+      const exportType = this.filterExportType?.value || 'all';
+      const projectCode = this.filterProjectCode?.value || 'all';
+      const status = this.filterStatus?.value || 'all';
+
+      const filtered = this.allRecentRecords.filter(tx => {
+        // Search
+        if (search) {
+          const matchTx = `#${tx.transactionNumber}`.toLowerCase().includes(search) || `${tx.transactionNumber}`.includes(search);
+          const matchExp = (tx.exportTransactionNumber || tx.poNumber || '').toLowerCase().includes(search);
+          const matchCar = (tx.carNumber || '').toLowerCase().includes(search);
+          const matchDriver = (tx.driverName || '').toLowerCase().includes(search);
+          const matchPrj = (tx.projectCode || '').toLowerCase().includes(search) || (tx.projectName || '').toLowerCase().includes(search);
+          const matchMat = (tx.materialType || '').toLowerCase().includes(search);
+          const matchDest = (tx.destination || '').toLowerCase().includes(search);
+          if (!matchTx && !matchExp && !matchCar && !matchDriver && !matchPrj && !matchMat && !matchDest) {
+            return false;
+          }
+        }
+
+        // Export Type
+        if (exportType !== 'all') {
+          if (tx.exportType !== exportType) return false;
+        }
+
+        // Project Code
+        if (projectCode !== 'all') {
+          if (projectCode === 'none') {
+            if (tx.projectCode && tx.projectCode !== 'Not Assigned' && tx.projectCode !== 'غير محدد') return false;
+          } else {
+            if (tx.projectCode !== projectCode) return false;
+          }
+        }
+
+        // Status
+        if (status !== 'all') {
+          const st = (tx.approvalStatus || 'APPROVED').toUpperCase();
+          if (st !== status) return false;
+        }
+
+        return true;
+      });
+
+      this.renderRecentTable(filtered);
     }
 
     renderRecentTable(records) {
       if (!this.recentTableBody) return;
       if (!records || records.length === 0) {
-        this.recentTableBody.innerHTML = '<tr><td colspan="17" class="trans-empty-row">لا توجد حركات مسجلة حالياً.</td></tr>';
+        this.recentTableBody.innerHTML = '<tr><td colspan="14" class="trans-empty-row">لا توجد حركات مطابقة لشروط البحث والفلترة.</td></tr>';
         return;
       }
 
       const rowsHtml = records.map(tx => {
-        const intWeight = Number(tx.internalWeight || 0).toFixed(3);
-        const extWeight = Number(tx.externalNetWeight || 0).toFixed(3);
         const netWeight = Number(tx.netWeight || tx.quantity || 0).toFixed(3);
-        const waste = Number(tx.wasteQuantity || 0).toFixed(3);
-
-        let shipTimeStr = '—';
-        if (tx.shippingDurationMinutes !== null && tx.shippingDurationMinutes !== undefined) {
-          const h = Math.floor(tx.shippingDurationMinutes / 60);
-          const m = tx.shippingDurationMinutes % 60;
-          shipTimeStr = h > 0 ? `${h}س ${m}د` : `${m}د`;
-        }
-
         const dateStr = this.formatDateTimeDisplay(tx.transactionDate);
-        const submitDateStr = this.formatDateTimeDisplay(tx.dateOfSubmit);
+        const isFinished = tx.exportType === 'FINISHED_PRODUCT';
+        const typeBadge = isFinished 
+          ? '<span class="trans-tag-badge" style="background:#EFF6FF; color:#1D4ED8; font-weight:700;">منتج نهائي</span>'
+          : '<span class="trans-tag-badge" style="background:#ECFDF5; color:#047857; font-weight:700;">مواد خام</span>';
+
+        const prjCode = tx.projectCode && tx.projectCode !== 'Not Assigned' && tx.projectCode !== 'غير محدد'
+          ? `<span class="trans-tag-badge" style="background:#EEF2FF; color:#4338CA; font-weight:700;" title="${this.escapeHtml(tx.projectName || '')}">${this.escapeHtml(tx.projectCode)}</span>`
+          : '<span style="color:#94A3B8; font-size:0.85rem;">غير محدد</span>';
+
+        const refOrBatch = tx.manufactureNumber || tx.batchNumber || tx.sampleCode || '—';
 
         let approvalBadge = '';
-        const st = (tx.approvalStatus || 'PENDING').toUpperCase();
+        const st = (tx.approvalStatus || 'APPROVED').toUpperCase();
         if (st === 'APPROVED') {
           approvalBadge = '<span class="cm-badge cm-badge-approved">✓ معتمد</span>';
         } else if (st === 'REJECTED') {
@@ -1125,32 +1558,35 @@
             <div>
               <span class="cm-badge cm-badge-rejected">✕ مرفوض</span>
               ${reasonText}
-              <button type="button" class="trans-edit-request-btn" data-id="${tx.id}" style="display:inline-flex; align-items:center; gap:4px; margin-top:4px; padding:3px 8px; font-size:0.75rem; font-weight:700; background:#2563eb; color:#fff; border:none; border-radius:4px; cursor:pointer;" title="تعديل بيانات الطلب الأصلي وإعادة تقديمه">✏️ تعديل الطلب (Edit Request)</button>
             </div>
           `;
         } else {
           approvalBadge = '<span class="cm-badge cm-badge-pending">⏳ قيد مراجعة الرقابة</span>';
         }
 
+        let actions = '';
+        if (st === 'REJECTED') {
+          actions = `<button type="button" class="trans-edit-request-btn" data-id="${tx.id}" style="display:inline-flex; align-items:center; gap:4px; padding:3px 8px; font-size:0.75rem; font-weight:700; background:#2563eb; color:#fff; border:none; border-radius:4px; cursor:pointer;" title="تعديل بيانات الطلب الأصلي وإعادة تقديمه">✏️ تعديل الطلب</button>`;
+        } else {
+          actions = `<span style="color:#64748B; font-size:0.82rem;">—</span>`;
+        }
+
         return `
           <tr>
             <td class="font-numeric" style="font-weight: 800; color: #2563EB;">#${tx.transactionNumber}</td>
-            <td class="font-numeric">${dateStr}</td>
-            <td class="font-numeric" dir="ltr" style="font-weight: 700;">${this.escapeHtml(tx.poNumber)}</td>
-            <td>${this.escapeHtml(tx.companyName || '—')}</td>
-            <td>${this.escapeHtml(tx.destination)}</td>
+            <td class="font-numeric" dir="ltr" style="font-weight: 700; color: #1E40AF;">${this.escapeHtml(tx.exportTransactionNumber || tx.poNumber)}</td>
+            <td>${typeBadge}</td>
+            <td><strong style="color:#0F172A;">${this.escapeHtml(tx.materialType || '—')}</strong></td>
+            <td class="font-numeric">${this.escapeHtml(refOrBatch)}</td>
+            <td class="font-numeric" style="font-weight: 800; color: #16A34A;">${netWeight}</td>
+            <td style="color:#64748B;">طن</td>
+            <td>${prjCode}</td>
             <td class="font-numeric">${this.escapeHtml(tx.carNumber)}</td>
             <td>${this.escapeHtml(tx.driverName)}</td>
-            <td><span class="trans-tag-badge">${this.escapeHtml(tx.materialType)}</span></td>
-            <td class="font-numeric">${intWeight}</td>
-            <td class="font-numeric">${extWeight}</td>
-            <td class="font-numeric" style="font-weight: 800; color: #16A34A;">${netWeight}</td>
-            <td class="font-numeric" style="color: ${Number(waste) > 0 ? '#DC2626' : '#6B7280'};">${waste}</td>
-            <td class="font-numeric">${shipTimeStr}</td>
-            <td>${this.escapeHtml(tx.shippingSupervisor || 'محمد ناجح')}</td>
-            <td><span class="trans-status-badge safe">${this.escapeHtml(tx.receivingStatus || 'safe')}</span></td>
-            <td class="font-numeric" style="color: #6B7280; font-size: 0.8rem;">${submitDateStr}</td>
+            <td>${this.escapeHtml(tx.destination)}</td>
+            <td class="font-numeric">${dateStr}</td>
             <td>${approvalBadge}</td>
+            <td>${actions}</td>
           </tr>
         `;
       }).join('');
@@ -1179,47 +1615,48 @@
         this.editingTxId = tx.id;
         this.editingTx = tx;
 
-        // Ensure PO data is initialized
-        if (tx.poNumber) {
-          try {
-            const poRes = await window.ChatApi?.getTransportationPurchaseOrder(tx.poNumber);
-            if (poRes && poRes.success && poRes.data) {
-              this.currentPo = poRes.data;
-            } else {
-              this.currentPo = {
-                poNumber: tx.poNumber,
-                destination: tx.destination || 'Cairo Factory',
-                supplier: tx.companyName || 'FaceStone Partner',
-                companyName: tx.companyName || 'FaceStone Partner',
-                remainingQuantity: 999999
-              };
-            }
-          } catch {
-            this.currentPo = {
-              poNumber: tx.poNumber,
-              destination: tx.destination || 'Cairo Factory',
-              supplier: tx.companyName || 'FaceStone Partner',
-              companyName: tx.companyName || 'FaceStone Partner',
-              remainingQuantity: 999999
-            };
-          }
-        }
-
         // Switch steps
         if (this.stepPoEntry) this.stepPoEntry.style.display = 'none';
         if (this.stepSuccess) this.stepSuccess.style.display = 'none';
         if (this.stepForm) this.stepForm.style.display = 'block';
 
-        // Summary Bar
-        if (this.summaryPo) this.summaryPo.textContent = tx.poNumber;
-        if (this.summarySupplier) this.summarySupplier.textContent = tx.companyName || 'FaceStone Partner';
+        // Section 1: Summary Bar
+        const isFinished = tx.exportType === 'FINISHED_PRODUCT';
+        const typeLabel = isFinished ? 'منتج نهائي' : 'مواد خام';
+        if (this.summaryPo) this.summaryPo.textContent = tx.exportTransactionNumber || tx.poNumber;
+        if (this.summaryExportType) this.summaryExportType.textContent = typeLabel;
+        if (this.summaryMaterial) this.summaryMaterial.textContent = tx.materialType || 'بضاعة';
+        if (this.summaryRefBatch) {
+          const ref = tx.sampleCode;
+          const batch = tx.batchNumber || tx.manufactureNumber;
+          this.summaryRefBatch.textContent = [ref, batch].filter(Boolean).join(' / ') || '—';
+        }
+        if (this.summaryTotalQty) this.summaryTotalQty.textContent = `${Number(tx.netWeight || 0).toFixed(3)} طن`;
+        if (this.summaryRemQty) this.summaryRemQty.textContent = '—';
+        if (this.summarySupplier) this.summarySupplier.textContent = `${tx.companyName || 'عميل'} (${tx.destination})`;
         if (this.summaryDestination) this.summaryDestination.textContent = tx.destination;
-        if (this.verifiedPoBadge) this.verifiedPoBadge.textContent = tx.poNumber;
+        if (this.summarySource) this.summarySource.textContent = tx.sourceStorageLocationName ? `مستودع: ${tx.sourceStorageLocationName}` : (tx.source || 'Face stone');
+
+        // Section 2: Project Code (Optional)
+        if (this.projectCodeSelect) {
+          if (tx.projectCodeId) {
+            this.projectCodeSelect.value = tx.projectCodeId;
+          } else if (tx.projectCode) {
+            const foundOpt = Array.from(this.projectCodeSelect.options).find(o => o.getAttribute('data-code') === tx.projectCode || o.value == tx.projectCode);
+            if (foundOpt) {
+              this.projectCodeSelect.value = foundOpt.value;
+            } else {
+              this.projectCodeSelect.value = '';
+            }
+          } else {
+            this.projectCodeSelect.value = '';
+          }
+        }
 
         // Daily Supply PO display
-        if (this.dailyPoDisplay) this.dailyPoDisplay.value = tx.poNumber;
+        if (this.dailyPoDisplay) this.dailyPoDisplay.value = tx.exportTransactionNumber || tx.poNumber;
 
-        // Section 3: Prepopulated PO fields
+        // Section 3: Prepopulated fields
         if (this.companyInput) this.companyInput.value = tx.companyName || '';
         if (this.destinationInput) this.destinationInput.value = tx.destination || '';
         if (this.sourceDisplay) this.sourceDisplay.value = tx.source || 'Face stone (Full Concrete Solutions)';

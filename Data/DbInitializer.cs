@@ -61,7 +61,56 @@ public static class DbInitializer
                 if (db.Database.IsSqlServer())
                 {
                     await db.Database.ExecuteSqlRawAsync(@"
-IF EXISTS (SELECT * FROM sys.tables WHERE name = 'ChatMessages')
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'Users')
+BEGIN
+    CREATE TABLE Users (
+        Id UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
+        FullName NVARCHAR(150) NOT NULL,
+        Username NVARCHAR(50) NOT NULL,
+        Email NVARCHAR(150) NOT NULL,
+        CountryCode NVARCHAR(10) NOT NULL CONSTRAINT DF_Users_CountryCode DEFAULT '+20',
+        PhoneNumber NVARCHAR(30) NOT NULL,
+        PasswordHash NVARCHAR(256) NOT NULL,
+        CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_Users_CreatedAt DEFAULT GETUTCDATE(),
+        Role NVARCHAR(50) NOT NULL CONSTRAINT DF_Users_Role DEFAULT 'Employee'
+    );
+    CREATE UNIQUE INDEX IX_Users_Email ON Users(Email);
+    CREATE UNIQUE INDEX IX_Users_Username ON Users(Username);
+END
+
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'ChatMessages')
+BEGIN
+    CREATE TABLE ChatMessages (
+        Id UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
+        SenderId UNIQUEIDENTIFIER NULL,
+        SenderName NVARCHAR(150) NOT NULL,
+        SenderUsername NVARCHAR(50) NULL,
+        SenderRole NVARCHAR(50) NOT NULL,
+        RecipientId UNIQUEIDENTIFIER NULL,
+        RecipientName NVARCHAR(150) NOT NULL,
+        RecipientUsername NVARCHAR(50) NULL,
+        RecipientRole NVARCHAR(50) NULL,
+        MessageText NVARCHAR(MAX) NOT NULL,
+        HasAttachment BIT NOT NULL,
+        IsFromAccountant BIT NOT NULL,
+        IsReadByAccountant BIT NOT NULL,
+        IsReadByUser BIT NOT NULL,
+        SentAt DATETIME2 NOT NULL CONSTRAINT DF_ChatMessages_SentAt DEFAULT GETUTCDATE(),
+        ClientMessageId NVARCHAR(64) NULL,
+        MessageType NVARCHAR(50) NOT NULL CONSTRAINT DF_ChatMessages_MessageType DEFAULT 'Text',
+        Status NVARCHAR(MAX) NULL,
+        Latitude FLOAT NULL,
+        Longitude FLOAT NULL,
+        LiveSessionId UNIQUEIDENTIFIER NULL
+    );
+    CREATE INDEX IX_ChatMessages_SenderId_SentAt ON ChatMessages(SenderId, SentAt);
+    CREATE INDEX IX_ChatMessages_RecipientId_SentAt ON ChatMessages(RecipientId, SentAt);
+    CREATE INDEX IX_ChatMessages_RecipientId_IsFromAccountant_IsReadByUser ON ChatMessages(RecipientId, IsFromAccountant, IsReadByUser);
+    CREATE INDEX IX_ChatMessages_SenderId_IsFromAccountant_IsReadByAccountant ON ChatMessages(SenderId, IsFromAccountant, IsReadByAccountant);
+    CREATE INDEX IX_ChatMessages_SenderId_ClientMessageId ON ChatMessages(SenderId, ClientMessageId);
+    CREATE INDEX IX_ChatMessages_LiveSessionId ON ChatMessages(LiveSessionId);
+END
+ELSE
 BEGIN
     IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ChatMessages') AND name = 'MessageType')
         ALTER TABLE ChatMessages ADD MessageType NVARCHAR(50) NOT NULL CONSTRAINT DF_ChatMessages_MessageType DEFAULT 'Text';
@@ -73,6 +122,120 @@ BEGIN
         ALTER TABLE ChatMessages ADD LiveSessionId UNIQUEIDENTIFIER NULL;
     IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ChatMessages') AND name = 'Status')
         ALTER TABLE ChatMessages ADD Status NVARCHAR(50) NULL;
+END
+
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'ChatAttachments')
+BEGIN
+    CREATE TABLE ChatAttachments (
+        Id UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
+        MessageId UNIQUEIDENTIFIER NOT NULL CONSTRAINT FK_ChatAttachments_ChatMessages REFERENCES ChatMessages(Id) ON DELETE CASCADE,
+        SenderName NVARCHAR(150) NOT NULL,
+        RecipientName NVARCHAR(150) NOT NULL,
+        FileName NVARCHAR(260) NOT NULL,
+        FilePath NVARCHAR(500) NOT NULL,
+        FileType NVARCHAR(50) NOT NULL,
+        FileSizeBytes BIGINT NOT NULL,
+        UploadedAt DATETIME2 NOT NULL CONSTRAINT DF_ChatAttachments_UploadedAt DEFAULT GETUTCDATE()
+    );
+    CREATE INDEX IX_ChatAttachments_MessageId ON ChatAttachments(MessageId);
+END
+
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'AttendanceSubmissions')
+BEGIN
+    CREATE TABLE AttendanceSubmissions (
+        Id INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        AttendanceDate DATETIME2 NOT NULL,
+        SubmittedByUserId UNIQUEIDENTIFIER NULL,
+        SubmittedBy NVARCHAR(150) NOT NULL,
+        SubmittedAt DATETIME2 NOT NULL CONSTRAINT DF_AttSub_SubmittedAt DEFAULT GETUTCDATE(),
+        ApprovalStatus NVARCHAR(50) NOT NULL CONSTRAINT DF_AttSub_Status DEFAULT 'PENDING',
+        ReviewedByUserId UNIQUEIDENTIFIER NULL,
+        ReviewedBy NVARCHAR(150) NULL,
+        ReviewedAt DATETIME2 NULL,
+        RejectionReason NVARCHAR(1000) NULL,
+        Notes NVARCHAR(1000) NULL,
+        TotalEmployeesCount INT NOT NULL,
+        PresentCount INT NOT NULL,
+        AbsentCount INT NOT NULL
+    );
+    CREATE INDEX IX_AttendanceSubmissions_Date ON AttendanceSubmissions(AttendanceDate);
+    CREATE INDEX IX_AttendanceSubmissions_Status ON AttendanceSubmissions(ApprovalStatus);
+END
+
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'AttendanceRecords')
+BEGIN
+    CREATE TABLE AttendanceRecords (
+        Id INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        UserId UNIQUEIDENTIFIER NULL CONSTRAINT FK_Attendance_Users REFERENCES Users(Id) ON DELETE SET NULL,
+        EmployeeName NVARCHAR(150) NULL,
+        EmployeeRole NVARCHAR(100) NULL,
+        IsTestData BIT NOT NULL CONSTRAINT DF_AttRec_IsTest DEFAULT 1,
+        Date DATETIME2 NOT NULL,
+        Status NVARCHAR(50) NOT NULL CONSTRAINT DF_Att_Status DEFAULT 'Present',
+        CheckInTime DATETIME2 NULL,
+        CheckOutTime DATETIME2 NULL,
+        Notes NVARCHAR(500) NULL,
+        AttendanceSubmissionId INT NULL CONSTRAINT FK_AttRec_Submissions REFERENCES AttendanceSubmissions(Id) ON DELETE CASCADE,
+        ApprovalStatus NVARCHAR(50) NOT NULL CONSTRAINT DF_AttRec_Approval DEFAULT 'PENDING',
+        RejectionReason NVARCHAR(1000) NULL,
+        ReviewedByUserId UNIQUEIDENTIFIER NULL,
+        ReviewedBy NVARCHAR(150) NULL,
+        ReviewedAt DATETIME2 NULL,
+        CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_AttRec_CreatedAt DEFAULT GETUTCDATE()
+    );
+    CREATE INDEX IX_AttendanceRecords_UserId ON AttendanceRecords(UserId);
+    CREATE INDEX IX_AttendanceRecords_Date ON AttendanceRecords(Date DESC);
+END
+
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'AttendanceAttachments')
+BEGIN
+    CREATE TABLE AttendanceAttachments (
+        Id INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        AttendanceSubmissionId INT NOT NULL CONSTRAINT FK_AttAtt_Submissions REFERENCES AttendanceSubmissions(Id) ON DELETE CASCADE,
+        FileName NVARCHAR(255) NOT NULL,
+        OriginalFileName NVARCHAR(255) NOT NULL,
+        FilePath NVARCHAR(500) NOT NULL,
+        FileType NVARCHAR(100) NOT NULL,
+        FileSize BIGINT NOT NULL,
+        UploadedAt DATETIME2 NOT NULL CONSTRAINT DF_AttAtt_UploadedAt DEFAULT GETUTCDATE()
+    );
+    CREATE INDEX IX_AttendanceAttachments_SubId ON AttendanceAttachments(AttendanceSubmissionId);
+END
+
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'EmployeeFinancialRecords')
+BEGIN
+    CREATE TABLE EmployeeFinancialRecords (
+        Id INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        UserId UNIQUEIDENTIFIER NOT NULL CONSTRAINT FK_EmpFin_Users REFERENCES Users(Id) ON DELETE CASCADE,
+        BasicSalary DECIMAL(18,2) NOT NULL CONSTRAINT DF_EFR_Basic DEFAULT 0,
+        Allowances DECIMAL(18,2) NOT NULL CONSTRAINT DF_EFR_Allow DEFAULT 0,
+        InsuranceDeductions DECIMAL(18,2) NOT NULL CONSTRAINT DF_EFR_Deduct DEFAULT 0,
+        NetSalary DECIMAL(18,2) NOT NULL CONSTRAINT DF_EFR_Net DEFAULT 0,
+        EffectiveFrom DATETIME2 NOT NULL CONSTRAINT DF_EFR_EffFrom DEFAULT GETUTCDATE(),
+        PaymentMethod NVARCHAR(50) NOT NULL CONSTRAINT DF_EFR_PayMethod DEFAULT 'Bank Transfer',
+        BankAccountNumber NVARCHAR(100) NULL,
+        Notes NVARCHAR(500) NULL,
+        UpdatedAt DATETIME2 NOT NULL CONSTRAINT DF_EFR_UpdatedAt DEFAULT GETUTCDATE()
+    );
+    CREATE UNIQUE INDEX IX_EmployeeFinancialRecords_UserId ON EmployeeFinancialRecords(UserId);
+END
+
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'EmployeeLendings')
+BEGIN
+    CREATE TABLE EmployeeLendings (
+        Id INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        UserId UNIQUEIDENTIFIER NOT NULL CONSTRAINT FK_EmpLending_Users REFERENCES Users(Id) ON DELETE CASCADE,
+        LendingAmount DECIMAL(18,2) NOT NULL,
+        PaidAmount DECIMAL(18,2) NOT NULL CONSTRAINT DF_EL_Paid DEFAULT 0,
+        RemainingAmount DECIMAL(18,2) NOT NULL,
+        RequestDate DATETIME2 NOT NULL,
+        ApprovalStatus NVARCHAR(50) NOT NULL CONSTRAINT DF_EL_Status DEFAULT 'معتمد',
+        ApprovedBy NVARCHAR(150) NULL,
+        Notes NVARCHAR(500) NULL,
+        CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_EL_CreatedAt DEFAULT GETUTCDATE()
+    );
+    CREATE INDEX IX_EmployeeLendings_UserId ON EmployeeLendings(UserId);
+    CREATE INDEX IX_EmployeeLendings_RequestDate ON EmployeeLendings(RequestDate DESC);
 END
 
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'LiveLocationSessions')
@@ -468,6 +631,50 @@ BEGIN
         ALTER TABLE StorageOperations ADD DocumentFileType NVARCHAR(50) NULL;
     IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('StorageOperations') AND name = 'DocumentFileSize')
         ALTER TABLE StorageOperations ADD DocumentFileSize BIGINT NOT NULL CONSTRAINT DF_StorageOp_DocFileSize DEFAULT 0;
+
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('StorageOperations') AND name = 'ExportType')
+        ALTER TABLE StorageOperations ADD ExportType NVARCHAR(50) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('StorageOperations') AND name = 'ProductionOrderId')
+        ALTER TABLE StorageOperations ADD ProductionOrderId INT NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('StorageOperations') AND name = 'ProductionProcessId')
+        ALTER TABLE StorageOperations ADD ProductionProcessId INT NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('StorageOperations') AND name = 'ManufactureNumber')
+        ALTER TABLE StorageOperations ADD ManufactureNumber NVARCHAR(100) NULL;
+
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('StorageOperationItems') AND name = 'ProductionOrderId')
+        ALTER TABLE StorageOperationItems ADD ProductionOrderId INT NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('StorageOperationItems') AND name = 'ProductionProcessId')
+        ALTER TABLE StorageOperationItems ADD ProductionProcessId INT NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('StorageOperationItems') AND name = 'ManufactureNumber')
+        ALTER TABLE StorageOperationItems ADD ManufactureNumber NVARCHAR(100) NULL;
+
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('Transportation') AND name = 'StorageOperationId')
+        ALTER TABLE Transportation ADD StorageOperationId INT NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('Transportation') AND name = 'StorageOperationItemId')
+        ALTER TABLE Transportation ADD StorageOperationItemId INT NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('Transportation') AND name = 'ExportTransactionNumber')
+        ALTER TABLE Transportation ADD ExportTransactionNumber NVARCHAR(100) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('Transportation') AND name = 'ExportType')
+        ALTER TABLE Transportation ADD ExportType NVARCHAR(50) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('Transportation') AND name = 'ProductionOrderId')
+        ALTER TABLE Transportation ADD ProductionOrderId INT NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('Transportation') AND name = 'ProductionProcessId')
+        ALTER TABLE Transportation ADD ProductionProcessId INT NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('Transportation') AND name = 'ManufactureNumber')
+        ALTER TABLE Transportation ADD ManufactureNumber NVARCHAR(100) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('Transportation') AND name = 'BatchNumber')
+        ALTER TABLE Transportation ADD BatchNumber NVARCHAR(100) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('Transportation') AND name = 'SampleCode')
+        ALTER TABLE Transportation ADD SampleCode NVARCHAR(100) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('Transportation') AND name = 'SourceStorageLocationId')
+        ALTER TABLE Transportation ADD SourceStorageLocationId INT NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('Transportation') AND name = 'SourceStorageLocationName')
+        ALTER TABLE Transportation ADD SourceStorageLocationName NVARCHAR(250) NULL;
+
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('WarehouseBatches') AND name = 'ProductionOrderId')
+        ALTER TABLE WarehouseBatches ADD ProductionOrderId INT NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('WarehouseBatches') AND name = 'ProductionProcessId')
+        ALTER TABLE WarehouseBatches ADD ProductionProcessId INT NULL;
 END
 
 IF EXISTS (SELECT * FROM sys.tables WHERE name = 'FormApprovalHistories')
@@ -744,6 +951,171 @@ BEGIN
     CREATE INDEX IX_AttendanceRecords_Date ON AttendanceRecords(Date DESC);
     CREATE UNIQUE INDEX IX_AttendanceRecords_UserDate ON AttendanceRecords(UserId, Date);
 END
+
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'Invoices')
+BEGIN
+    CREATE TABLE Invoices (
+        Id INT IDENTITY(1,1) PRIMARY KEY,
+        InvoiceNumber NVARCHAR(50) NOT NULL,
+        InvoiceDate DATETIME2 NOT NULL CONSTRAINT DF_Invoices_InvoiceDate DEFAULT GETUTCDATE(),
+        ProjectCodeId INT NULL CONSTRAINT FK_Invoices_ProjectCodes REFERENCES ProjectCodes(Id) ON DELETE SET NULL,
+        ProjectCodeValue NVARCHAR(50) NOT NULL CONSTRAINT DF_Invoices_ProjectCodeValue DEFAULT '',
+        ProjectName NVARCHAR(200) NOT NULL CONSTRAINT DF_Invoices_ProjectName DEFAULT '',
+        RelatedEntityType NVARCHAR(30) NOT NULL CONSTRAINT DF_Invoices_RelatedEntityType DEFAULT 'COMPANY',
+        PurchaseOrderId INT NULL CONSTRAINT FK_Invoices_PurchaseOrders REFERENCES PurchaseOrders(Id) ON DELETE SET NULL,
+        PONumber NVARCHAR(100) NULL,
+        CompanyId INT NULL CONSTRAINT FK_Invoices_StorageClients REFERENCES StorageClients(Id) ON DELETE SET NULL,
+        CompanyName NVARCHAR(200) NOT NULL CONSTRAINT DF_Invoices_CompanyName DEFAULT '',
+        CompanyAddress NVARCHAR(300) NULL,
+        CompanyTaxNumber NVARCHAR(50) NULL,
+        CompanyPhone NVARCHAR(50) NULL,
+        Subtotal DECIMAL(18, 3) NOT NULL CONSTRAINT DF_Invoices_Subtotal DEFAULT 0,
+        TaxRate DECIMAL(5, 2) NOT NULL CONSTRAINT DF_Invoices_TaxRate DEFAULT 14.00,
+        TaxAmount DECIMAL(18, 3) NOT NULL CONSTRAINT DF_Invoices_TaxAmount DEFAULT 0,
+        DiscountAmount DECIMAL(18, 3) NOT NULL CONSTRAINT DF_Invoices_DiscountAmount DEFAULT 0,
+        TotalAmount DECIMAL(18, 3) NOT NULL CONSTRAINT DF_Invoices_TotalAmount DEFAULT 0,
+        Status NVARCHAR(30) NOT NULL CONSTRAINT DF_Invoices_Status DEFAULT 'ISSUED',
+        IsPrinted BIT NOT NULL CONSTRAINT DF_Invoices_IsPrinted DEFAULT 0,
+        PrintedAt DATETIME2 NULL,
+        Notes NVARCHAR(MAX) NULL,
+        CreatedBy NVARCHAR(150) NOT NULL CONSTRAINT DF_Invoices_CreatedBy DEFAULT '',
+        CreatedByUserId UNIQUEIDENTIFIER NULL,
+        CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_Invoices_CreatedAt DEFAULT GETUTCDATE(),
+        UpdatedAt DATETIME2 NOT NULL CONSTRAINT DF_Invoices_UpdatedAt DEFAULT GETUTCDATE()
+    );
+
+    CREATE UNIQUE INDEX IX_Invoices_InvoiceNumber ON Invoices(InvoiceNumber);
+    CREATE INDEX IX_Invoices_ProjectCodeId ON Invoices(ProjectCodeId);
+    CREATE INDEX IX_Invoices_PurchaseOrderId ON Invoices(PurchaseOrderId);
+    CREATE INDEX IX_Invoices_CompanyId ON Invoices(CompanyId);
+    CREATE INDEX IX_Invoices_Status ON Invoices(Status);
+    CREATE INDEX IX_Invoices_InvoiceDate ON Invoices(InvoiceDate);
+END
+
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'InvoiceItems')
+BEGIN
+    CREATE TABLE InvoiceItems (
+        Id INT IDENTITY(1,1) PRIMARY KEY,
+        InvoiceId INT NOT NULL CONSTRAINT FK_InvoiceItems_Invoices REFERENCES Invoices(Id) ON DELETE CASCADE,
+        TransportationId INT NOT NULL CONSTRAINT FK_InvoiceItems_Transportation REFERENCES Transportation(Id),
+        TransportationTransactionNumber INT NOT NULL CONSTRAINT DF_InvoiceItems_TxNum DEFAULT 0,
+        WarehouseExportNumber NVARCHAR(100) NULL,
+        ProductName NVARCHAR(200) NOT NULL,
+        ReferenceNumber NVARCHAR(100) NULL,
+        BatchNumber NVARCHAR(100) NULL,
+        ProductionOrderNumber NVARCHAR(100) NULL,
+        Quantity DECIMAL(18, 3) NOT NULL CONSTRAINT DF_InvoiceItems_Quantity DEFAULT 0,
+        Unit NVARCHAR(50) NOT NULL CONSTRAINT DF_InvoiceItems_Unit DEFAULT N'طن',
+        UnitPrice DECIMAL(18, 3) NOT NULL CONSTRAINT DF_InvoiceItems_UnitPrice DEFAULT 0,
+        LineTotal DECIMAL(18, 3) NOT NULL CONSTRAINT DF_InvoiceItems_LineTotal DEFAULT 0,
+        Destination NVARCHAR(200) NULL,
+        TransactionDate DATETIME2 NULL
+    );
+
+    CREATE INDEX IX_InvoiceItems_InvoiceId ON InvoiceItems(InvoiceId);
+    CREATE INDEX IX_InvoiceItems_TransportationId ON InvoiceItems(TransportationId);
+END
+
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'Suppliers')
+BEGIN
+    CREATE TABLE Suppliers (
+        Id INT IDENTITY(1,1) PRIMARY KEY,
+        SupplierCode NVARCHAR(50) NOT NULL,
+        Name NVARCHAR(200) NOT NULL,
+        PhoneNumber NVARCHAR(50) NULL,
+        Email NVARCHAR(100) NULL,
+        Address NVARCHAR(300) NULL,
+        TaxNumber NVARCHAR(50) NULL,
+        CommercialRegister NVARCHAR(50) NULL,
+        ContactPerson NVARCHAR(100) NULL,
+        Notes NVARCHAR(MAX) NULL,
+        PrimaryMaterialName NVARCHAR(200) NULL,
+        PrimaryMaterialType NVARCHAR(100) NULL,
+        SourceDepartment NVARCHAR(50) NOT NULL CONSTRAINT DF_Suppliers_SourceDept DEFAULT 'FINANCE',
+        RelatedLaboratoryReferenceNumber NVARCHAR(100) NULL,
+        RelatedWarehouseImportNumber NVARCHAR(100) NULL,
+        RegistrationDate DATETIME2 NOT NULL CONSTRAINT DF_Suppliers_RegDate DEFAULT GETUTCDATE(),
+        TotalAmountOwed DECIMAL(18, 3) NOT NULL CONSTRAINT DF_Suppliers_Owed DEFAULT 0,
+        TotalAmountPaid DECIMAL(18, 3) NOT NULL CONSTRAINT DF_Suppliers_Paid DEFAULT 0,
+        RemainingBalance DECIMAL(18, 3) NOT NULL CONSTRAINT DF_Suppliers_Bal DEFAULT 0,
+        LastPaymentDate DATETIME2 NULL,
+        IsActive BIT NOT NULL CONSTRAINT DF_Suppliers_Active DEFAULT 1,
+        CreatedBy NVARCHAR(150) NOT NULL CONSTRAINT DF_Suppliers_CreatedBy DEFAULT '',
+        CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_Suppliers_CreatedAt DEFAULT GETUTCDATE(),
+        UpdatedAt DATETIME2 NOT NULL CONSTRAINT DF_Suppliers_UpdatedAt DEFAULT GETUTCDATE()
+    );
+    CREATE INDEX IX_Suppliers_SupplierCode ON Suppliers(SupplierCode);
+    CREATE INDEX IX_Suppliers_Name ON Suppliers(Name);
+END;
+
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'SupplierFinancialTransactions')
+BEGIN
+    CREATE TABLE SupplierFinancialTransactions (
+        Id INT IDENTITY(1,1) PRIMARY KEY,
+        SupplierId INT NOT NULL CONSTRAINT FK_SupplierFin_Suppliers REFERENCES Suppliers(Id) ON DELETE CASCADE,
+        TransactionType NVARCHAR(30) NOT NULL,
+        Amount DECIMAL(18, 3) NOT NULL,
+        TransactionDate DATETIME2 NOT NULL CONSTRAINT DF_SupplierFin_TxDate DEFAULT GETUTCDATE(),
+        Description NVARCHAR(500) NOT NULL,
+        ReferenceNumber NVARCHAR(100) NULL,
+        InvoiceId INT NULL CONSTRAINT FK_SupplierFin_Invoices REFERENCES Invoices(Id) ON DELETE SET NULL,
+        CreatedBy NVARCHAR(150) NOT NULL CONSTRAINT DF_SupplierFin_CreatedBy DEFAULT '',
+        CreatedByUserId UNIQUEIDENTIFIER NULL,
+        CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_SupplierFin_CreatedAt DEFAULT GETUTCDATE()
+    );
+    CREATE INDEX IX_SupplierFin_SupplierId ON SupplierFinancialTransactions(SupplierId);
+    CREATE INDEX IX_SupplierFin_Type ON SupplierFinancialTransactions(TransactionType);
+    CREATE INDEX IX_SupplierFin_Date ON SupplierFinancialTransactions(TransactionDate);
+END;
+
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('PurchaseOrders') AND name = 'SupplierId')
+    ALTER TABLE PurchaseOrders ADD SupplierId INT NULL CONSTRAINT FK_PurchaseOrders_Suppliers REFERENCES Suppliers(Id) ON DELETE SET NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('PurchaseOrders') AND name = 'MaterialName')
+    ALTER TABLE PurchaseOrders ADD MaterialName NVARCHAR(200) NOT NULL CONSTRAINT DF_PO_MatName DEFAULT N'مواد خرسانية / ركام';
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('PurchaseOrders') AND name = 'Unit')
+    ALTER TABLE PurchaseOrders ADD Unit NVARCHAR(50) NOT NULL CONSTRAINT DF_PO_Unit DEFAULT N'طن';
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('PurchaseOrders') AND name = 'DeliveredQuantity')
+    ALTER TABLE PurchaseOrders ADD DeliveredQuantity DECIMAL(18, 3) NOT NULL CONSTRAINT DF_PO_DeliveredQty DEFAULT 0;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('PurchaseOrders') AND name = 'ExpectedDeliveryDate')
+    ALTER TABLE PurchaseOrders ADD ExpectedDeliveryDate DATETIME2 NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('PurchaseOrders') AND name = 'Status')
+    ALTER TABLE PurchaseOrders ADD Status NVARCHAR(50) NOT NULL CONSTRAINT DF_PO_Status DEFAULT N'نشط';
+
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('SupplierFinancialTransactions') AND name = 'PaymentMethod')
+    ALTER TABLE SupplierFinancialTransactions ADD PaymentMethod NVARCHAR(50) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('SupplierFinancialTransactions') AND name = 'Notes')
+    ALTER TABLE SupplierFinancialTransactions ADD Notes NVARCHAR(MAX) NULL;
+
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('Invoices') AND name = 'ShippingPrice')
+    ALTER TABLE Invoices ADD ShippingPrice DECIMAL(18, 3) NOT NULL CONSTRAINT DF_Invoices_ShippingPrice DEFAULT 0;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('Invoices') AND name = 'SupplierId')
+    ALTER TABLE Invoices ADD SupplierId INT NULL CONSTRAINT FK_Invoices_Suppliers REFERENCES Suppliers(Id) ON DELETE SET NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('Invoices') AND name = 'SupplierName')
+    ALTER TABLE Invoices ADD SupplierName NVARCHAR(200) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('Invoices') AND name = 'MaterialName')
+    ALTER TABLE Invoices ADD MaterialName NVARCHAR(200) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('Invoices') AND name = 'OrderedQuantity')
+    ALTER TABLE Invoices ADD OrderedQuantity DECIMAL(18, 3) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('Invoices') AND name = 'InvoicedQuantity')
+    ALTER TABLE Invoices ADD InvoicedQuantity DECIMAL(18, 3) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('Invoices') AND name = 'PoUnitPrice')
+    ALTER TABLE Invoices ADD PoUnitPrice DECIMAL(18, 3) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('Invoices') AND name = 'InvoiceUnitPrice')
+    ALTER TABLE Invoices ADD InvoiceUnitPrice DECIMAL(18, 3) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('Invoices') AND name = 'PriceChangedBy')
+    ALTER TABLE Invoices ADD PriceChangedBy NVARCHAR(150) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('Invoices') AND name = 'PriceChangedAt')
+    ALTER TABLE Invoices ADD PriceChangedAt DATETIME2 NULL;
+
+IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('InvoiceItems') AND name = 'TransportationId' AND is_nullable = 0)
+BEGIN
+    ALTER TABLE InvoiceItems ALTER COLUMN TransportationId INT NULL;
+END;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('InvoiceItems') AND name = 'PurchaseOrderId')
+    ALTER TABLE InvoiceItems ADD PurchaseOrderId INT NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('InvoiceItems') AND name = 'PONumber')
+    ALTER TABLE InvoiceItems ADD PONumber NVARCHAR(100) NULL;
+
 ", cts.Token);
 
                     // Step 2: In a separate batch, normalize any legacy location rows now that columns exist
@@ -934,12 +1306,25 @@ BEGIN
     CREATE INDEX IX_Transportation_ProductionReferenceNumber ON Transportation(ProductionReferenceNumber);
 END
 
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('StorageOperations') AND name = 'SampleCode')
+BEGIN
+    ALTER TABLE StorageOperations ADD SampleCode NVARCHAR(50) NULL;
+    CREATE INDEX IX_StorageOperations_SampleCode ON StorageOperations(SampleCode);
+END
+
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('StorageOperations') AND name = 'SelectionMode')
+BEGIN
+    ALTER TABLE StorageOperations ADD SelectionMode NVARCHAR(50) NULL;
+END
+
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'LaboratoryRawMaterialReports')
 BEGIN
     CREATE TABLE LaboratoryRawMaterialReports (
         Id INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
         ProductionReferenceNumber INT NOT NULL,
         SampleNumber INT NOT NULL CONSTRAINT DF_LabRaw_SampleNumber DEFAULT 0,
+        SampleCode NVARCHAR(50) NULL,
+        MaterialClassification NVARCHAR(50) NOT NULL CONSTRAINT DF_LabRaw_MatClass DEFAULT 'MECHANICAL',
         SampleName NVARCHAR(250) NOT NULL CONSTRAINT DF_LabRaw_SampleName DEFAULT 'سيليكا باودر (Micro Silica Powder)',
         SampleDescription NVARCHAR(500) NULL,
         BatchNumber NVARCHAR(100) NULL,
@@ -959,6 +1344,11 @@ BEGIN
         PurchaseOrderId INT NULL CONSTRAINT FK_LabRaw_PO REFERENCES PurchaseOrders(Id) ON DELETE SET NULL,
         PONumber NVARCHAR(100) NULL,
         ReceivedQuantity DECIMAL(18,3) NOT NULL,
+        TestedMaterialWeight DECIMAL(18,3) NOT NULL CONSTRAINT DF_LabRaw_TestedWeight DEFAULT 0,
+        QuantityConfirmationPath NVARCHAR(500) NULL,
+        QuantityConfirmationFileName NVARCHAR(255) NULL,
+        QuantityConfirmationFileType NVARCHAR(100) NULL,
+        QuantityConfirmationFileSize BIGINT NOT NULL CONSTRAINT DF_LabRaw_QtyConfSize DEFAULT 0,
         AcceptedQuantity DECIMAL(18,3) NOT NULL,
         RejectedQuantity DECIMAL(18,3) NOT NULL,
         AnalysisResultsJson NVARCHAR(MAX) NULL,
@@ -1011,6 +1401,42 @@ BEGIN
         ALTER TABLE LaboratoryRawMaterialReports ADD LabManagerDate DATETIME2 NULL;
     IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryRawMaterialReports') AND name = 'ComplyStatus')
         ALTER TABLE LaboratoryRawMaterialReports ADD ComplyStatus NVARCHAR(50) NOT NULL CONSTRAINT DF_LabRaw_ComplyStatus DEFAULT 'COMPLY';
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryRawMaterialReports') AND name = 'SampleCode')
+        ALTER TABLE LaboratoryRawMaterialReports ADD SampleCode NVARCHAR(50) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryRawMaterialReports') AND name = 'MaterialClassification')
+        ALTER TABLE LaboratoryRawMaterialReports ADD MaterialClassification NVARCHAR(50) NOT NULL CONSTRAINT DF_LabRaw_MaterialClassification DEFAULT 'MECHANICAL';
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryRawMaterialReports') AND name = 'TestedMaterialWeight')
+        ALTER TABLE LaboratoryRawMaterialReports ADD TestedMaterialWeight DECIMAL(18,3) NOT NULL CONSTRAINT DF_LabRaw_TestedWeight DEFAULT 0;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryRawMaterialReports') AND name = 'QuantityConfirmationPath')
+        ALTER TABLE LaboratoryRawMaterialReports ADD QuantityConfirmationPath NVARCHAR(500) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryRawMaterialReports') AND name = 'QuantityConfirmationFileName')
+        ALTER TABLE LaboratoryRawMaterialReports ADD QuantityConfirmationFileName NVARCHAR(255) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryRawMaterialReports') AND name = 'QuantityConfirmationFileType')
+        ALTER TABLE LaboratoryRawMaterialReports ADD QuantityConfirmationFileType NVARCHAR(100) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryRawMaterialReports') AND name = 'QuantityConfirmationFileSize')
+        ALTER TABLE LaboratoryRawMaterialReports ADD QuantityConfirmationFileSize BIGINT NOT NULL CONSTRAINT DF_LabRaw_QtyConfSize DEFAULT 0;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryRawMaterialReports') AND name = 'Unit')
+        ALTER TABLE LaboratoryRawMaterialReports ADD Unit NVARCHAR(50) NOT NULL CONSTRAINT DF_LabRaw_Unit DEFAULT N'طن';
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryRawMaterialReports') AND name = 'PhysicalInspectionStatus')
+        ALTER TABLE LaboratoryRawMaterialReports ADD PhysicalInspectionStatus NVARCHAR(50) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryRawMaterialReports') AND name = 'PhysicalInspectedBy')
+        ALTER TABLE LaboratoryRawMaterialReports ADD PhysicalInspectedBy NVARCHAR(150) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryRawMaterialReports') AND name = 'PhysicalInspectedAt')
+        ALTER TABLE LaboratoryRawMaterialReports ADD PhysicalInspectedAt DATETIME2 NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryRawMaterialReports') AND name = 'PhysicalNotes')
+        ALTER TABLE LaboratoryRawMaterialReports ADD PhysicalNotes NVARCHAR(MAX) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryRawMaterialReports') AND name = 'ChemicalInspectionStatus')
+        ALTER TABLE LaboratoryRawMaterialReports ADD ChemicalInspectionStatus NVARCHAR(50) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryRawMaterialReports') AND name = 'ChemicalInspectedBy')
+        ALTER TABLE LaboratoryRawMaterialReports ADD ChemicalInspectedBy NVARCHAR(150) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryRawMaterialReports') AND name = 'ChemicalInspectedAt')
+        ALTER TABLE LaboratoryRawMaterialReports ADD ChemicalInspectedAt DATETIME2 NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryRawMaterialReports') AND name = 'ChemicalNotes')
+        ALTER TABLE LaboratoryRawMaterialReports ADD ChemicalNotes NVARCHAR(MAX) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryRawMaterialReports') AND name = 'ChemicalResultsJson')
+        ALTER TABLE LaboratoryRawMaterialReports ADD ChemicalResultsJson NVARCHAR(MAX) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryRawMaterialReports') AND name = 'OverallStatus')
+        ALTER TABLE LaboratoryRawMaterialReports ADD OverallStatus NVARCHAR(50) NULL;
 
     IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_LaboratoryRawMaterialReports_ResponsibleUserId_SampleNumber')
     BEGIN
@@ -1047,6 +1473,13 @@ BEGIN
     );
     CREATE INDEX IX_LaboratoryInProcessReports_ProductionReferenceNumber ON LaboratoryInProcessReports(ProductionReferenceNumber);
     CREATE INDEX IX_LaboratoryInProcessReports_LaboratorySection ON LaboratoryInProcessReports(LaboratorySection);
+END
+ELSE
+BEGIN
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryInProcessReports') AND name = 'SampleCode')
+        ALTER TABLE LaboratoryInProcessReports ADD SampleCode NVARCHAR(50) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryInProcessReports') AND name = 'SampleNumber')
+        ALTER TABLE LaboratoryInProcessReports ADD SampleNumber INT NULL;
 END
 
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'LaboratoryFinalConformityCertificates')
@@ -1093,6 +1526,331 @@ BEGIN
     CREATE INDEX IX_LaboratoryFinalConformityCertificates_ProductionReferenceNumber ON LaboratoryFinalConformityCertificates(ProductionReferenceNumber);
     CREATE INDEX IX_LaboratoryFinalConformityCertificates_LaboratorySection ON LaboratoryFinalConformityCertificates(LaboratorySection);
 END
+ELSE
+BEGIN
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryFinalConformityCertificates') AND name = 'SampleCode')
+        ALTER TABLE LaboratoryFinalConformityCertificates ADD SampleCode NVARCHAR(50) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryFinalConformityCertificates') AND name = 'SampleNumber')
+        ALTER TABLE LaboratoryFinalConformityCertificates ADD SampleNumber INT NULL;
+END
+
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'WarehouseBatches')
+BEGIN
+    CREATE TABLE WarehouseBatches (
+        Id INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        LaboratoryReportId INT NOT NULL CONSTRAINT FK_WarehouseBatches_LabReport REFERENCES LaboratoryRawMaterialReports(Id),
+        ProductionReferenceNumber INT NOT NULL,
+        SampleCode NVARCHAR(50) NOT NULL,
+        BatchNumber NVARCHAR(100) NOT NULL,
+        RawMaterialId INT NOT NULL CONSTRAINT FK_WarehouseBatches_RawMaterial REFERENCES RawMaterials(Id),
+        MaterialName NVARCHAR(250) NOT NULL,
+        MaterialClassification NVARCHAR(50) NOT NULL CONSTRAINT DF_WarehouseBatches_MatClass DEFAULT 'MECHANICAL',
+        SupplierName NVARCHAR(200) NULL,
+        StorageLocationId INT NOT NULL CONSTRAINT FK_WarehouseBatches_Location REFERENCES StorageLocations(Id),
+        InitialQuantity DECIMAL(18,3) NOT NULL,
+        CurrentQuantity DECIMAL(18,3) NOT NULL,
+        StorageOperationId INT NULL CONSTRAINT FK_WarehouseBatches_StorageOp REFERENCES StorageOperations(Id) ON DELETE SET NULL,
+        StorageOperationItemId INT NULL CONSTRAINT FK_WarehouseBatches_StorageOpItem REFERENCES StorageOperationItems(Id) ON DELETE SET NULL,
+        ImportDate DATETIME2 NOT NULL,
+        Status NVARCHAR(50) NOT NULL CONSTRAINT DF_WarehouseBatches_Status DEFAULT 'PENDING',
+        IsActive BIT NOT NULL CONSTRAINT DF_WarehouseBatches_IsActive DEFAULT 1,
+        CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_WarehouseBatches_CreatedAt DEFAULT GETUTCDATE(),
+        CreatedBy NVARCHAR(150) NULL,
+        CreatedByUserId UNIQUEIDENTIFIER NULL,
+        Notes NVARCHAR(1000) NULL
+    );
+    CREATE UNIQUE INDEX IX_WarehouseBatches_BatchNumber ON WarehouseBatches(BatchNumber);
+    CREATE INDEX IX_WarehouseBatches_SampleCode ON WarehouseBatches(SampleCode);
+    CREATE INDEX IX_WarehouseBatches_ProductionReferenceNumber ON WarehouseBatches(ProductionReferenceNumber);
+    CREATE INDEX IX_WarehouseBatches_LaboratoryReportId ON WarehouseBatches(LaboratoryReportId);
+    CREATE INDEX IX_WarehouseBatches_StorageLocationId ON WarehouseBatches(StorageLocationId);
+    CREATE INDEX IX_WarehouseBatches_RawMaterialId ON WarehouseBatches(RawMaterialId);
+    CREATE INDEX IX_WarehouseBatches_Status ON WarehouseBatches(Status);
+END
+
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('StorageOperationItems') AND name = 'WarehouseBatchId')
+BEGIN
+    ALTER TABLE StorageOperationItems ADD WarehouseBatchId INT NULL CONSTRAINT FK_StorageOperationItems_Batch REFERENCES WarehouseBatches(Id);
+    CREATE INDEX IX_StorageOperationItems_WarehouseBatchId ON StorageOperationItems(WarehouseBatchId);
+END
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('StorageOperationItems') AND name = 'BatchNumber')
+    ALTER TABLE StorageOperationItems ADD BatchNumber NVARCHAR(100) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('StorageOperationItems') AND name = 'SampleCode')
+    ALTER TABLE StorageOperationItems ADD SampleCode NVARCHAR(50) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('StorageOperationItems') AND name = 'ProductionReferenceNumber')
+    ALTER TABLE StorageOperationItems ADD ProductionReferenceNumber INT NULL;
+
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('StorageInventoryLedger') AND name = 'WarehouseBatchId')
+BEGIN
+    ALTER TABLE StorageInventoryLedger ADD WarehouseBatchId INT NULL CONSTRAINT FK_StorageInventoryLedger_Batch REFERENCES WarehouseBatches(Id);
+    CREATE INDEX IX_StorageInventoryLedger_WarehouseBatchId ON StorageInventoryLedger(WarehouseBatchId);
+END
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('StorageInventoryLedger') AND name = 'BatchNumber')
+    ALTER TABLE StorageInventoryLedger ADD BatchNumber NVARCHAR(100) NULL;
+
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionWorkInProcess') AND name = 'WarehouseBatchId')
+BEGIN
+    ALTER TABLE ProductionWorkInProcess ADD WarehouseBatchId INT NULL CONSTRAINT FK_ProductionWorkInProcess_Batch REFERENCES WarehouseBatches(Id);
+    CREATE INDEX IX_ProductionWorkInProcess_WarehouseBatchId ON ProductionWorkInProcess(WarehouseBatchId);
+END
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionWorkInProcess') AND name = 'BatchNumber')
+    ALTER TABLE ProductionWorkInProcess ADD BatchNumber NVARCHAR(100) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionWorkInProcess') AND name = 'SampleCode')
+    ALTER TABLE ProductionWorkInProcess ADD SampleCode NVARCHAR(50) NULL;
+
+IF NOT EXISTS (SELECT * FROM StorageSequences WHERE SequenceType = 'BATCH')
+    INSERT INTO StorageSequences (SequenceType, NextValue) VALUES ('BATCH', 1);
+
+IF NOT EXISTS (SELECT * FROM ProductionSequences WHERE SequenceType = 'PROCESS')
+    INSERT INTO ProductionSequences (SequenceType, NextValue) VALUES ('PROCESS', 1);
+
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'ProductionProcesses')
+BEGIN
+    CREATE TABLE ProductionProcesses (
+        Id INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        ProcessNumber NVARCHAR(100) NOT NULL,
+        ProductionDate DATETIME2 NOT NULL,
+        StorageLocationId INT NULL,
+        StorageLocationName NVARCHAR(255) NULL,
+        TotalInputQuantity DECIMAL(18,3) NOT NULL DEFAULT 0,
+        TotalOutputQuantity DECIMAL(18,3) NOT NULL DEFAULT 0,
+        TotalWasteQuantity DECIMAL(18,3) NOT NULL DEFAULT 0,
+        WastePercentage DECIMAL(18,2) NOT NULL DEFAULT 0,
+        Unit NVARCHAR(50) NOT NULL DEFAULT N'طن',
+        Status NVARCHAR(50) NOT NULL DEFAULT N'IN_PROGRESS',
+        ResponsibleEmployee NVARCHAR(255) NOT NULL DEFAULT N'',
+        ResponsibleUserId UNIQUEIDENTIFIER NULL,
+        Notes NVARCHAR(MAX) NULL,
+        IncomingWeighbridgePath NVARCHAR(1000) NULL,
+        IncomingWeighbridgeFileName NVARCHAR(255) NULL,
+        IncomingWeighbridgeFileType NVARCHAR(100) NULL,
+        IncomingWeighbridgeFileSize BIGINT NOT NULL DEFAULT 0,
+        CreatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        CreatedBy NVARCHAR(255) NOT NULL DEFAULT N'',
+        CONSTRAINT FK_ProductionProcesses_StorageLocations FOREIGN KEY (StorageLocationId) REFERENCES StorageLocations(Id)
+    );
+    CREATE UNIQUE INDEX IX_ProductionProcesses_ProcessNumber ON ProductionProcesses (ProcessNumber);
+    CREATE INDEX IX_ProductionProcesses_ProductionDate ON ProductionProcesses (ProductionDate);
+    CREATE INDEX IX_ProductionProcesses_Status ON ProductionProcesses (Status);
+END
+
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'ProductionProcessMaterials')
+BEGIN
+    CREATE TABLE ProductionProcessMaterials (
+        Id INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        ProductionProcessId INT NOT NULL,
+        WarehouseBatchId INT NOT NULL,
+        BatchNumber NVARCHAR(100) NOT NULL,
+        LaboratoryReportId INT NULL,
+        ProductionReferenceNumber INT NOT NULL,
+        SampleCode NVARCHAR(100) NOT NULL DEFAULT N'',
+        RawMaterialId INT NOT NULL,
+        MaterialName NVARCHAR(255) NOT NULL DEFAULT N'',
+        MaterialClassification NVARCHAR(100) NOT NULL DEFAULT N'',
+        StorageLocationId INT NOT NULL,
+        StorageLocationName NVARCHAR(255) NOT NULL DEFAULT N'',
+        AvailableQuantityBefore DECIMAL(18,3) NOT NULL DEFAULT 0,
+        ConsumedQuantity DECIMAL(18,3) NOT NULL,
+        RemainingQuantityAfter DECIMAL(18,3) NOT NULL DEFAULT 0,
+        Unit NVARCHAR(50) NOT NULL DEFAULT N'طن',
+        CreatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        CONSTRAINT FK_ProductionProcessMaterials_ProductionProcesses FOREIGN KEY (ProductionProcessId) REFERENCES ProductionProcesses(Id) ON DELETE CASCADE,
+        CONSTRAINT FK_ProductionProcessMaterials_WarehouseBatches FOREIGN KEY (WarehouseBatchId) REFERENCES WarehouseBatches(Id),
+        CONSTRAINT FK_ProductionProcessMaterials_RawMaterials FOREIGN KEY (RawMaterialId) REFERENCES RawMaterials(Id),
+        CONSTRAINT FK_ProductionProcessMaterials_StorageLocations FOREIGN KEY (StorageLocationId) REFERENCES StorageLocations(Id)
+    );
+    CREATE INDEX IX_ProductionProcessMaterials_ProductionProcessId ON ProductionProcessMaterials (ProductionProcessId);
+    CREATE INDEX IX_ProductionProcessMaterials_WarehouseBatchId ON ProductionProcessMaterials (WarehouseBatchId);
+    CREATE INDEX IX_ProductionProcessMaterials_ProductionReferenceNumber ON ProductionProcessMaterials (ProductionReferenceNumber);
+    CREATE INDEX IX_ProductionProcessMaterials_BatchNumber ON ProductionProcessMaterials (BatchNumber);
+END
+
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'ProductionFinishedProducts')
+BEGIN
+    CREATE TABLE ProductionFinishedProducts (
+        Id INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        ProductionProcessId INT NOT NULL,
+        ProductionOrderId INT NULL,
+        ProductionOrderNumber NVARCHAR(100) NULL,
+        FinishedProductName NVARCHAR(255) NOT NULL,
+        ManufactureNumber NVARCHAR(100) NOT NULL,
+        ManufacturedQuantity DECIMAL(18,3) NOT NULL,
+        Unit NVARCHAR(50) NOT NULL DEFAULT N'طن',
+        ProductionDate DATETIME2 NOT NULL,
+        Notes NVARCHAR(MAX) NULL,
+        WeighbridgeAttachmentPath NVARCHAR(1000) NULL,
+        WeighbridgeFileName NVARCHAR(255) NULL,
+        WeighbridgeFileType NVARCHAR(100) NULL,
+        WeighbridgeFileSize BIGINT NOT NULL DEFAULT 0,
+        CreatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        CreatedBy NVARCHAR(255) NOT NULL DEFAULT N'',
+        CONSTRAINT FK_ProductionFinishedProducts_ProductionProcesses FOREIGN KEY (ProductionProcessId) REFERENCES ProductionProcesses(Id) ON DELETE CASCADE,
+        CONSTRAINT FK_ProductionFinishedProducts_ProductionOrders FOREIGN KEY (ProductionOrderId) REFERENCES ProductionOrders(Id)
+    );
+    CREATE INDEX IX_ProductionFinishedProducts_ProductionProcessId ON ProductionFinishedProducts (ProductionProcessId);
+    CREATE INDEX IX_ProductionFinishedProducts_ProductionOrderId ON ProductionFinishedProducts (ProductionOrderId);
+    CREATE INDEX IX_ProductionFinishedProducts_ManufactureNumber ON ProductionFinishedProducts (ManufactureNumber);
+END
+ELSE
+BEGIN
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionFinishedProducts') AND name = 'ProductionOrderId')
+    BEGIN
+        ALTER TABLE ProductionFinishedProducts ADD ProductionOrderId INT NULL;
+        ALTER TABLE ProductionFinishedProducts ADD CONSTRAINT FK_ProductionFinishedProducts_ProductionOrders FOREIGN KEY (ProductionOrderId) REFERENCES ProductionOrders(Id);
+    END
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionFinishedProducts') AND name = 'ProductionOrderNumber')
+        ALTER TABLE ProductionFinishedProducts ADD ProductionOrderNumber NVARCHAR(100) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionFinishedProducts') AND name = 'DestinationStorageLocationId')
+    BEGIN
+        ALTER TABLE ProductionFinishedProducts ADD DestinationStorageLocationId INT NULL CONSTRAINT FK_ProdFinished_StorageLocation REFERENCES StorageLocations(Id);
+        CREATE INDEX IX_ProductionFinishedProducts_DestinationStorageLocationId ON ProductionFinishedProducts(DestinationStorageLocationId);
+    END
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionFinishedProducts') AND name = 'DestinationStorageLocationName')
+        ALTER TABLE ProductionFinishedProducts ADD DestinationStorageLocationName NVARCHAR(255) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_ProductionFinishedProducts_ProductionOrderId' AND object_id = OBJECT_ID('ProductionFinishedProducts'))
+        CREATE INDEX IX_ProductionFinishedProducts_ProductionOrderId ON ProductionFinishedProducts (ProductionOrderId);
+END
+
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'ProductionAttachments')
+BEGIN
+    CREATE TABLE ProductionAttachments (
+        Id INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        ProductionProcessId INT NOT NULL,
+        FinishedProductId INT NULL,
+        AttachmentType NVARCHAR(100) NOT NULL,
+        FilePath NVARCHAR(1000) NOT NULL,
+        FileName NVARCHAR(255) NOT NULL,
+        FileType NVARCHAR(100) NOT NULL,
+        FileSize BIGINT NOT NULL DEFAULT 0,
+        UploadedBy NVARCHAR(255) NOT NULL DEFAULT N'',
+        UploadedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        CONSTRAINT FK_ProductionAttachments_ProductionProcesses FOREIGN KEY (ProductionProcessId) REFERENCES ProductionProcesses(Id) ON DELETE CASCADE,
+        CONSTRAINT FK_ProductionAttachments_ProductionFinishedProducts FOREIGN KEY (FinishedProductId) REFERENCES ProductionFinishedProducts(Id)
+    );
+    CREATE INDEX IX_ProductionAttachments_ProductionProcessId ON ProductionAttachments (ProductionProcessId);
+    CREATE INDEX IX_ProductionAttachments_FinishedProductId ON ProductionAttachments (FinishedProductId);
+END
+
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'ProductionWasteRecords')
+BEGIN
+    CREATE TABLE ProductionWasteRecords (
+        Id INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        ProductionProcessId INT NOT NULL,
+        TotalInputQuantity DECIMAL(18,3) NOT NULL,
+        TotalOutputQuantity DECIMAL(18,3) NOT NULL,
+        WasteQuantity DECIMAL(18,3) NOT NULL,
+        WastePercentage DECIMAL(18,2) NOT NULL,
+        Unit NVARCHAR(50) NOT NULL DEFAULT N'طن',
+        CalculatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        CalculatedBy NVARCHAR(255) NOT NULL DEFAULT N'',
+        CONSTRAINT FK_ProductionWasteRecords_ProductionProcesses FOREIGN KEY (ProductionProcessId) REFERENCES ProductionProcesses(Id) ON DELETE CASCADE
+    );
+    CREATE INDEX IX_ProductionWasteRecords_ProductionProcessId ON ProductionWasteRecords (ProductionProcessId);
+END
+
+IF NOT EXISTS (SELECT * FROM ProductionSequences WHERE SequenceType = 'LAB_PO')
+    INSERT INTO ProductionSequences (SequenceType, NextValue) VALUES ('LAB_PO', 1);
+
+IF EXISTS (SELECT * FROM sys.tables WHERE name = 'ProductionOrders')
+BEGIN
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionOrders') AND name = 'ProductDescription')
+        ALTER TABLE ProductionOrders ADD ProductDescription NVARCHAR(1000) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionOrders') AND name = 'LaboratoryManagerName')
+        ALTER TABLE ProductionOrders ADD LaboratoryManagerName NVARCHAR(255) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionOrders') AND name = 'LaboratoryManagerId')
+        ALTER TABLE ProductionOrders ADD LaboratoryManagerId UNIQUEIDENTIFIER NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionOrders') AND name = 'ProductionInstructions')
+        ALTER TABLE ProductionOrders ADD ProductionInstructions NVARCHAR(MAX) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionOrders') AND name = 'FormulaVersion')
+        ALTER TABLE ProductionOrders ADD FormulaVersion INT NOT NULL CONSTRAINT DF_ProdOrders_FormulaVer DEFAULT 1;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionOrders') AND name = 'TotalPlannedRawMaterialQuantity')
+        ALTER TABLE ProductionOrders ADD TotalPlannedRawMaterialQuantity DECIMAL(18,3) NOT NULL CONSTRAINT DF_ProdOrders_TotPlanned DEFAULT 0;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionOrders') AND name = 'TotalTransferredQuantity')
+        ALTER TABLE ProductionOrders ADD TotalTransferredQuantity DECIMAL(18,3) NOT NULL CONSTRAINT DF_ProdOrders_TotTrans DEFAULT 0;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionOrders') AND name = 'LinkedProductionProcessId')
+        ALTER TABLE ProductionOrders ADD LinkedProductionProcessId INT NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionOrders') AND name = 'LinkedProductionProcessNumber')
+        ALTER TABLE ProductionOrders ADD LinkedProductionProcessNumber NVARCHAR(100) NULL;
+END
+
+IF EXISTS (SELECT * FROM sys.tables WHERE name = 'ProductionOrderItems')
+BEGIN
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionOrderItems') AND name = 'MaterialType')
+        ALTER TABLE ProductionOrderItems ADD MaterialType NVARCHAR(100) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionOrderItems') AND name = 'WarehouseBatchId')
+        ALTER TABLE ProductionOrderItems ADD WarehouseBatchId INT NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionOrderItems') AND name = 'BatchNumber')
+        ALTER TABLE ProductionOrderItems ADD BatchNumber NVARCHAR(100) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionOrderItems') AND name = 'ProductionReferenceNumber')
+        ALTER TABLE ProductionOrderItems ADD ProductionReferenceNumber INT NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionOrderItems') AND name = 'SampleCode')
+        ALTER TABLE ProductionOrderItems ADD SampleCode NVARCHAR(100) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionOrderItems') AND name = 'StorageLocationName')
+        ALTER TABLE ProductionOrderItems ADD StorageLocationName NVARCHAR(255) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionOrderItems') AND name = 'AvailableQuantityBefore')
+        ALTER TABLE ProductionOrderItems ADD AvailableQuantityBefore DECIMAL(18,3) NOT NULL CONSTRAINT DF_ProdOrderItems_AvailBefore DEFAULT 0;
+END
+
+IF EXISTS (SELECT * FROM sys.tables WHERE name = 'ProductionProcesses')
+BEGIN
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionProcesses') AND name = 'ProductionOrderId')
+        ALTER TABLE ProductionProcesses ADD ProductionOrderId INT NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionProcesses') AND name = 'ProductionOrderNumber')
+        ALTER TABLE ProductionProcesses ADD ProductionOrderNumber NVARCHAR(100) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_ProductionProcesses_ProductionOrderId' AND object_id = OBJECT_ID('ProductionProcesses'))
+        CREATE INDEX IX_ProductionProcesses_ProductionOrderId ON ProductionProcesses (ProductionOrderId);
+END
+
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'ProductionOrderTransfers')
+BEGIN
+    CREATE TABLE ProductionOrderTransfers (
+        Id INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        ProductionOrderId INT NOT NULL,
+        ProductionOrderItemId INT NOT NULL,
+        WarehouseBatchId INT NOT NULL,
+        BatchNumber NVARCHAR(100) NOT NULL,
+        RawMaterialId INT NOT NULL,
+        MaterialName NVARCHAR(255) NOT NULL,
+        ProductionReferenceNumber INT NULL,
+        StorageOperationId INT NULL,
+        TransferTransactionNumber NVARCHAR(100) NULL,
+        TransferredQuantity DECIMAL(18,3) NOT NULL,
+        Unit NVARCHAR(50) NOT NULL DEFAULT N'طن',
+        StorageLocationId INT NOT NULL,
+        StorageLocationName NVARCHAR(255) NOT NULL,
+        ConfirmedBy NVARCHAR(255) NOT NULL,
+        ConfirmedByUserId UNIQUEIDENTIFIER NULL,
+        ConfirmedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        Notes NVARCHAR(1000) NULL,
+        CONSTRAINT FK_ProductionOrderTransfers_ProductionOrders FOREIGN KEY (ProductionOrderId) REFERENCES ProductionOrders(Id) ON DELETE CASCADE,
+        CONSTRAINT FK_ProductionOrderTransfers_ProductionOrderItems FOREIGN KEY (ProductionOrderItemId) REFERENCES ProductionOrderItems(Id),
+        CONSTRAINT FK_ProductionOrderTransfers_WarehouseBatches FOREIGN KEY (WarehouseBatchId) REFERENCES WarehouseBatches(Id),
+        CONSTRAINT FK_ProductionOrderTransfers_RawMaterials FOREIGN KEY (RawMaterialId) REFERENCES RawMaterials(Id),
+        CONSTRAINT FK_ProductionOrderTransfers_StorageLocations FOREIGN KEY (StorageLocationId) REFERENCES StorageLocations(Id)
+    );
+    CREATE INDEX IX_ProductionOrderTransfers_ProductionOrderId ON ProductionOrderTransfers(ProductionOrderId);
+    CREATE INDEX IX_ProductionOrderTransfers_WarehouseBatchId ON ProductionOrderTransfers(WarehouseBatchId);
+    CREATE INDEX IX_ProductionOrderTransfers_TransferTransactionNumber ON ProductionOrderTransfers(TransferTransactionNumber);
+END
+
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'ProductionOrderFormulaVersions')
+BEGIN
+    CREATE TABLE ProductionOrderFormulaVersions (
+        Id INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        ProductionOrderId INT NOT NULL,
+        VersionNumber INT NOT NULL DEFAULT 1,
+        ProductName NVARCHAR(255) NOT NULL,
+        ProductDescription NVARCHAR(1000) NULL,
+        TargetOutputQuantity DECIMAL(18,3) NOT NULL,
+        TotalInputQuantity DECIMAL(18,3) NOT NULL,
+        Unit NVARCHAR(50) NOT NULL DEFAULT N'طن',
+        FormulaJson NVARCHAR(MAX) NOT NULL,
+        CreatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        CreatedBy NVARCHAR(255) NOT NULL,
+        CONSTRAINT FK_ProductionOrderFormulaVersions_ProductionOrders FOREIGN KEY (ProductionOrderId) REFERENCES ProductionOrders(Id) ON DELETE CASCADE
+    );
+    CREATE INDEX IX_ProductionOrderFormulaVersions_ProductionOrderId ON ProductionOrderFormulaVersions(ProductionOrderId);
+END
 
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = '__EFMigrationsHistory')
 BEGIN
@@ -1129,6 +1887,31 @@ IF NOT EXISTS (SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId] = '2026
     INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion]) VALUES ('20261024105637_AddLaboratoryDepartment', '8.0.8');
 IF NOT EXISTS (SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId] = '20261025065700_AddProductionDepartment')
     INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion]) VALUES ('20261025065700_AddProductionDepartment', '8.0.8');
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'ProjectCodes')
+BEGIN
+    CREATE TABLE ProjectCodes (
+        Id INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        Code NVARCHAR(50) NOT NULL,
+        ProjectName NVARCHAR(200) NOT NULL,
+        ClientName NVARCHAR(200) NULL,
+        StorageClientDestinationId INT NULL CONSTRAINT FK_ProjectCodes_Destination REFERENCES StorageClientDestinations(Id) ON DELETE SET NULL,
+        Description NVARCHAR(500) NULL,
+        IsActive BIT NOT NULL CONSTRAINT DF_ProjectCodes_IsActive DEFAULT 1,
+        CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_ProjectCodes_CreatedAt DEFAULT GETUTCDATE()
+    );
+    CREATE UNIQUE INDEX IX_ProjectCodes_Code ON ProjectCodes(Code);
+END
+
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('Transportation') AND name = 'ProjectCodeId')
+BEGIN
+    ALTER TABLE Transportation ADD ProjectCodeId INT NULL CONSTRAINT FK_Transportation_ProjectCode REFERENCES ProjectCodes(Id) ON DELETE SET NULL;
+END
+
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('Transportation') AND name = 'ProjectCodeValue')
+BEGIN
+    ALTER TABLE Transportation ADD ProjectCodeValue NVARCHAR(50) NULL;
+END
+
 IF NOT EXISTS (SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId] = '20261026084230_UpdateLaboratoryDepartmentForm')
     INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion]) VALUES ('20261026084230_UpdateLaboratoryDepartmentForm', '8.0.8');
 ", cts.Token);
@@ -1137,6 +1920,53 @@ IF NOT EXISTS (SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId] = '2026
             catch (Exception ex)
             {
                 logger.LogInformation("Database schema synchronization notice: {Msg}", ex.Message);
+            }
+
+            // Seed initial ProjectCodes from StorageClientDestinations if empty
+            try
+            {
+                if (!await db.ProjectCodes.AnyAsync(cts.Token))
+                {
+                    var destinations = await db.StorageClientDestinations
+                        .Include(d => d.StorageClient)
+                        .ToListAsync(cts.Token);
+
+                    var defaultProjectCodes = new List<ProjectCode>
+                    {
+                        new() { Code = "PRJ-NAC-R3", ProjectName = "مشروع العاصمة الإدارية - الحي السكني R3", ClientName = "شركة المقاولون العرب" },
+                        new() { Code = "PRJ-MONO-E2", ProjectName = "مشروع مونوريل شرق النيل - قطاع 2", ClientName = "شركة المقاولون العرب" },
+                        new() { Code = "PRJ-ROD-FARG", ProjectName = "مشروع محور روض الفرج وكوبري تحيا مصر", ClientName = "شركة المقاولون العرب" },
+                        new() { Code = "PRJ-GEM-GIZA", ProjectName = "مشروع المتحف المصري الكبير", ClientName = "أوراسكوم للإنشاءات" },
+                        new() { Code = "PRJ-DABAA-NUC", ProjectName = "مشروع محطة الضبعة النووية", ClientName = "أوراسكوم للإنشاءات" },
+                        new() { Code = "PRJ-METRO-L4", ProjectName = "مشروع مترو الأنفاق الخط الرابع", ClientName = "أوراسكوم للإنشاءات" },
+                        new() { Code = "PRJ-ALAMEIN-TW", ProjectName = "مشروع أبراج مدينة العلمين الجديدة", ClientName = "حسن علام القابضة" },
+                        new() { Code = "PRJ-BASHTIL-ST", ProjectName = "مشروع محطة قطارات بشتيل الذكية", ClientName = "حسن علام القابضة" },
+                        new() { Code = "PRJ-MADINATY-S4", ProjectName = "مشروع مدينتي - قطاع البناء 4", ClientName = "مجموعة طلعت مصطفى" },
+                        new() { Code = "PRJ-NOOR-CAP", ProjectName = "مشروع مدينة نور كابيتال سيتي", ClientName = "مجموعة طلعت مصطفى" },
+                        new() { Code = "PRJ-BADYA-OCT", ProjectName = "مشروع بادية - 6 أكتوبر", ClientName = "شركة بالم هيلز للتعمير" },
+                        new() { Code = "PRJ-PALMHILLS-5TH", ProjectName = "مشروع كمبوند بالم هيلز التجمع الخامس", ClientName = "شركة بالم هيلز للتعمير" },
+                        new() { Code = "PRJ-RAMADAN-IND", ProjectName = "مجمع العاشر من رمضان الصناعي", ClientName = "السويدي إليكتريك" },
+                        new() { Code = "PRJ-BENBAN-SOLAR", ProjectName = "مشروع محطة بنبان للطاقة الشمسية", ClientName = "السويدي إليكتريك" },
+                    };
+
+                    foreach (var p in defaultProjectCodes)
+                    {
+                        var match = destinations.FirstOrDefault(d => d.DestinationName == p.ProjectName);
+                        if (match != null)
+                        {
+                            p.StorageClientDestinationId = match.Id;
+                            if (match.StorageClient != null) p.ClientName = match.StorageClient.Name;
+                        }
+                    }
+
+                    await db.ProjectCodes.AddRangeAsync(defaultProjectCodes, cts.Token);
+                    await db.SaveChangesAsync(cts.Token);
+                    logger.LogInformation("[Seed] Seeded {Count} ProjectCodes mapped to existing client destinations.", defaultProjectCodes.Count);
+                }
+            }
+            catch (Exception exPrj)
+            {
+                logger.LogWarning(exPrj, "[Seed] ProjectCodes seeding notice.");
             }
 
             if (!await db.Users.AnyAsync(cts.Token))
@@ -2850,10 +3680,216 @@ IF NOT EXISTS (SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId] = '2026
                     }
                 }, cts.Token);
             }
+
+            // Automatically reconcile and approve any existing pending requests across all departments
+            await AutoAcceptExistingPendingRequestsAsync(db, logger, cts.Token);
+
+            // Synchronize Suppliers from previous departments (Laboratory, Storage, Batches, POs)
+            await SynchronizeSuppliersAndPOsAsync(db, logger, cts.Token);
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "DbInitializer completed with notice.");
+        }
+    }
+
+    public static async Task SynchronizeSuppliersAndPOsAsync(FaceStoneDbContext db, ILogger logger, CancellationToken ct = default)
+    {
+        try
+        {
+            // 1. Fetch raw supplier names from Laboratory
+            var labSuppliers = await db.LaboratoryRawMaterialReports
+                .AsNoTracking()
+                .Where(r => !string.IsNullOrWhiteSpace(r.SupplierName))
+                .Select(r => new
+                {
+                    Name = r.SupplierName!.Trim(),
+                    Material = r.RawMaterialDescription,
+                    MaterialType = r.LaboratorySection,
+                    LabRef = r.SampleCode ?? (!string.IsNullOrWhiteSpace(r.RawMaterialDescription) ? $"LAB-REF-{r.ProductionReferenceNumber}" : null),
+                    Date = r.AnalysisDateTime
+                })
+                .ToListAsync(ct);
+
+            // 2. Fetch raw supplier names from StorageOperations (IMPORT)
+            var importSuppliers = await db.StorageOperations
+                .AsNoTracking()
+                .Where(s => s.OperationType == "IMPORT" && !string.IsNullOrWhiteSpace(s.Source) && !s.Source.Contains("إنتاج"))
+                .Select(s => new
+                {
+                    Name = s.Source!.Trim(),
+                    Phone = s.SourcePhone,
+                    Material = s.MaterialType,
+                    ImportNumber = $"#{s.TransactionNumber}",
+                    Date = s.TransactionDate
+                })
+                .ToListAsync(ct);
+
+            // 3. Fetch from WarehouseBatches
+            var batchSuppliers = await db.WarehouseBatches
+                .AsNoTracking()
+                .Where(b => !string.IsNullOrWhiteSpace(b.SupplierName))
+                .Select(b => new
+                {
+                    Name = b.SupplierName!.Trim(),
+                    Material = b.MaterialName,
+                    MaterialType = b.MaterialClassification,
+                    LabRef = b.SampleCode
+                })
+                .ToListAsync(ct);
+
+            // 4. Fetch from PurchaseOrders
+            var poSuppliers = await db.PurchaseOrders
+                .AsNoTracking()
+                .Where(p => !string.IsNullOrWhiteSpace(p.Supplier))
+                .Select(p => new
+                {
+                    Name = p.Supplier.Trim(),
+                    Material = p.MaterialName,
+                    Date = p.OrderDate
+                })
+                .ToListAsync(ct);
+
+            // Collect all existing suppliers in db
+            var existingSuppliers = await db.Suppliers.ToListAsync(ct);
+            var supplierMap = existingSuppliers.ToDictionary(s => s.Name.Trim().ToLowerInvariant(), s => s);
+
+            // Determine next sequence for SupplierCode
+            int nextSeq = 1;
+            if (existingSuppliers.Any())
+            {
+                var codes = existingSuppliers
+                    .Select(s => s.SupplierCode)
+                    .Where(c => c.StartsWith("SUP-"))
+                    .Select(c => int.TryParse(c.Replace("SUP-", ""), out var v) ? v : 0)
+                    .ToList();
+                if (codes.Any()) nextSeq = codes.Max() + 1;
+            }
+
+            // Aggregate unique supplier names
+            var allNames = labSuppliers.Select(x => x.Name)
+                .Concat(importSuppliers.Select(x => x.Name))
+                .Concat(batchSuppliers.Select(x => x.Name))
+                .Concat(poSuppliers.Select(x => x.Name))
+                .Where(n => !string.IsNullOrWhiteSpace(n))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            bool hasNew = false;
+            foreach (var name in allNames)
+            {
+                var key = name.Trim().ToLowerInvariant();
+                if (!supplierMap.TryGetValue(key, out var supplier))
+                {
+                    var labMatch = labSuppliers.FirstOrDefault(x => x.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+                    var impMatch = importSuppliers.FirstOrDefault(x => x.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+                    var batchMatch = batchSuppliers.FirstOrDefault(x => x.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+                    var poMatch = poSuppliers.FirstOrDefault(x => x.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+
+                    string sourceDept = "FINANCE";
+                    if (labMatch != null && impMatch != null) sourceDept = "LABORATORY & WAREHOUSE";
+                    else if (labMatch != null) sourceDept = "LABORATORY";
+                    else if (impMatch != null) sourceDept = "WAREHOUSE_IMPORT";
+
+                    var newSup = new Supplier
+                    {
+                        SupplierCode = $"SUP-{nextSeq:D4}",
+                        Name = name.Trim(),
+                        PhoneNumber = impMatch?.Phone,
+                        PrimaryMaterialName = labMatch?.Material ?? batchMatch?.Material ?? poMatch?.Material ?? impMatch?.Material ?? "مواد خرسانية / ركام",
+                        PrimaryMaterialType = labMatch?.MaterialType ?? batchMatch?.MaterialType ?? "MECHANICAL",
+                        SourceDepartment = sourceDept,
+                        RelatedLaboratoryReferenceNumber = labMatch?.LabRef ?? batchMatch?.LabRef,
+                        RelatedWarehouseImportNumber = impMatch?.ImportNumber,
+                        RegistrationDate = labMatch?.Date ?? impMatch?.Date ?? poMatch?.Date ?? DateTime.UtcNow,
+                        TotalAmountOwed = 0m,
+                        TotalAmountPaid = 0m,
+                        RemainingBalance = 0m,
+                        IsActive = true,
+                        CreatedBy = "System Discovery Initializer",
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow
+                    };
+
+                    nextSeq++;
+                    db.Suppliers.Add(newSup);
+                    supplierMap[key] = newSup;
+                    hasNew = true;
+                }
+                else
+                {
+                    // Enrich existing record if info missing
+                    var impMatch = importSuppliers.FirstOrDefault(x => x.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+                    var labMatch = labSuppliers.FirstOrDefault(x => x.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+                    if (string.IsNullOrWhiteSpace(supplier.PhoneNumber) && impMatch?.Phone != null)
+                    {
+                        supplier.PhoneNumber = impMatch.Phone;
+                    }
+                    if (string.IsNullOrWhiteSpace(supplier.RelatedLaboratoryReferenceNumber) && labMatch?.LabRef != null)
+                    {
+                        supplier.RelatedLaboratoryReferenceNumber = labMatch.LabRef;
+                    }
+                    if (string.IsNullOrWhiteSpace(supplier.RelatedWarehouseImportNumber) && impMatch?.ImportNumber != null)
+                    {
+                        supplier.RelatedWarehouseImportNumber = impMatch.ImportNumber;
+                    }
+                }
+            }
+
+            if (hasNew)
+            {
+                await db.SaveChangesAsync(ct);
+                logger.LogInformation("[Suppliers Discovery] Discovered and synchronized {Count} unique suppliers from previous departments.", allNames.Count);
+            }
+
+            // Link Purchase Orders to Suppliers and calculate accurate DeliveredQuantity from Invoices
+            var posToLink = await db.PurchaseOrders.ToListAsync(ct);
+            bool poChanged = false;
+
+            // Fetch finalized invoice quantities by PO
+            var issuedInvoices = await db.Invoices
+                .AsNoTracking()
+                .Where(i => i.Status == "ISSUED" && i.PurchaseOrderId != null)
+                .Select(i => new {
+                    PoId = i.PurchaseOrderId!.Value,
+                    InvoicedQty = i.InvoicedQuantity ?? (i.Items.Any() ? i.Items.Sum(it => it.Quantity) : 0m)
+                })
+                .ToListAsync(ct);
+
+            var activeInvoices = issuedInvoices
+                .GroupBy(x => x.PoId)
+                .ToDictionary(g => g.Key, g => g.Sum(x => x.InvoicedQty));
+
+            foreach (var po in posToLink)
+            {
+                var key = po.Supplier.Trim().ToLowerInvariant();
+                if (supplierMap.TryGetValue(key, out var sup))
+                {
+                    if (po.SupplierId != sup.Id)
+                    {
+                        po.SupplierId = sup.Id;
+                        poChanged = true;
+                    }
+                }
+
+                var delivered = activeInvoices.TryGetValue(po.Id, out var invQty) ? invQty : 0m;
+                if (po.DeliveredQuantity != delivered)
+                {
+                    po.DeliveredQuantity = delivered;
+                    po.RemainingQuantity = Math.Max(0m, po.Quantity - delivered);
+                    poChanged = true;
+                }
+            }
+
+            if (poChanged)
+            {
+                await db.SaveChangesAsync(ct);
+                logger.LogInformation("[PO Sync] Updated Purchase Orders with Supplier links and accurate Delivered/Remaining quantities from Invoices.");
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error synchronizing suppliers and purchase orders.");
         }
     }
 
@@ -3368,5 +4404,260 @@ IF NOT EXISTS (SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId] = '2026
 
         await db.SaveChangesAsync();
         return result;
+    }
+
+    /// <summary>
+    /// Reconciles and auto-approves all pending requests across all departments on system startup.
+    /// Deducts remaining quantities on purchase orders for transportation requests,
+    /// posts storage inventory ledgers, activates warehouse batches, and records audit history.
+    /// </summary>
+    public static async Task AutoAcceptExistingPendingRequestsAsync(FaceStoneDbContext db, ILogger logger, CancellationToken ct = default)
+    {
+        try
+        {
+            logger.LogInformation("[AutoAccept] Checking for existing PENDING records to auto-approve...");
+            var now = DateTime.UtcNow;
+            const string reviewer = "System (Auto-Approved)";
+
+            // 1. Transportation
+            var pendingTrans = await db.Transportations.Where(t => t.ApprovalStatus == "PENDING").ToListAsync(ct);
+            if (pendingTrans.Any())
+            {
+                logger.LogInformation("[AutoAccept] Auto-approving {Count} pending Transportation records.", pendingTrans.Count);
+                foreach (var t in pendingTrans)
+                {
+                    t.ApprovalStatus = "APPROVED";
+                    t.TransactionStatus = "Completed";
+                    t.ReviewedBy = reviewer;
+                    t.ReviewedAt = now;
+                    t.RejectionReason = null;
+
+                    if (!string.IsNullOrWhiteSpace(t.PONumber))
+                    {
+                        var po = await db.PurchaseOrders.FirstOrDefaultAsync(p => p.PONumber == t.PONumber, ct);
+                        if (po != null && po.RemainingQuantity > 0)
+                        {
+                            po.RemainingQuantity = Math.Max(0m, po.RemainingQuantity - t.NetWeight);
+                            po.UpdatedAt = now;
+                        }
+                    }
+
+                    await db.FormApprovalHistories.AddAsync(new FormApprovalHistory
+                    {
+                        FormType = "Transportation",
+                        FormId = t.Id,
+                        PONumber = t.PONumber,
+                        TransactionOrMovementNumber = $"#{t.TransactionNumber}",
+                        PreviousStatus = "PENDING",
+                        NewStatus = "APPROVED",
+                        Action = "APPROVED",
+                        ActorName = reviewer,
+                        ActorRole = "System",
+                        Comment = "تم اعتماد حركة النقل تلقائياً بواسطة النظام ومطابقة الرصيد المتبقي لأمر الشراء.",
+                        Timestamp = now
+                    }, ct);
+                }
+                await db.SaveChangesAsync(ct);
+            }
+
+            // 2. Storage Operations
+            var pendingOps = await db.StorageOperations.Include(o => o.Items).Where(o => o.ApprovalStatus == "PENDING").ToListAsync(ct);
+            if (pendingOps.Any())
+            {
+                logger.LogInformation("[AutoAccept] Auto-approving {Count} pending Storage Operations.", pendingOps.Count);
+                foreach (var op in pendingOps)
+                {
+                    op.ApprovalStatus = "APPROVED";
+                    op.ReviewedBy = reviewer;
+                    op.ReviewedAt = now;
+                    op.RejectionReason = null;
+
+                    if (op.OperationType.ToUpperInvariant() == "IMPORT")
+                    {
+                        var batches = await db.WarehouseBatches.Where(b => b.StorageOperationId == op.Id).ToListAsync(ct);
+                        foreach (var b in batches)
+                        {
+                            b.Status = "APPROVED";
+                            b.CurrentQuantity = b.InitialQuantity;
+                            b.IsActive = true;
+                        }
+
+                        if (!op.IsInventoryPosted)
+                        {
+                            foreach (var item in op.Items)
+                            {
+                                var currentStock = await db.StorageInventoryLedger
+                                    .Where(l => l.StorageLocationId == op.StorageLocationId && l.RawMaterialId == item.RawMaterialId)
+                                    .SumAsync(l => (decimal?)l.Quantity, ct) ?? 0m;
+
+                                var newStock = currentStock + item.Quantity;
+                                await db.StorageInventoryLedger.AddAsync(new StorageInventoryLedger
+                                {
+                                    StorageLocationId = op.StorageLocationId,
+                                    RawMaterialId = item.RawMaterialId,
+                                    StorageOperationId = op.Id,
+                                    StorageOperationItemId = item.Id,
+                                    WarehouseBatchId = item.WarehouseBatchId,
+                                    BatchNumber = item.BatchNumber,
+                                    MovementType = "IMPORT",
+                                    Quantity = item.Quantity,
+                                    RunningBalance = newStock,
+                                    MovementDate = op.TransactionDate,
+                                    CreatedAt = now,
+                                    CreatedBy = reviewer
+                                }, ct);
+                            }
+                            op.IsInventoryPosted = true;
+                            op.InventoryPostedAt = now;
+                        }
+                    }
+
+                    await db.FormApprovalHistories.AddAsync(new FormApprovalHistory
+                    {
+                        FormType = "Storage",
+                        FormId = op.Id,
+                        PONumber = null,
+                        TransactionOrMovementNumber = $"#{op.TransactionNumber}",
+                        PreviousStatus = "PENDING",
+                        NewStatus = "APPROVED",
+                        Action = "APPROVED",
+                        ActorName = reviewer,
+                        ActorRole = "System",
+                        Comment = "تم اعتماد إذن المستودع تلقائياً بواسطة النظام وترحيل حركة المخزون.",
+                        Timestamp = now
+                    }, ct);
+                }
+                await db.SaveChangesAsync(ct);
+            }
+
+            // 3. Storage Transactions (legacy)
+            var pendingLegacyTx = await db.StorageTransactions.Where(s => s.ApprovalStatus == "PENDING").ToListAsync(ct);
+            if (pendingLegacyTx.Any())
+            {
+                logger.LogInformation("[AutoAccept] Auto-approving {Count} legacy StorageTransactions.", pendingLegacyTx.Count);
+                foreach (var tx in pendingLegacyTx)
+                {
+                    tx.ApprovalStatus = "APPROVED";
+                    tx.ReviewedBy = reviewer;
+                    tx.ReviewedAt = now;
+                    tx.RejectionReason = null;
+                }
+                await db.SaveChangesAsync(ct);
+            }
+
+            // 4. Attendance Submissions
+            var pendingAttSubs = await db.AttendanceSubmissions.Include(s => s.Records).Where(s => s.ApprovalStatus == "PENDING").ToListAsync(ct);
+            if (pendingAttSubs.Any())
+            {
+                logger.LogInformation("[AutoAccept] Auto-approving {Count} pending AttendanceSubmissions.", pendingAttSubs.Count);
+                foreach (var sub in pendingAttSubs)
+                {
+                    sub.ApprovalStatus = "APPROVED";
+                    sub.ReviewedBy = reviewer;
+                    sub.ReviewedAt = now;
+                    sub.RejectionReason = null;
+
+                    foreach (var rec in sub.Records)
+                    {
+                        rec.ApprovalStatus = "APPROVED";
+                        rec.ReviewedBy = reviewer;
+                        rec.ReviewedAt = now;
+                    }
+
+                    await db.FormApprovalHistories.AddAsync(new FormApprovalHistory
+                    {
+                        FormType = "Attendance",
+                        FormId = sub.Id,
+                        TransactionOrMovementNumber = $"ATT-{sub.Id:D4}",
+                        PreviousStatus = "PENDING",
+                        NewStatus = "APPROVED",
+                        Action = "APPROVED",
+                        ActorName = reviewer,
+                        ActorRole = "System",
+                        Comment = "تم اعتماد كشف الحضور والانصراف تلقائياً بواسطة النظام.",
+                        Timestamp = now
+                    }, ct);
+                }
+                await db.SaveChangesAsync(ct);
+            }
+
+            // 4.1 Standalone Attendance Records
+            var standalonePendingRecs = await db.AttendanceRecords.Where(r => r.ApprovalStatus == "PENDING").ToListAsync(ct);
+            if (standalonePendingRecs.Any())
+            {
+                logger.LogInformation("[AutoAccept] Auto-approving {Count} standalone Attendance Records.", standalonePendingRecs.Count);
+                foreach (var rec in standalonePendingRecs)
+                {
+                    rec.ApprovalStatus = "APPROVED";
+                    rec.ReviewedBy = reviewer;
+                    rec.ReviewedAt = now;
+                }
+                await db.SaveChangesAsync(ct);
+            }
+
+            // 5. Laboratory Raw Material Reports
+            var pendingLabReports = await db.LaboratoryRawMaterialReports.Where(r => r.ApprovalStatus == "PENDING").ToListAsync(ct);
+            if (pendingLabReports.Any())
+            {
+                logger.LogInformation("[AutoAccept] Auto-approving {Count} pending Laboratory Raw Material Reports.", pendingLabReports.Count);
+                foreach (var r in pendingLabReports)
+                {
+                    r.ApprovalStatus = "APPROVED";
+                    r.ReviewedBy = reviewer;
+                    r.ReviewedAt = now;
+
+                    await db.FormApprovalHistories.AddAsync(new FormApprovalHistory
+                    {
+                        FormType = "LaboratoryRawMaterial",
+                        FormId = r.Id,
+                        PONumber = r.PONumber ?? string.Empty,
+                        TransactionOrMovementNumber = $"SAMPLE-#{r.SampleCode}",
+                        PreviousStatus = "PENDING",
+                        NewStatus = "APPROVED",
+                        Action = "APPROVED",
+                        ActorName = reviewer,
+                        ActorRole = "System",
+                        Comment = "تم اعتماد تقرير فحص العينة تلقائياً بواسطة النظام وإتاحتها للاستلام المخزني.",
+                        Timestamp = now
+                    }, ct);
+                }
+                await db.SaveChangesAsync(ct);
+            }
+
+            // 6. Laboratory Final Conformity Certificates
+            var pendingLabCerts = await db.LaboratoryFinalConformityCertificates.Where(c => c.ApprovalStatus == "PENDING").ToListAsync(ct);
+            if (pendingLabCerts.Any())
+            {
+                logger.LogInformation("[AutoAccept] Auto-approving {Count} pending Laboratory Final Conformity Certificates.", pendingLabCerts.Count);
+                foreach (var c in pendingLabCerts)
+                {
+                    c.ApprovalStatus = "APPROVED";
+                    c.ReviewedBy = reviewer;
+                    c.ReviewedAt = now;
+
+                    await db.FormApprovalHistories.AddAsync(new FormApprovalHistory
+                    {
+                        FormType = "LaboratoryFinalProduct",
+                        FormId = c.Id,
+                        PONumber = string.Empty,
+                        TransactionOrMovementNumber = $"CERT-#{c.CertificateNumber}",
+                        PreviousStatus = "PENDING",
+                        NewStatus = "APPROVED",
+                        Action = "APPROVED",
+                        ActorName = reviewer,
+                        ActorRole = "System",
+                        Comment = "تم اعتماد شهادة المطابقة النهائية تلقائياً بواسطة النظام.",
+                        Timestamp = now
+                    }, ct);
+                }
+                await db.SaveChangesAsync(ct);
+            }
+
+            logger.LogInformation("[AutoAccept] Auto-approval of existing pending requests completed successfully.");
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "[AutoAccept] Error during automatic approval reconciliation.");
+        }
     }
 }

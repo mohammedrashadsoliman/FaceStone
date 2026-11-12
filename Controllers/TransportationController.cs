@@ -105,6 +105,21 @@ public class TransportationController : ControllerBase
             .OrderBy(d => d)
             .ToListAsync();
 
+        var projectCodes = await _db.ProjectCodes
+            .AsNoTracking()
+            .Where(p => p.IsActive)
+            .OrderBy(p => p.Code)
+            .Select(p => new ProjectCodeDto
+            {
+                Id = p.Id,
+                Code = p.Code,
+                ProjectName = p.ProjectName,
+                ClientName = p.ClientName,
+                Description = p.Description,
+                IsActive = p.IsActive
+            })
+            .ToListAsync();
+
         var maxTx = await _db.Transportations.MaxAsync(t => (int?)t.TransactionNumber) ?? 1000;
         var nextTxNum = maxTx + 1;
 
@@ -121,10 +136,132 @@ public class TransportationController : ControllerBase
             NextTransactionNumber = nextTxNum,
             NextInternalWeighbridgeCode = string.Empty, // Manual entry strictly required
             NextExternalWeighbridgeCode = string.Empty, // Manual entry strictly required
-            FixedSource = FixedSource
+            FixedSource = FixedSource,
+            ProjectCodes = projectCodes
         };
 
         return Ok(ApiResponse<TransportationConfigDto>.Ok(config));
+    }
+
+    /// <summary>
+    /// Retrieve list of all available active Project Codes (كود المشروع).
+    /// </summary>
+    [HttpGet("project-codes")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(ApiResponse<List<ProjectCodeDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetProjectCodes()
+    {
+        var projectCodes = await _db.ProjectCodes
+            .AsNoTracking()
+            .Where(p => p.IsActive)
+            .OrderBy(p => p.Code)
+            .Select(p => new ProjectCodeDto
+            {
+                Id = p.Id,
+                Code = p.Code,
+                ProjectName = p.ProjectName,
+                ClientName = p.ClientName,
+                Description = p.Description,
+                IsActive = p.IsActive
+            })
+            .ToListAsync();
+
+        return Ok(ApiResponse<List<ProjectCodeDto>>.Ok(projectCodes));
+    }
+
+    /// <summary>
+    /// Create new Project Code (Admin / Authorized personnel).
+    /// </summary>
+    [HttpPost("project-codes")]
+    [Authorize]
+    [ProducesResponseType(typeof(ApiResponse<ProjectCodeDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> CreateProjectCode([FromBody] CreateProjectCodeDto dto)
+    {
+        if (!ModelState.IsValid)
+        {
+            return BadRequest(ApiResponse.Fail("بيانات كود المشروع غير مكتملة."));
+        }
+
+        var trimmedCode = dto.Code.Trim().ToUpperInvariant();
+        if (await _db.ProjectCodes.AnyAsync(p => p.Code == trimmedCode))
+        {
+            return BadRequest(ApiResponse.Fail($"كود المشروع '{trimmedCode}' مسجل مسبقاً."));
+        }
+
+        var entity = new ProjectCode
+        {
+            Code = trimmedCode,
+            ProjectName = dto.ProjectName.Trim(),
+            ClientName = dto.ClientName?.Trim(),
+            Description = dto.Description?.Trim(),
+            StorageClientDestinationId = dto.StorageClientDestinationId,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _db.ProjectCodes.Add(entity);
+        await _db.SaveChangesAsync();
+
+        return Ok(ApiResponse<ProjectCodeDto>.Ok(new ProjectCodeDto
+        {
+            Id = entity.Id,
+            Code = entity.Code,
+            ProjectName = entity.ProjectName,
+            ClientName = entity.ClientName,
+            Description = entity.Description,
+            IsActive = entity.IsActive
+        }, "تم إضافة كود المشروع بنجاح."));
+    }
+
+    /// <summary>
+    /// Update existing Project Code.
+    /// </summary>
+    [HttpPut("project-codes/{id:int}")]
+    [Authorize]
+    public async Task<IActionResult> UpdateProjectCode(int id, [FromBody] CreateProjectCodeDto dto)
+    {
+        var prj = await _db.ProjectCodes.FindAsync(id);
+        if (prj == null) return NotFound(ApiResponse.Fail("كود المشروع غير موجود."));
+
+        var trimmedCode = dto.Code.Trim().ToUpperInvariant();
+        if (await _db.ProjectCodes.AnyAsync(p => p.Code == trimmedCode && p.Id != id))
+        {
+            return BadRequest(ApiResponse.Fail($"كود المشروع '{trimmedCode}' مسجل لمشروع آخر."));
+        }
+
+        prj.Code = trimmedCode;
+        prj.ProjectName = dto.ProjectName.Trim();
+        prj.ClientName = dto.ClientName?.Trim();
+        prj.Description = dto.Description?.Trim();
+        if (dto.StorageClientDestinationId.HasValue) prj.StorageClientDestinationId = dto.StorageClientDestinationId.Value;
+
+        await _db.SaveChangesAsync();
+        return Ok(ApiResponse<ProjectCodeDto>.Ok(new ProjectCodeDto
+        {
+            Id = prj.Id,
+            Code = prj.Code,
+            ProjectName = prj.ProjectName,
+            ClientName = prj.ClientName,
+            Description = prj.Description,
+            IsActive = prj.IsActive
+        }, "تم تحديث كود المشروع بنجاح."));
+    }
+
+    /// <summary>
+    /// Toggle active status of a Project Code.
+    /// </summary>
+    [HttpDelete("project-codes/{id:int}")]
+    [Authorize]
+    public async Task<IActionResult> ToggleProjectCode(int id)
+    {
+        var prj = await _db.ProjectCodes.FindAsync(id);
+        if (prj == null) return NotFound(ApiResponse.Fail("كود المشروع غير موجود."));
+
+        prj.IsActive = !prj.IsActive;
+        await _db.SaveChangesAsync();
+
+        return Ok(ApiResponse.Ok($"تم {(prj.IsActive ? "تفعيل" : "تعطيل")} كود المشروع '{prj.Code}' بنجاح."));
     }
 
     /// <summary>
@@ -150,8 +287,78 @@ public class TransportationController : ControllerBase
 
         if (po == null)
         {
-            _logger.LogWarning("PO lookup failed for Transportation: '{PONumber}' not found.", trimmed);
-            return NotFound(ApiResponse.Fail("Purchase Order not found."));
+            // Fallback: Check if poNumber is actually a Warehouse Export Number (e.g. #1, 1, EXP-1, EXP-2026-0001)
+            var cleanExp = trimmed.TrimStart('#').Trim();
+            int? expId = int.TryParse(cleanExp, out var pExp) ? pExp : null;
+            if (!expId.HasValue && (cleanExp.StartsWith("EXP-", StringComparison.OrdinalIgnoreCase) || cleanExp.StartsWith("EXP_", StringComparison.OrdinalIgnoreCase)))
+            {
+                var numPart = cleanExp[4..];
+                if (int.TryParse(numPart, out var pExp2)) expId = pExp2;
+            }
+
+            StorageOperation? exportOp = null;
+            if (expId.HasValue)
+            {
+                exportOp = await _db.StorageOperations
+                    .AsNoTracking()
+                    .Include(o => o.Items)
+                    .Include(o => o.Client)
+                    .Include(o => o.Destination)
+                    .Include(o => o.ProductionOrder)
+                    .FirstOrDefaultAsync(o => o.OperationType == "EXPORT" && o.ApprovalStatus == "APPROVED" && o.TransactionNumber == expId.Value);
+            }
+
+            if (exportOp == null)
+            {
+                exportOp = await _db.StorageOperations
+                    .AsNoTracking()
+                    .Include(o => o.Items)
+                    .Include(o => o.Client)
+                    .Include(o => o.Destination)
+                    .Include(o => o.ProductionOrder)
+                    .FirstOrDefaultAsync(o => o.OperationType == "EXPORT" && o.ApprovalStatus == "APPROVED" &&
+                        ((expId.HasValue && o.Id == expId.Value) ||
+                         o.TransactionNumber.ToString() == cleanExp ||
+                         (o.ProductionOrder != null && o.ProductionOrder.OrderNumber.ToLower() == trimmed.ToLower()) ||
+                         (o.ManufactureNumber != null && o.ManufactureNumber.ToLower() == trimmed.ToLower()) ||
+                         (o.SampleCode != null && o.SampleCode.ToLower() == trimmed.ToLower())));
+            }
+
+            if (exportOp != null)
+            {
+                var totalQty = exportOp.Items.Sum(i => i.Quantity);
+                var transported = await _db.Transportations
+                    .AsNoTracking()
+                    .Where(t => t.StorageOperationId == exportOp.Id)
+                    .SumAsync(t => (decimal?)t.NetWeight) ?? 0m;
+                var remaining = Math.Max(0m, totalQty - transported);
+
+                var maxTxForExport = await _db.Transportations
+                    .Where(t => t.StorageOperationId == exportOp.Id)
+                    .MaxAsync(t => (int?)t.TransactionNumber) ?? 0;
+
+                var expDto = new PoLookupDto
+                {
+                    Id = exportOp.Id,
+                    PoNumber = $"#{exportOp.TransactionNumber}",
+                    Destination = exportOp.DestinationName ?? exportOp.Destination?.DestinationName ?? "Cairo Factory",
+                    Supplier = exportOp.ClientName ?? exportOp.Client?.Name ?? "عميل فيس ستون",
+                    CompanyName = exportOp.ClientName ?? exportOp.Client?.Name ?? "عميل فيس ستون",
+                    TotalQuantity = totalQty,
+                    RemainingQuantity = remaining,
+                    PricePerTon = 0m,
+                    TotalValue = 0m,
+                    OrderDate = exportOp.TransactionDate,
+                    InvoiceNumber = exportOp.ManufactureNumber ?? $"EXP-#{exportOp.TransactionNumber}",
+                    Notes = $"إذن صرف مستودع معتمد #{exportOp.TransactionNumber} - {(exportOp.ExportType == "FINISHED_PRODUCT" ? "منتج نهائي" : "مواد خام")}",
+                    NextTransactionNumber = maxTxForExport + 1
+                };
+
+                return Ok(ApiResponse<PoLookupDto>.Ok(expDto));
+            }
+
+            _logger.LogWarning("PO / Export lookup failed for Transportation: '{PONumber}' not found.", trimmed);
+            return NotFound(ApiResponse.Fail("أمر الشراء أو إذن الصرف غير مسجل في قاعدة البيانات."));
         }
 
         if (po.RemainingQuantity <= 0)
@@ -185,8 +392,266 @@ public class TransportationController : ControllerBase
     }
 
     /// <summary>
-    /// Check if a Transaction Number already exists for a PO or globally.
+    /// Retrieve completed/approved Warehouse Exports eligible for transportation with remaining unallocated balance.
+    /// Accurately aggregates SQL Server allocations per export header and per export line item.
     /// </summary>
+    [HttpGet("eligible-exports")]
+    [ProducesResponseType(typeof(ApiResponse<List<EligibleTransportationExportDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetEligibleExports([FromQuery] string? search = null)
+    {
+        var exports = await _db.StorageOperations
+            .AsNoTracking()
+            .Include(o => o.Items)
+            .Include(o => o.StorageLocation)
+            .Include(o => o.Client)
+            .Include(o => o.Destination)
+            .Include(o => o.ProductionOrder)
+            .Include(o => o.ProductionProcess)
+            .Where(o => o.OperationType == "EXPORT" && o.ApprovalStatus == "APPROVED")
+            .OrderByDescending(o => o.TransactionDate)
+            .ThenByDescending(o => o.Id)
+            .ToListAsync();
+
+        var opIds = exports.Select(e => e.Id).ToList();
+        var activeTransportations = await _db.Transportations
+            .AsNoTracking()
+            .Where(t => t.StorageOperationId.HasValue && opIds.Contains(t.StorageOperationId.Value) && t.ApprovalStatus != "REJECTED")
+            .Select(t => new
+            {
+                OpId = t.StorageOperationId!.Value,
+                ItemId = t.StorageOperationItemId,
+                t.NetWeight
+            })
+            .ToListAsync();
+
+        var result = new List<EligibleTransportationExportDto>();
+        foreach (var exp in exports)
+        {
+            var expTrans = activeTransportations.Where(t => t.OpId == exp.Id).ToList();
+            var totalExportQty = exp.Items.Sum(i => i.Quantity);
+            var transported = expTrans.Sum(t => t.NetWeight);
+            var remaining = Math.Max(0m, totalExportQty - transported);
+
+            // Calculate line items with their individual exported, allocated, and remaining quantities
+            var itemDtos = new List<EligibleTransportationExportItemDto>();
+            foreach (var i in exp.Items)
+            {
+                var itemAllocated = expTrans
+                    .Where(t => t.ItemId == i.Id || (t.ItemId == null && exp.Items.Count == 1))
+                    .Sum(t => t.NetWeight);
+                var itemRemaining = Math.Max(0m, i.Quantity - itemAllocated);
+
+                itemDtos.Add(new EligibleTransportationExportItemDto
+                {
+                    Id = i.Id,
+                    RawMaterialId = i.RawMaterialId,
+                    MaterialName = i.MaterialName,
+                    Quantity = i.Quantity,
+                    PreviouslyAllocatedQuantity = itemAllocated,
+                    RemainingQuantity = itemRemaining,
+                    WarehouseBatchId = i.WarehouseBatchId,
+                    BatchNumber = i.BatchNumber,
+                    SampleCode = i.SampleCode ?? exp.SampleCode,
+                    ProductionReferenceNumber = i.ProductionReferenceNumber ?? exp.ProductionReferenceNumber,
+                    ProductionOrderId = i.ProductionOrderId ?? exp.ProductionOrderId,
+                    ProductionProcessId = i.ProductionProcessId ?? exp.ProductionProcessId,
+                    ManufactureNumber = i.ManufactureNumber ?? exp.ManufactureNumber
+                });
+            }
+
+            // Filter out fully transported shipments if remaining is 0 and all items have remaining <= 0
+            if (remaining <= 0 && itemDtos.All(i => i.RemainingQuantity <= 0)) continue;
+
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var s = search.Trim().ToLowerInvariant();
+                var matches = exp.TransactionNumber.ToString().Contains(s) ||
+                              (exp.ClientName != null && exp.ClientName.ToLower().Contains(s)) ||
+                              (exp.DestinationName != null && exp.DestinationName.ToLower().Contains(s)) ||
+                              (exp.ManufactureNumber != null && exp.ManufactureNumber.ToLower().Contains(s)) ||
+                              (exp.SampleCode != null && exp.SampleCode.ToLower().Contains(s)) ||
+                              (exp.ProductionOrder?.OrderNumber != null && exp.ProductionOrder.OrderNumber.ToLower().Contains(s)) ||
+                              exp.Items.Any(i => i.MaterialName.ToLower().Contains(s) || 
+                                                 (i.BatchNumber != null && i.BatchNumber.ToLower().Contains(s)) ||
+                                                 (i.SampleCode != null && i.SampleCode.ToLower().Contains(s)));
+                if (!matches) continue;
+            }
+
+            result.Add(new EligibleTransportationExportDto
+            {
+                StorageOperationId = exp.Id,
+                ExportTransactionNumber = $"#{exp.TransactionNumber}",
+                TransactionNumber = exp.TransactionNumber,
+                ExportType = exp.ExportType ?? "RAW_MATERIAL",
+                TransactionDate = exp.TransactionDate,
+                StorageLocationId = exp.StorageLocationId,
+                StorageLocationName = exp.StorageLocationName,
+                ClientName = exp.ClientName ?? exp.Client?.Name ?? "عميل",
+                DestinationName = exp.DestinationName ?? exp.Destination?.DestinationName ?? "-",
+                TotalExportQuantity = totalExportQty,
+                TransportedQuantity = transported,
+                RemainingQuantity = remaining,
+                Unit = "طن",
+                ProductionOrderId = exp.ProductionOrderId,
+                ProductionOrderNumber = exp.ProductionOrder?.OrderNumber,
+                ProductionProcessId = exp.ProductionProcessId,
+                ProcessNumber = exp.ProductionProcess?.ProcessNumber,
+                ManufactureNumber = exp.ManufactureNumber ?? exp.Items.FirstOrDefault()?.ManufactureNumber,
+                WeighbridgeAttachmentPath = exp.WeighbridgeAttachmentPath,
+                Items = itemDtos
+            });
+        }
+
+        return Ok(ApiResponse<List<EligibleTransportationExportDto>>.Ok(result));
+    }
+
+    /// <summary>
+    /// Look up single approved export for transportation auto-fill by ID, transaction number, or reference.
+    /// Supports multiple route forms and query parameter for resilient client integration without 404s.
+    /// Accurately returns original exported, previously allocated, and remaining transportable quantities.
+    /// </summary>
+    [HttpGet("lookup-export/{exportTxNumber?}")]
+    [HttpGet("lookup-export")]
+    [HttpGet("export/{exportTxNumber?}")]
+    [HttpGet("export")]
+    [HttpGet("exports/{exportTxNumber?}")]
+    [HttpGet("exports")]
+    [ProducesResponseType(typeof(ApiResponse<EligibleTransportationExportDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> LookupExport(
+        string? exportTxNumber = null,
+        [FromQuery] string? number = null,
+        [FromQuery] string? txNumber = null,
+        [FromQuery] string? exportNumber = null)
+    {
+        var rawInput = exportTxNumber ?? number ?? txNumber ?? exportNumber;
+        if (string.IsNullOrWhiteSpace(rawInput))
+        {
+            return BadRequest(ApiResponse.Fail("رقم إذن الصرف مطلوب."));
+        }
+
+        var trimmed = rawInput.Trim();
+        var clean = trimmed.TrimStart('#').Trim();
+
+        int? opId = null;
+        if (int.TryParse(clean, out var parsed))
+        {
+            opId = parsed;
+        }
+        else if (clean.StartsWith("EXP-", StringComparison.OrdinalIgnoreCase) || clean.StartsWith("EXP_", StringComparison.OrdinalIgnoreCase))
+        {
+            var suffix = clean[4..];
+            if (int.TryParse(suffix, out var pSuffix)) opId = pSuffix;
+        }
+        else if (clean.StartsWith("OP-", StringComparison.OrdinalIgnoreCase))
+        {
+            var suffix = clean[3..];
+            if (int.TryParse(suffix, out var pSuffix)) opId = pSuffix;
+        }
+
+        // 1. Authoritative lookup by Warehouse Export Number (TransactionNumber, e.g. #7)
+        StorageOperation? exp = null;
+        if (opId.HasValue)
+        {
+            exp = await _db.StorageOperations
+                .AsNoTracking()
+                .Include(o => o.Items)
+                .Include(o => o.StorageLocation)
+                .Include(o => o.Client)
+                .Include(o => o.Destination)
+                .Include(o => o.ProductionOrder)
+                .Include(o => o.ProductionProcess)
+                .FirstOrDefaultAsync(o => o.OperationType == "EXPORT" && o.ApprovalStatus == "APPROVED" && o.TransactionNumber == opId.Value);
+        }
+
+        // 2. Fallback lookup by Id, references, sample code, or production order
+        if (exp == null)
+        {
+            exp = await _db.StorageOperations
+                .AsNoTracking()
+                .Include(o => o.Items)
+                .Include(o => o.StorageLocation)
+                .Include(o => o.Client)
+                .Include(o => o.Destination)
+                .Include(o => o.ProductionOrder)
+                .Include(o => o.ProductionProcess)
+                .FirstOrDefaultAsync(o => o.OperationType == "EXPORT" && o.ApprovalStatus == "APPROVED" &&
+                    ((opId.HasValue && o.Id == opId.Value) ||
+                     o.TransactionNumber.ToString() == clean ||
+                     (o.ManufactureNumber != null && o.ManufactureNumber.ToLower() == trimmed.ToLower()) ||
+                     (o.SampleCode != null && o.SampleCode.ToLower() == trimmed.ToLower()) ||
+                     (o.ProductionOrder != null && o.ProductionOrder.OrderNumber.ToLower() == trimmed.ToLower()) ||
+                     o.Items.Any(i => (i.BatchNumber != null && i.BatchNumber.ToLower() == trimmed.ToLower()) ||
+                                      (i.SampleCode != null && i.SampleCode.ToLower() == trimmed.ToLower()) ||
+                                      (opId.HasValue && i.ProductionReferenceNumber == opId.Value))));
+        }
+
+        if (exp == null)
+        {
+            return NotFound(ApiResponse.Fail($"إذن الصرف '{rawInput}' غير موجود أو غير معتمد."));
+        }
+
+        var expTrans = await _db.Transportations
+            .AsNoTracking()
+            .Where(t => t.StorageOperationId == exp.Id && t.ApprovalStatus != "REJECTED")
+            .Select(t => new { ItemId = t.StorageOperationItemId, t.NetWeight })
+            .ToListAsync();
+
+        var transported = expTrans.Sum(t => t.NetWeight);
+        var totalQty = exp.Items.Sum(i => i.Quantity);
+        var remaining = Math.Max(0m, totalQty - transported);
+
+        var itemDtos = exp.Items.Select(i =>
+        {
+            var itemAllocated = expTrans
+                .Where(t => t.ItemId == i.Id || (t.ItemId == null && exp.Items.Count == 1))
+                .Sum(t => t.NetWeight);
+            var itemRemaining = Math.Max(0m, i.Quantity - itemAllocated);
+
+            return new EligibleTransportationExportItemDto
+            {
+                Id = i.Id,
+                RawMaterialId = i.RawMaterialId,
+                MaterialName = i.MaterialName,
+                Quantity = i.Quantity,
+                PreviouslyAllocatedQuantity = itemAllocated,
+                RemainingQuantity = itemRemaining,
+                WarehouseBatchId = i.WarehouseBatchId,
+                BatchNumber = i.BatchNumber,
+                SampleCode = i.SampleCode ?? exp.SampleCode,
+                ProductionReferenceNumber = i.ProductionReferenceNumber ?? exp.ProductionReferenceNumber,
+                ProductionOrderId = i.ProductionOrderId ?? exp.ProductionOrderId,
+                ProductionProcessId = i.ProductionProcessId ?? exp.ProductionProcessId,
+                ManufactureNumber = i.ManufactureNumber ?? exp.ManufactureNumber
+            };
+        }).ToList();
+
+        var dto = new EligibleTransportationExportDto
+        {
+            StorageOperationId = exp.Id,
+            ExportTransactionNumber = $"#{exp.TransactionNumber}",
+            TransactionNumber = exp.TransactionNumber,
+            ExportType = exp.ExportType ?? "RAW_MATERIAL",
+            TransactionDate = exp.TransactionDate,
+            StorageLocationId = exp.StorageLocationId,
+            StorageLocationName = exp.StorageLocationName,
+            ClientName = exp.ClientName ?? exp.Client?.Name ?? "عميل",
+            DestinationName = exp.DestinationName ?? exp.Destination?.DestinationName ?? "-",
+            TotalExportQuantity = totalQty,
+            TransportedQuantity = transported,
+            RemainingQuantity = remaining,
+            Unit = "طن",
+            ProductionOrderId = exp.ProductionOrderId,
+            ProductionOrderNumber = exp.ProductionOrder?.OrderNumber,
+            ProductionProcessId = exp.ProductionProcessId,
+            ProcessNumber = exp.ProductionProcess?.ProcessNumber,
+            ManufactureNumber = exp.ManufactureNumber ?? exp.Items.FirstOrDefault()?.ManufactureNumber,
+            WeighbridgeAttachmentPath = exp.WeighbridgeAttachmentPath,
+            Items = itemDtos
+        };
+
+        return Ok(ApiResponse<EligibleTransportationExportDto>.Ok(dto));
+    }
     [HttpGet("check-number/{transactionNumber:int}")]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
     public async Task<IActionResult> CheckTransactionNumber(int transactionNumber, [FromQuery] string? po = null)
@@ -214,12 +679,13 @@ public class TransportationController : ControllerBase
         limit = Math.Clamp(limit, 1, 100);
         var transactions = await _db.Transportations
             .AsNoTracking()
+            .Include(t => t.ProjectCode)
             .OrderByDescending(t => t.DateOfSubmit)
             .Take(limit)
-            .Select(t => MapToDto(t))
             .ToListAsync();
 
-        return Ok(ApiResponse<List<TransportationDto>>.Ok(transactions));
+        var dtos = transactions.Select(t => MapToDto(t)).ToList();
+        return Ok(ApiResponse<List<TransportationDto>>.Ok(dtos));
     }
 
     /// <summary>
@@ -230,7 +696,9 @@ public class TransportationController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetById(int id)
     {
-        var transaction = await _db.Transportations.FindAsync(id);
+        var transaction = await _db.Transportations
+            .Include(t => t.ProjectCode)
+            .FirstOrDefaultAsync(t => t.Id == id);
         if (transaction == null)
         {
             return NotFound(ApiResponse.Fail($"Transportation transaction #{id} was not found."));
@@ -420,38 +888,145 @@ public class TransportationController : ControllerBase
             return BadRequest(ApiResponse.Fail("Validation failed. Please verify the entered data.", errors));
         }
 
-        // 3. Purchase Order Validation against database
-        if (string.IsNullOrWhiteSpace(dto.PONumber))
+        // 3. Resolve Linkage: Warehouse Export (authoritative workflow) OR Purchase Order (legacy)
+        StorageOperation? exportOp = null;
+        if (dto.StorageOperationId.HasValue && dto.StorageOperationId.Value > 0)
         {
-            return BadRequest(ApiResponse.Fail("Purchase Order Number is required."));
+            exportOp = await _db.StorageOperations
+                .Include(o => o.Items)
+                .Include(o => o.Client)
+                .Include(o => o.Destination)
+                .Include(o => o.StorageLocation)
+                .Include(o => o.ProductionOrder)
+                .Include(o => o.ProductionProcess)
+                .FirstOrDefaultAsync(o => o.Id == dto.StorageOperationId.Value);
+        }
+        else if (!string.IsNullOrWhiteSpace(dto.ExportTransactionNumber))
+        {
+            var expNumStr = dto.ExportTransactionNumber.Trim().TrimStart('#');
+            if (int.TryParse(expNumStr, out var expNum))
+            {
+                exportOp = await _db.StorageOperations
+                    .Include(o => o.Items)
+                    .Include(o => o.Client)
+                    .Include(o => o.Destination)
+                    .Include(o => o.StorageLocation)
+                    .Include(o => o.ProductionOrder)
+                    .Include(o => o.ProductionProcess)
+                    .FirstOrDefaultAsync(o => o.TransactionNumber == expNum && o.OperationType == "EXPORT");
+            }
         }
 
-        var trimmedPo = dto.PONumber.Trim();
-        var po = await _db.PurchaseOrders.FirstOrDefaultAsync(p => p.PONumber.ToLower() == trimmedPo.ToLower());
-        if (po == null)
+        PurchaseOrder? po = null;
+        string autoDestination;
+        string autoCompanyName;
+        string autoSource;
+        string trimmedPo;
+        string matType;
+        decimal totalExportQty = 0m;
+        decimal remainingExportQty = 0m;
+
+        if (exportOp != null)
         {
-            _logger.LogWarning("Transportation transaction rejected: PO '{PONumber}' not found in database.", trimmedPo);
-            return BadRequest(ApiResponse.Fail("Purchase Order not found."));
+            if (exportOp.OperationType != "EXPORT" || exportOp.ApprovalStatus != "APPROVED")
+            {
+                return BadRequest(ApiResponse.Fail($"إذن الصرف #{exportOp.TransactionNumber} غير معتمد من المستودع أو غير صالح للنقل."));
+            }
+
+            totalExportQty = exportOp.Items.Sum(i => i.Quantity);
+            var transportedSoFar = await _db.Transportations
+                .Where(t => t.StorageOperationId == exportOp.Id)
+                .SumAsync(t => (decimal?)t.NetWeight) ?? 0m;
+            remainingExportQty = Math.Max(0m, totalExportQty - transportedSoFar);
+
+            if (remainingExportQty <= 0)
+            {
+                return BadRequest(ApiResponse.Fail($"إذن الصرف #{exportOp.TransactionNumber} تم نقل كامل كميته المصروفة مسبقاً ({totalExportQty:N3} طن)."));
+            }
+
+            autoDestination = !string.IsNullOrWhiteSpace(exportOp.DestinationName)
+                ? exportOp.DestinationName
+                : (exportOp.Destination?.DestinationName ?? "موقع العميل");
+            autoCompanyName = !string.IsNullOrWhiteSpace(exportOp.ClientName)
+                ? exportOp.ClientName
+                : (exportOp.Client?.Name ?? "عميل فيس ستون");
+            autoSource = !string.IsNullOrWhiteSpace(exportOp.StorageLocationName)
+                ? exportOp.StorageLocationName
+                : FixedSource;
+
+            trimmedPo = !string.IsNullOrWhiteSpace(dto.PONumber)
+                ? dto.PONumber.Trim()
+                : (exportOp.ProductionOrder?.OrderNumber ?? $"EXP-#{exportOp.TransactionNumber}");
+
+            matType = !string.IsNullOrWhiteSpace(dto.MaterialType)
+                ? dto.MaterialType.Trim()
+                : (exportOp.MaterialType ?? exportOp.Items.FirstOrDefault()?.MaterialName ?? (exportOp.ExportType == "FINISHED_PRODUCT" ? "منتج نهائي" : "مواد خام"));
+        }
+        else
+        {
+            return BadRequest(ApiResponse.Fail("يجب اختيار إذن صرف مستودع معتمد ومتاح لإنشاء حركة النقل. لا يمكن تسجيل حركة نقل بدون إذن صرف مستودع."));
         }
 
-        if (po.RemainingQuantity <= 0)
+        // Support Multi-line Exports: Resolve and validate specific export item line if specified
+        StorageOperationItem? selectedExportItem = null;
+        decimal itemRemainingQty = 0m;
+        if (exportOp != null)
         {
-            return BadRequest(ApiResponse.Fail("This Purchase Order has no remaining quantity."));
+            if (dto.StorageOperationItemId.HasValue && dto.StorageOperationItemId.Value > 0)
+            {
+                selectedExportItem = exportOp.Items.FirstOrDefault(i => i.Id == dto.StorageOperationItemId.Value);
+                if (selectedExportItem == null)
+                {
+                    return BadRequest(ApiResponse.Fail("بند إذن الصرف المحدد غير موجود ضمن هذا الإذن."));
+                }
+            }
+            else if (exportOp.Items.Count == 1)
+            {
+                selectedExportItem = exportOp.Items.First();
+            }
+
+            if (selectedExportItem != null)
+            {
+                var itemAllocated = await _db.Transportations
+                    .Where(t => t.StorageOperationId == exportOp.Id &&
+                                (t.StorageOperationItemId == selectedExportItem.Id || (t.StorageOperationItemId == null && exportOp.Items.Count == 1)) &&
+                                t.ApprovalStatus != "REJECTED")
+                    .SumAsync(t => (decimal?)t.NetWeight) ?? 0m;
+                itemRemainingQty = Math.Max(0m, selectedExportItem.Quantity - itemAllocated);
+
+                if (itemRemainingQty <= 0)
+                {
+                    return BadRequest(ApiResponse.Fail($"بند إذن الصرف '{selectedExportItem.MaterialName}' تم نقل كامل كميته المصروفة مسبقاً ({selectedExportItem.Quantity:N3} طن)."));
+                }
+            }
         }
 
-        // 4. Server-enforced fields (Never trust client tampering)
-        // Company Name and Destination strictly from PO
-        var autoDestination = string.IsNullOrWhiteSpace(po.Destination) ? "Cairo Factory" : po.Destination.Trim();
-        var autoCompanyName = string.IsNullOrWhiteSpace(po.Supplier) ? "FaceStone Partner" : po.Supplier.Trim();
+        // Resolve Optional Project Code
+        int? resolvedProjectCodeId = null;
+        string? resolvedProjectCodeValue = null;
 
-        // Source strictly "Face stone (Full Concrete Solutions)"
-        var autoSource = FixedSource;
-
-        // Material Type strictly "powder" or "slurry"
-        var matType = (dto.MaterialType ?? string.Empty).Trim().ToLowerInvariant();
-        if (matType != "powder" && matType != "slurry")
+        if (dto.ProjectCodeId.HasValue && dto.ProjectCodeId.Value > 0)
         {
-            return BadRequest(ApiResponse.Fail("نوع الخامة غير صحيح. الخيارات المتاحة فقط: powder أو slurry."));
+            var prj = await _db.ProjectCodes.FirstOrDefaultAsync(p => p.Id == dto.ProjectCodeId.Value);
+            if (prj != null)
+            {
+                resolvedProjectCodeId = prj.Id;
+                resolvedProjectCodeValue = prj.Code;
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(dto.ProjectCode))
+        {
+            var pCode = dto.ProjectCode.Trim();
+            var prj = await _db.ProjectCodes.FirstOrDefaultAsync(p => p.Code.ToLower() == pCode.ToLower() || p.ProjectName.ToLower() == pCode.ToLower());
+            if (prj != null)
+            {
+                resolvedProjectCodeId = prj.Id;
+                resolvedProjectCodeValue = prj.Code;
+            }
+            else
+            {
+                resolvedProjectCodeValue = pCode;
+            }
         }
 
         // Shipping Supervisor strictly "محمد ناجح"
@@ -525,12 +1100,27 @@ public class TransportationController : ControllerBase
             return BadRequest(ApiResponse.Fail("الوزن الصافي المحسوب يجب أن يكون أكبر من الصفر."));
         }
 
-        // PO Quantity limit check: Net weight <= PO remaining quantity
-        if (netWeight > po.RemainingQuantity)
+        // Quantity limit check: Net weight <= remaining unallocated export quantity OR PO remaining quantity
+        if (exportOp != null)
         {
-            _logger.LogWarning("Net weight {Net} exceeds remaining quantity {Rem} for PO {PO}",
-                netWeight, po.RemainingQuantity, po.PONumber);
-            return BadRequest(ApiResponse.Fail("Net weight exceeds the remaining quantity of this PO."));
+            if (selectedExportItem != null && netWeight > itemRemainingQty)
+            {
+                return BadRequest(ApiResponse.Fail($"الوزن الصافي للشحنة ({netWeight:N3} طن) يتجاوز الرصيد المتبقي للبند '{selectedExportItem.MaterialName}' ({itemRemainingQty:N3} طن)."));
+            }
+
+            if (netWeight > remainingExportQty)
+            {
+                return BadRequest(ApiResponse.Fail($"الوزن الصافي للشحنة ({netWeight:N3} طن) يتجاوز الرصيد المتبقي لإذن الصرف #{exportOp.TransactionNumber} ({remainingExportQty:N3} طن)."));
+            }
+        }
+        else if (po != null)
+        {
+            if (netWeight > po.RemainingQuantity)
+            {
+                _logger.LogWarning("Net weight {Net} exceeds remaining quantity {Rem} for PO {PO}",
+                    netWeight, po.RemainingQuantity, po.PONumber);
+                return BadRequest(ApiResponse.Fail("Net weight exceeds the remaining quantity of this PO."));
+            }
         }
 
         // 7. Shipping Time Calculation
@@ -587,36 +1177,79 @@ public class TransportationController : ControllerBase
         using var dbTransaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.ReadCommitted);
         try
         {
-            // Concurrency Lock: Lock the PO row with UPDLOCK, ROWLOCK to serialize concurrent transactions for the same PO
-            var lockedPo = await _db.PurchaseOrders
-                .FromSqlInterpolated($"SELECT * FROM PurchaseOrders WITH (UPDLOCK, ROWLOCK) WHERE Id = {po.Id}")
-                .FirstOrDefaultAsync();
+            PurchaseOrder? lockedPo = null;
+            int finalTxNumber;
 
-            if (lockedPo == null)
+            if (exportOp != null)
             {
-                await dbTransaction.RollbackAsync();
-                CleanupSavedFiles(savedFileNames);
-                return BadRequest(ApiResponse.Fail("أمر الشراء غير موجود."));
-            }
+                if (selectedExportItem != null)
+                {
+                    var liveItemAllocated = await _db.Transportations
+                        .Where(t => t.StorageOperationId == exportOp.Id &&
+                                    (t.StorageOperationItemId == selectedExportItem.Id || (t.StorageOperationItemId == null && exportOp.Items.Count == 1)) &&
+                                    t.ApprovalStatus != "REJECTED")
+                        .SumAsync(t => (decimal?)t.NetWeight) ?? 0m;
+                    var liveItemRemaining = Math.Max(0m, selectedExportItem.Quantity - liveItemAllocated);
 
-            if (netWeight > lockedPo.RemainingQuantity)
+                    if (netWeight > liveItemRemaining)
+                    {
+                        await dbTransaction.RollbackAsync();
+                        CleanupSavedFiles(savedFileNames);
+                        return BadRequest(ApiResponse.Fail($"الوزن الصافي للشحنة ({netWeight:N3} طن) يتجاوز الرصيد المتاح للبند '{selectedExportItem.MaterialName}' ({liveItemRemaining:N3} طن)."));
+                    }
+                }
+
+                // Concurrency verification for export balance
+                var liveTransported = await _db.Transportations
+                    .Where(t => t.StorageOperationId == exportOp.Id && t.ApprovalStatus != "REJECTED")
+                    .SumAsync(t => (decimal?)t.NetWeight) ?? 0m;
+                var liveRemaining = Math.Max(0m, totalExportQty - liveTransported);
+
+                if (netWeight > liveRemaining)
+                {
+                    await dbTransaction.RollbackAsync();
+                    CleanupSavedFiles(savedFileNames);
+                    return BadRequest(ApiResponse.Fail($"الوزن الصافي للشحنة ({netWeight:N3} طن) يتجاوز الرصيد المتاح لإذن الصرف #{exportOp.TransactionNumber} ({liveRemaining:N3} طن)."));
+                }
+
+                var maxTx = await _db.Transportations
+                    .Where(t => t.StorageOperationId == exportOp.Id)
+                    .MaxAsync(t => (int?)t.TransactionNumber) ?? 0;
+                finalTxNumber = maxTx + 1;
+            }
+            else
             {
-                await dbTransaction.RollbackAsync();
-                CleanupSavedFiles(savedFileNames);
-                _logger.LogWarning("Net weight {Net} exceeds remaining quantity {Rem} for PO {PO}",
-                    netWeight, lockedPo.RemainingQuantity, lockedPo.PONumber);
-                return BadRequest(ApiResponse.Fail("Net weight exceeds the remaining quantity of this PO."));
+                // Concurrency Lock: Lock the PO row with UPDLOCK, ROWLOCK to serialize concurrent transactions for the same PO
+                lockedPo = await _db.PurchaseOrders
+                    .FromSqlInterpolated($"SELECT * FROM PurchaseOrders WITH (UPDLOCK, ROWLOCK) WHERE Id = {po!.Id}")
+                    .FirstOrDefaultAsync();
+
+                if (lockedPo == null)
+                {
+                    await dbTransaction.RollbackAsync();
+                    CleanupSavedFiles(savedFileNames);
+                    return BadRequest(ApiResponse.Fail("أمر الشراء غير موجود."));
+                }
+
+                if (netWeight > lockedPo.RemainingQuantity)
+                {
+                    await dbTransaction.RollbackAsync();
+                    CleanupSavedFiles(savedFileNames);
+                    _logger.LogWarning("Net weight {Net} exceeds remaining quantity {Rem} for PO {PO}",
+                        netWeight, lockedPo.RemainingQuantity, lockedPo.PONumber);
+                    return BadRequest(ApiResponse.Fail("Net weight exceeds the remaining quantity of this PO."));
+                }
+
+                var maxTx = await _db.Transportations
+                    .Where(t => t.PONumber.ToLower() == trimmedPo.ToLower())
+                    .MaxAsync(t => (int?)t.TransactionNumber) ?? 0;
+                finalTxNumber = maxTx + 1;
+
+                // Auto-Approve: Deduct PO remaining quantity immediately upon submission
+                lockedPo.RemainingQuantity = Math.Max(0m, lockedPo.RemainingQuantity - netWeight);
+                lockedPo.UpdatedAt = DateTime.UtcNow;
+                _logger.LogInformation("PO {PO} remaining quantity deducted by {Net} to {Rem} upon automatic request approval.", lockedPo.PONumber, netWeight, lockedPo.RemainingQuantity);
             }
-
-            // Sequential Transaction Number per PO:
-            // For a new PO: TransactionNumber = 1
-            // For an existing PO: TransactionNumber = MAX(existing transaction number for this PO) + 1
-            var maxTx = await _db.Transportations
-                .Where(t => t.PONumber.ToLower() == trimmedPo.ToLower())
-                .MaxAsync(t => (int?)t.TransactionNumber) ?? 0;
-            int finalTxNumber = maxTx + 1;
-
-            // Note: PO deduction is deferred until Control & Monitoring approval!
 
             // Manual Weighbridge Reference Codes (Strictly entered manually by employee)
             if (string.IsNullOrWhiteSpace(dto.InternalWeighbridgeCode))
@@ -667,10 +1300,23 @@ public class TransportationController : ControllerBase
                 CarNumber = dto.CarNumber.Trim(),
                 DriverName = dto.DriverName.Trim(),
                 Source = autoSource,
-                PONumber = lockedPo.PONumber.Trim(),
+                PONumber = trimmedPo,
                 CompanyName = autoCompanyName,
-                PurchaseOrderId = lockedPo.Id,
-                MaterialType = matType,
+                PurchaseOrderId = lockedPo?.Id,
+                StorageOperationId = exportOp?.Id,
+                StorageOperationItemId = selectedExportItem?.Id,
+                ExportTransactionNumber = exportOp != null ? $"#{exportOp.TransactionNumber}" : null,
+                ExportType = exportOp?.ExportType ?? dto.ExportType ?? "RAW_MATERIAL",
+                ProductionOrderId = exportOp?.ProductionOrderId ?? dto.ProductionOrderId,
+                ProductionProcessId = exportOp?.ProductionProcessId ?? dto.ProductionProcessId,
+                ManufactureNumber = dto.ManufactureNumber ?? selectedExportItem?.ManufactureNumber ?? exportOp?.ManufactureNumber ?? exportOp?.Items.FirstOrDefault()?.ManufactureNumber,
+                BatchNumber = !string.IsNullOrWhiteSpace(dto.BatchNumber) ? dto.BatchNumber : (selectedExportItem?.BatchNumber ?? (exportOp != null ? string.Join(", ", exportOp.Items.Where(i => !string.IsNullOrEmpty(i.BatchNumber)).Select(i => i.BatchNumber).Distinct()) : null)),
+                SampleCode = !string.IsNullOrWhiteSpace(dto.SampleCode) ? dto.SampleCode : (selectedExportItem?.SampleCode ?? (exportOp != null ? (exportOp.SampleCode ?? string.Join(", ", exportOp.Items.Where(i => !string.IsNullOrEmpty(i.SampleCode)).Select(i => i.SampleCode).Distinct())) : null)),
+                SourceStorageLocationId = exportOp?.StorageLocationId ?? dto.SourceStorageLocationId,
+                SourceStorageLocationName = exportOp?.StorageLocationName ?? dto.SourceStorageLocationName,
+                ProjectCodeId = resolvedProjectCodeId,
+                ProjectCodeValue = resolvedProjectCodeValue,
+                MaterialType = selectedExportItem?.MaterialName ?? matType,
                 WeightBeforeLoading = Math.Round(dto.WeightBeforeLoading, 3),
                 WeightWhenEnteringFactory = Math.Round(dto.WeightWhenEnteringFactory > 0 ? dto.WeightWhenEnteringFactory : dto.WeightBeforeLoading, 3),
                 WeightWhenExitingFactory = Math.Round(dto.WeightWhenExitingFactory, 3),
@@ -697,8 +1343,11 @@ public class TransportationController : ControllerBase
                 ExternalLoadedWeightTime = dto.ExternalLoadedWeightTime,
                 ShippingDurationMinutes = shippingDurationMinutes,
                 Destination = autoDestination,
-                TransactionStatus = "Pending",
-                ApprovalStatus = "PENDING",
+                TransactionStatus = "Completed",
+                ApprovalStatus = "APPROVED",
+                ReviewedBy = "System (Auto-Approved)",
+                ReviewedByUserId = callerUserId,
+                ReviewedAt = DateTime.UtcNow,
                 ReceivingStatus = recStatus,
                 Notes = string.IsNullOrWhiteSpace(dto.Notes) ? null : dto.Notes.Trim(),
                 DateOfSubmit = DateTime.UtcNow,
@@ -744,12 +1393,12 @@ public class TransportationController : ControllerBase
                 PONumber = entity.PONumber,
                 TransactionOrMovementNumber = $"#{entity.TransactionNumber}",
                 PreviousStatus = string.Empty,
-                NewStatus = "PENDING",
-                Action = "SUBMITTED",
-                ActorName = callerName,
+                NewStatus = "APPROVED",
+                Action = "APPROVED",
+                ActorName = "System (Auto-Approved)",
                 ActorUserId = callerUserId,
-                ActorRole = role,
-                Comment = "تم إرسال حركة النقل وبانتظار مراجعة واعتماد قسم التحكم والمراقبة.",
+                ActorRole = "System",
+                Comment = "تم اعتماد حركة النقل تلقائياً بواسطة النظام وتحديث الرصيد المتبقي لأمر الشراء.",
                 Timestamp = DateTime.UtcNow
             };
             await _db.FormApprovalHistories.AddAsync(history);
@@ -790,7 +1439,14 @@ public class TransportationController : ControllerBase
             }
 
             var resultDto = MapToDto(entity);
-            resultDto.PoRemainingQuantityAfter = lockedPo.RemainingQuantity;
+            if (lockedPo != null)
+            {
+                resultDto.PoRemainingQuantityAfter = lockedPo.RemainingQuantity;
+            }
+            else if (exportOp != null)
+            {
+                resultDto.PoRemainingQuantityAfter = Math.Max(0m, remainingExportQty - netWeight);
+            }
 
             return Ok(ApiResponse<TransportationDto>.Ok(resultDto, "تم إرسال حركة النقل بنجاح وبانتظار اعتماد قسم التحكم والمراقبة."));
         }
@@ -871,7 +1527,21 @@ public class TransportationController : ControllerBase
             InvoiceFileType = entity.InvoiceFileType,
             InvoiceFileSize = entity.InvoiceFileSize,
 
+            ProjectCodeId = entity.ProjectCodeId,
+            ProjectCode = entity.ProjectCodeValue ?? entity.ProjectCode?.Code ?? "Not Assigned",
+            ProjectName = entity.ProjectCode?.ProjectName ?? "غير محدد",
             SubmittedBy = entity.SubmittedBy,
+            StorageOperationId = entity.StorageOperationId,
+            StorageOperationItemId = entity.StorageOperationItemId,
+            ExportTransactionNumber = entity.ExportTransactionNumber,
+            ExportType = entity.ExportType,
+            ProductionOrderId = entity.ProductionOrderId,
+            ProductionProcessId = entity.ProductionProcessId,
+            ManufactureNumber = entity.ManufactureNumber,
+            BatchNumber = entity.BatchNumber,
+            SampleCode = entity.SampleCode,
+            SourceStorageLocationId = entity.SourceStorageLocationId,
+            SourceStorageLocationName = entity.SourceStorageLocationName,
             ApprovalStatus = string.IsNullOrWhiteSpace(entity.ApprovalStatus) ? "APPROVED" : entity.ApprovalStatus,
             ReviewedBy = entity.ReviewedBy,
             ReviewedAt = entity.ReviewedAt,
@@ -938,6 +1608,33 @@ public class TransportationController : ControllerBase
         var netWeight = Math.Min(internalNetWeight, externalNetWeight);
         var wasteQuantity = Math.Max(0m, externalNetWeight - internalNetWeight);
 
+        if (netWeight <= 0)
+        {
+            return BadRequest(ApiResponse.Fail("الوزن الصافي للشحنة يجب أن يكون أكبر من الصفر."));
+        }
+
+        // Validate remaining balance for export, excluding this record's previous weight
+        if (entity.StorageOperationId.HasValue)
+        {
+            var exportOp = await _db.StorageOperations
+                .Include(o => o.Items)
+                .FirstOrDefaultAsync(o => o.Id == entity.StorageOperationId.Value);
+
+            if (exportOp != null)
+            {
+                var totalExportQty = exportOp.Items.Sum(i => i.Quantity);
+                var otherTransported = await _db.Transportations
+                    .Where(t => t.StorageOperationId == entity.StorageOperationId && t.Id != entity.Id && t.ApprovalStatus != "REJECTED")
+                    .SumAsync(t => (decimal?)t.NetWeight) ?? 0m;
+                var remainingAllowed = Math.Max(0m, totalExportQty - otherTransported);
+
+                if (netWeight > remainingAllowed)
+                {
+                    return BadRequest(ApiResponse.Fail($"الوزن الصافي للشحنة ({netWeight:N3} طن) يتجاوز الرصيد المتبقي المتاح لإذن الصرف #{exportOp.TransactionNumber} ({remainingAllowed:N3} طن)."));
+                }
+            }
+        }
+
         // Update fields
         entity.CarNumber = dto.CarNumber.Trim();
         entity.DriverName = dto.DriverName.Trim();
@@ -974,6 +1671,37 @@ public class TransportationController : ControllerBase
         entity.Ikramiya = Math.Round(dto.Ikramiya, 3);
         if (dto.Notes != null) entity.Notes = dto.Notes.Trim();
 
+        // Update Project Code (Optional)
+        if (dto.ProjectCodeId.HasValue && dto.ProjectCodeId.Value > 0)
+        {
+            var pc = await _db.ProjectCodes.FirstOrDefaultAsync(p => p.Id == dto.ProjectCodeId.Value);
+            if (pc != null)
+            {
+                entity.ProjectCodeId = pc.Id;
+                entity.ProjectCodeValue = pc.Code;
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(dto.ProjectCode))
+        {
+            var codeTrim = dto.ProjectCode.Trim();
+            var pc = await _db.ProjectCodes.FirstOrDefaultAsync(p => p.Code == codeTrim);
+            if (pc != null)
+            {
+                entity.ProjectCodeId = pc.Id;
+                entity.ProjectCodeValue = pc.Code;
+            }
+            else
+            {
+                entity.ProjectCodeId = null;
+                entity.ProjectCodeValue = codeTrim;
+            }
+        }
+        else
+        {
+            entity.ProjectCodeId = null;
+            entity.ProjectCodeValue = null;
+        }
+
         // Update attachments if new ones saved
         if (weighbridgeAttachment != null && wbRes.StoredFileName != null)
         {
@@ -1002,11 +1730,11 @@ public class TransportationController : ControllerBase
         }
 
         var prevStatus = entity.ApprovalStatus;
-        entity.ApprovalStatus = "PENDING";
-        entity.TransactionStatus = "Pending";
+        entity.ApprovalStatus = "APPROVED";
+        entity.TransactionStatus = "Completed";
         entity.RejectionReason = null;
-        entity.ReviewedBy = null;
-        entity.ReviewedAt = null;
+        entity.ReviewedBy = "System (Auto-Approved)";
+        entity.ReviewedAt = DateTime.UtcNow;
 
         // Record history entry
         var history = new FormApprovalHistory
@@ -1016,12 +1744,12 @@ public class TransportationController : ControllerBase
             PONumber = entity.PONumber,
             TransactionOrMovementNumber = $"#{entity.TransactionNumber}",
             PreviousStatus = prevStatus,
-            NewStatus = "PENDING",
-            Action = "RESUBMITTED",
-            ActorName = callerName,
+            NewStatus = "APPROVED",
+            Action = "APPROVED",
+            ActorName = "System (Auto-Approved)",
             ActorUserId = callerUserId,
-            ActorRole = role,
-            Comment = string.IsNullOrWhiteSpace(comment) ? "تم تعديل بيانات النموذج والمرفقات وإعادة تقديمه للتحكم والمراقبة." : comment.Trim(),
+            ActorRole = "System",
+            Comment = string.IsNullOrWhiteSpace(comment) ? "تم تعديل بيانات النموذج واعتماده تلقائياً بواسطة النظام." : comment.Trim(),
             Timestamp = DateTime.UtcNow
         };
         await _db.FormApprovalHistories.AddAsync(history);

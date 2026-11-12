@@ -16,6 +16,7 @@ using FaceStone.Web.Data;
 using FaceStone.Web.Hubs;
 using FaceStone.Web.Models;
 using FaceStone.Web.Models.DTOs;
+using FaceStone.Web.Services;
 
 namespace FaceStone.Web.Controllers;
 
@@ -29,17 +30,20 @@ public class LaboratoryController : ControllerBase
     private readonly IWebHostEnvironment _env;
     private readonly ILogger<LaboratoryController> _logger;
     private readonly IHubContext<ChatHub> _hubContext;
+    private readonly IWarehouseInventoryService _inventoryService;
 
     public LaboratoryController(
         FaceStoneDbContext db,
         IWebHostEnvironment env,
         ILogger<LaboratoryController> logger,
-        IHubContext<ChatHub> hubContext)
+        IHubContext<ChatHub> hubContext,
+        IWarehouseInventoryService inventoryService)
     {
         _db = db;
         _env = env;
         _logger = logger;
         _hubContext = hubContext;
+        _inventoryService = inventoryService;
     }
 
     // =========================================================================
@@ -135,12 +139,13 @@ public class LaboratoryController : ControllerBase
             return StatusCode(StatusCodes.Status401Unauthorized, ApiResponse.Fail("المصادقة مطلوبة."));
         }
 
-        var nextNo = await PeekNextUserSampleNumberAsync(userId.Value);
+        var (nextNo, nextCode) = await PeekNextGlobalSampleNumberAsync();
         var section = AppRoles.GetDefaultLaboratorySection(role);
 
         return Ok(ApiResponse<NextSampleNumberDto>.Ok(new NextSampleNumberDto
         {
             SampleNumber = nextNo,
+            SampleCode = nextCode,
             UserId = userId.Value,
             UserName = userName,
             LaboratorySection = section
@@ -172,6 +177,8 @@ public class LaboratoryController : ControllerBase
                 results.Add(new LaboratoryBatchLookupDto
                 {
                     ProductionReferenceNumber = r.ProductionReferenceNumber,
+                    SampleNumber = r.SampleNumber,
+                    SampleCode = !string.IsNullOrWhiteSpace(r.SampleCode) ? r.SampleCode : $"SMP-{r.SampleNumber:D4}",
                     BatchNumber = key,
                     SampleName = !string.IsNullOrWhiteSpace(r.SampleName) ? r.SampleName : r.RawMaterialDescription,
                     SampleDescription = !string.IsNullOrWhiteSpace(r.SampleDescription) ? r.SampleDescription : "بودرة رمادية اللون",
@@ -743,19 +750,31 @@ public class LaboratoryController : ControllerBase
             }
         }
 
-        // Validate Raw Material card mapping if provided
-        int? rawMaterialId = null;
-        if (dto.RawMaterialId.HasValue && dto.RawMaterialId.Value > 0)
+        // 4. Validate Tested Material Weight
+        if (dto.TestedMaterialWeight < 0)
         {
-            var mat = await _db.RawMaterials.FirstOrDefaultAsync(m => m.Id == dto.RawMaterialId.Value);
-            if (mat != null) rawMaterialId = mat.Id;
+            return BadRequest(ApiResponse.Fail("إجمالي وزن المواد التي تم اختبارها لا يمكن أن يكون سالباً."));
         }
 
-        // 5. Handle Attachment
+        // Material Classification (MECHANICAL | CHEMICAL)
+        var classification = (dto.MaterialClassification ?? "MECHANICAL").Trim().ToUpperInvariant();
+        if (classification != "CHEMICAL" && classification != "MECHANICAL")
+        {
+            classification = "MECHANICAL";
+        }
+
+        // 5. Handle Technical Report Attachment & Quantity Confirmation Document
         var attachRes = await ValidateAndSaveAttachmentAsync(dto.Attachment, dto.AttachmentPath, "تقرير الفحص الفني");
         if (!attachRes.Success)
         {
             return BadRequest(ApiResponse.Fail(attachRes.ErrorMessage ?? "مرفق التقرير الفني غير صالح."));
+        }
+
+        var qtyAttachRes = await ValidateAndSaveAttachmentAsync(dto.QuantityConfirmationDocument, dto.QuantityConfirmationPath, "مستند تأكيد الكمية المستلمة", isRequired: false);
+        if (!qtyAttachRes.Success)
+        {
+            CleanupSavedFiles(new[] { attachRes.StoredFileName });
+            return BadRequest(ApiResponse.Fail(qtyAttachRes.ErrorMessage ?? "مستند تأكيد الكمية المستلمة غير صالح."));
         }
 
         var analysisDate = dto.AnalysisDateTime ?? DateTime.UtcNow;
@@ -763,7 +782,31 @@ public class LaboratoryController : ControllerBase
         using var dbTransaction = await _db.Database.BeginTransactionAsync();
         try
         {
-            // 1. Shared Production Reference Number (Batch Reference)
+            // 1. Automatically register product as a Warehouse Raw Material if not already present (Stock remains 0)
+            var matName = sampleName.Trim();
+            var existingMat = await _db.RawMaterials.FirstOrDefaultAsync(m => m.Name.ToLower() == matName.ToLower());
+            int registeredRawMatId;
+            if (existingMat == null)
+            {
+                var newMaterial = new RawMaterial
+                {
+                    Name = matName,
+                    MaterialType = classification == "CHEMICAL" ? MaterialProcessType.Chemical : MaterialProcessType.Mechanical,
+                    InitialQuantity = 0m, // Important: stock does NOT increase until warehouse approved import
+                    CreatedAt = DateTime.UtcNow,
+                    CreatedBy = userName,
+                    CreatedByUserId = userId
+                };
+                await _db.RawMaterials.AddAsync(newMaterial);
+                await _db.SaveChangesAsync();
+                registeredRawMatId = newMaterial.Id;
+            }
+            else
+            {
+                registeredRawMatId = existingMat.Id;
+            }
+
+            // 2. Shared Production Reference Number (Batch Reference)
             int refNumber;
             if (dto.ProductionReferenceNumber.HasValue && dto.ProductionReferenceNumber.Value > 0)
             {
@@ -774,23 +817,23 @@ public class LaboratoryController : ControllerBase
                 refNumber = await GetNextProductionReferenceNumberAsync();
             }
 
-            // 2. Concurrency-Safe Independent per-user Sample Number (starts at 1 for each user)
-            int sampleNumber = 1;
-            if (userId.HasValue)
-            {
-                sampleNumber = await GetNextUserSampleNumberAsync(userId.Value);
-            }
+            // 3. Central Primary Reference: Concurrency-Safe Globally Unique Sample Number (رقم العينة)
+            var (sampleNumber, sampleCode) = await GetNextGlobalSampleNumberAsync();
 
             var batchNumber = (dto.BatchNumber ?? string.Empty).Trim();
             if (string.IsNullOrWhiteSpace(batchNumber))
             {
-                batchNumber = $"REF-{refNumber:D4}";
+                batchNumber = sampleCode;
             }
+
+            var unit = string.IsNullOrWhiteSpace(dto.Unit) ? "طن" : dto.Unit.Trim();
 
             var report = new LaboratoryRawMaterialReport
             {
                 ProductionReferenceNumber = refNumber,
                 SampleNumber = sampleNumber,
+                SampleCode = sampleCode,
+                MaterialClassification = classification,
                 SampleName = sampleName,
                 SampleDescription = sampleDesc,
                 BatchNumber = batchNumber,
@@ -799,29 +842,43 @@ public class LaboratoryController : ControllerBase
                 LabManagerName = string.IsNullOrWhiteSpace(dto.LabManagerName) ? userName : dto.LabManagerName.Trim(),
                 LabManagerSignature = string.IsNullOrWhiteSpace(dto.LabManagerSignature) ? "معتمد" : dto.LabManagerSignature.Trim(),
                 LabManagerDate = dto.LabManagerDate ?? DateTime.UtcNow,
-                ComplyStatus = complyStatus,
-                LaboratorySection = section,
+                ComplyStatus = "PENDING",
+                LaboratorySection = "PHYSICAL",
                 AnalysisDateTime = analysisDate,
                 RawMaterialDescription = desc,
-                RawMaterialId = rawMaterialId,
+                RawMaterialId = registeredRawMatId,
                 SupplierName = dto.SupplierName?.Trim(),
                 SourceTransportationId = transId,
                 TransportationTransactionNumber = transNum,
                 PurchaseOrderId = poId,
                 PONumber = poNumber,
                 ReceivedQuantity = Math.Round(receivedQuantity, 3),
-                AcceptedQuantity = Math.Round(acceptedQuantity, 3),
-                RejectedQuantity = Math.Round(rejectedQuantity, 3),
+                TestedMaterialWeight = Math.Round(dto.TestedMaterialWeight, 3),
+                Unit = unit,
+                AcceptedQuantity = 0, // CRITICAL: Does not enter warehouse until dual approval!
+                RejectedQuantity = 0,
                 AnalysisResultsJson = dto.AnalysisResultsJson,
-                InspectionDecision = decision,
-                Notes = !string.IsNullOrWhiteSpace(dto.Notes) ? dto.Notes.Trim() : "مطابقة لمواصفة ASTM C1240",
+                PhysicalInspectionStatus = "APPROVED",
+                PhysicalInspectedBy = userName,
+                PhysicalInspectedAt = DateTime.UtcNow,
+                PhysicalNotes = dto.Notes,
+                ChemicalInspectionStatus = "PENDING",
+                OverallStatus = "PENDING_CHEMICAL",
+                ApprovalStatus = "PENDING", // Dual approval gate enforces pending until chemical inspection
+                InspectionDecision = "PENDING",
+                Notes = !string.IsNullOrWhiteSpace(dto.Notes) ? dto.Notes.Trim() : "فحص المعمل الفيزيائي مكتمل وبانتظار الفحص الكيميائي",
                 AttachmentPath = !string.IsNullOrWhiteSpace(attachRes.StoredFileName) ? $"/uploads/laboratory/{attachRes.StoredFileName}" : null,
                 AttachmentFileName = attachRes.OriginalFileName,
                 AttachmentFileType = attachRes.ContentType,
                 AttachmentFileSize = attachRes.FileSize,
+                QuantityConfirmationPath = !string.IsNullOrWhiteSpace(qtyAttachRes.StoredFileName) ? $"/uploads/laboratory/{qtyAttachRes.StoredFileName}" : (!string.IsNullOrWhiteSpace(dto.QuantityConfirmationPath) ? dto.QuantityConfirmationPath : null),
+                QuantityConfirmationFileName = qtyAttachRes.OriginalFileName ?? dto.QuantityConfirmationFileName,
+                QuantityConfirmationFileType = qtyAttachRes.ContentType,
+                QuantityConfirmationFileSize = qtyAttachRes.FileSize,
                 ResponsibleEmployee = userName,
                 ResponsibleUserId = userId,
-                ApprovalStatus = "PENDING",
+                ReviewedBy = null,
+                ReviewedAt = null,
                 IsStorageReceived = false,
                 CreatedAt = DateTime.UtcNow,
                 CreatedBy = userName
@@ -840,20 +897,20 @@ public class LaboratoryController : ControllerBase
                 }
             }
 
-            // Create FormApprovalHistory for Control & Monitoring review
+            // Create FormApprovalHistory
             var history = new FormApprovalHistory
             {
                 FormType = "LaboratoryRawMaterial",
                 FormId = report.Id,
                 PONumber = poNumber ?? string.Empty,
-                TransactionOrMovementNumber = $"REF-#{refNumber}",
+                TransactionOrMovementNumber = $"REF-#{sampleCode}",
                 PreviousStatus = "NONE",
-                NewStatus = "PENDING",
-                Action = "SUBMITTED",
+                NewStatus = "PENDING_CHEMICAL",
+                Action = "PHYSICAL_INSPECTION_COMPLETED",
                 ActorName = userName,
                 ActorUserId = userId,
                 ActorRole = role,
-                Comment = $"تم إنشاء تقرير فحص العينة #{sampleNumber} للتشغيلة {batchNumber} برقم تتبعي #{refNumber} ({section}) وقرار: {(complyStatus == "COMPLY" ? "مطابق لمواصفة ASTM C1240" : "غير مطابق")}. بانتظار اعتماد قسم التحكم والمراقبة.",
+                Comment = $"تم تسجيل فحص المعمل الفيزيائي للعينة {sampleCode} للمادة '{sampleName}' ({classification}) بكمية {receivedQuantity:F3} {unit}. المادة بانتظار استكمال الفحص الكيميائي لاعتماد المطابقة.",
                 Timestamp = DateTime.UtcNow
             };
             await _db.FormApprovalHistories.AddAsync(history);
@@ -861,23 +918,235 @@ public class LaboratoryController : ControllerBase
             await _db.SaveChangesAsync();
             await dbTransaction.CommitAsync();
 
-            _logger.LogInformation("Laboratory Sample #{Sample} created for Ref #{Ref} ({Batch}) by user {User}",
-                sampleNumber, refNumber, batchNumber, userName);
+            _logger.LogInformation("Physical Laboratory Sample {SampleCode} created for Material '{Material}' by user {User}. Pending Chemical Inspection.",
+                sampleCode, sampleName, userName);
 
-            // SignalR broadcast
-            var notifMsg = $"تم إصدار فحص عينة جديد (#{sampleNumber}) للتشغيلة {batchNumber} من قسم المعمل ({section}) قيد مراجعة واعتماد الرقابة.";
-            await NotifyLaboratoryChangeAsync("RAW_REPORT", report.Id, refNumber, "PENDING", userName, notifMsg);
+            // SignalR broadcast to notify Chemical Laboratory
+            var notifMsg = $"تم تسجيل فحص معمل فيزيائي جديد للمادة ({sampleName}) برقم مرجعي ({sampleCode}) وهو متاح الآن للفحص الكيميائي.";
+            await NotifyLaboratoryChangeAsync("RAW_REPORT", report.Id, refNumber, "PENDING_CHEMICAL", userName, notifMsg);
 
             var resultDto = MapRawMaterialToDto(report);
             return StatusCode(StatusCodes.Status201Created,
-                ApiResponse<RawMaterialReportDto>.Ok(resultDto, $"تم حفظ تقرير فحص العينة #{sampleNumber} برقم تشغيلة {batchNumber} بنجاح."));
+                ApiResponse<RawMaterialReportDto>.Ok(resultDto, $"تم تسجيل فحص المعمل الفيزيائي بنجاح وتوليد الرقم المرجعي الموحد ({sampleCode}). المادة بانتظار الفحص الكيميائي لاعتمادها."));
         }
         catch (Exception ex)
         {
             await dbTransaction.RollbackAsync();
-            CleanupSavedFiles(new[] { attachRes.StoredFileName });
+            CleanupSavedFiles(new[] { attachRes.StoredFileName, qtyAttachRes.StoredFileName });
             _logger.LogError(ex, "Failed to create Laboratory Raw Material Report.");
             return StatusCode(StatusCodes.Status500InternalServerError, ApiResponse.Fail("حدث خطأ أثناء حفظ تقرير فحص العينة."));
+        }
+    }
+
+    /// <summary>
+    /// Retrieve all Physical Laboratory reports that are pending Chemical Laboratory inspection.
+    /// Used by the Chemical Laboratory to select the Physical reference and auto-populate shared material data.
+    /// </summary>
+    [HttpGet("pending-chemical-references")]
+    [ProducesResponseType(typeof(ApiResponse<List<PendingChemicalReferenceDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetPendingChemicalReferences()
+    {
+        var pending = await _db.LaboratoryRawMaterialReports
+            .AsNoTracking()
+            .Where(r => r.OverallStatus == "PENDING_CHEMICAL" || 
+                        (r.PhysicalInspectionStatus == "APPROVED" && (r.ChemicalInspectionStatus == "PENDING" || string.IsNullOrEmpty(r.ChemicalInspectionStatus))))
+            .OrderByDescending(r => r.Id)
+            .Take(100)
+            .ToListAsync();
+
+        var list = pending.Select(r => new PendingChemicalReferenceDto
+        {
+            Id = r.Id,
+            ProductionReferenceNumber = r.ProductionReferenceNumber,
+            SampleNumber = r.SampleNumber,
+            SampleCode = !string.IsNullOrWhiteSpace(r.SampleCode) ? r.SampleCode : $"LAB-REF-{r.CreatedAt.Year}-{r.SampleNumber:D6}",
+            SampleName = !string.IsNullOrWhiteSpace(r.SampleName) ? r.SampleName : r.RawMaterialDescription,
+            SampleDescription = r.SampleDescription,
+            MaterialClassification = r.MaterialClassification ?? "MECHANICAL",
+            SupplierName = r.SupplierName,
+            SampleReceivedDate = r.SampleReceivedDate,
+            ReceivedQuantity = r.ReceivedQuantity,
+            TestedMaterialWeight = r.TestedMaterialWeight,
+            Unit = !string.IsNullOrWhiteSpace(r.Unit) ? r.Unit : "طن",
+            PhysicalNotes = r.PhysicalNotes ?? r.Notes,
+            PhysicalInspectedBy = r.PhysicalInspectedBy ?? r.ResponsibleEmployee,
+            PhysicalInspectedAt = r.PhysicalInspectedAt ?? r.CreatedAt,
+            PhysicalResultsJson = r.AnalysisResultsJson,
+            AttachmentPath = r.AttachmentPath,
+            AttachmentFileName = r.AttachmentFileName
+        }).ToList();
+
+        return Ok(ApiResponse<List<PendingChemicalReferenceDto>>.Ok(list));
+    }
+
+    /// <summary>
+    /// Chemical Laboratory submits inspection results and compliance decision for a Physical Laboratory reference.
+    /// Dual approval gate: material only becomes COMPLIANT_APPROVED and available for Warehouse Import
+    /// if Physical Lab is APPROVED and Chemical Lab submits COMPLY.
+    /// </summary>
+    [HttpPost("chemical-inspection")]
+    [Consumes("multipart/form-data")]
+    [ProducesResponseType(typeof(ApiResponse<RawMaterialReportDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> SubmitChemicalInspection(
+        [FromForm] SubmitChemicalInspectionDto dto,
+        IFormFile? attachment = null)
+    {
+        var (isAuth, role, userName, userId) = GetAuthenticatedUser();
+        if (!isAuth)
+        {
+            return StatusCode(StatusCodes.Status401Unauthorized, ApiResponse.Fail("المصادقة مطلوبة للوصول إلى المعمل."));
+        }
+
+        if (dto.LaboratoryReportId <= 0 && string.IsNullOrWhiteSpace(dto.SampleCode))
+        {
+            return BadRequest(ApiResponse.Fail("رقم المرجع المعملي للتقرير مطلوب."));
+        }
+
+        var report = await _db.LaboratoryRawMaterialReports
+            .FirstOrDefaultAsync(r => (dto.LaboratoryReportId > 0 && r.Id == dto.LaboratoryReportId) ||
+                                      (!string.IsNullOrWhiteSpace(dto.SampleCode) && r.SampleCode == dto.SampleCode));
+
+        if (report == null)
+        {
+            return NotFound(ApiResponse.Fail("تقرير فحص المعمل الفيزيائي المحدد غير موجود."));
+        }
+
+        var comply = (dto.ComplyStatus ?? "COMPLY").Trim().ToUpperInvariant();
+        bool isCompliant = comply == "COMPLY";
+
+        string? storedAttachmentPath = null;
+        string? storedAttachmentFileName = null;
+        string? storedAttachmentFileType = null;
+        long storedAttachmentFileSize = 0;
+
+        var attachFile = attachment ?? dto.Attachment;
+        if (attachFile != null && attachFile.Length > 0)
+        {
+            var attachRes = await ValidateAndSaveAttachmentAsync(attachFile, null, "مرفق تقرير المعمل الكيميائي", isRequired: false);
+            if (!attachRes.Success)
+            {
+                return BadRequest(ApiResponse.Fail(attachRes.ErrorMessage ?? "مرفق تقرير المعمل الكيميائي غير صالح."));
+            }
+            storedAttachmentPath = !string.IsNullOrWhiteSpace(attachRes.StoredFileName) ? $"/uploads/laboratory/{attachRes.StoredFileName}" : null;
+            storedAttachmentFileName = attachRes.OriginalFileName;
+            storedAttachmentFileType = attachRes.ContentType;
+            storedAttachmentFileSize = attachRes.FileSize;
+        }
+
+        using var dbTransaction = await _db.Database.BeginTransactionAsync();
+        try
+        {
+            report.ChemicalInspectionStatus = isCompliant ? "COMPLIANT" : "NON_COMPLIANT";
+            report.ChemicalInspectedBy = userName;
+            report.ChemicalInspectedAt = DateTime.UtcNow;
+            report.ChemicalNotes = dto.Notes;
+            report.ChemicalResultsJson = dto.AnalysisResultsJson;
+
+            if (!string.IsNullOrWhiteSpace(dto.LabManagerName))
+            {
+                report.LabManagerName = dto.LabManagerName.Trim();
+            }
+            if (!string.IsNullOrWhiteSpace(dto.LabManagerSignature))
+            {
+                report.LabManagerSignature = dto.LabManagerSignature.Trim();
+            }
+            if (dto.LabManagerDate.HasValue)
+            {
+                report.LabManagerDate = dto.LabManagerDate.Value;
+            }
+
+            if (storedAttachmentPath != null)
+            {
+                report.AttachmentPath = storedAttachmentPath;
+                report.AttachmentFileName = storedAttachmentFileName;
+                report.AttachmentFileType = storedAttachmentFileType;
+                report.AttachmentFileSize = storedAttachmentFileSize;
+            }
+
+            // DUAL APPROVAL GATE:
+            // Physical must be APPROVED and Chemical must be COMPLIANT
+            if (report.PhysicalInspectionStatus == "APPROVED" && isCompliant)
+            {
+                report.OverallStatus = "COMPLIANT_APPROVED";
+                report.ApprovalStatus = "APPROVED";
+                report.ComplyStatus = "COMPLY";
+                report.InspectionDecision = "ACCEPTED";
+                report.AcceptedQuantity = report.ReceivedQuantity > 0 ? report.ReceivedQuantity : report.TestedMaterialWeight;
+                report.RejectedQuantity = 0;
+            }
+            else
+            {
+                report.OverallStatus = "NON_COMPLIANT";
+                report.ApprovalStatus = "REJECTED";
+                report.ComplyStatus = "NOT_COMPLIED";
+                report.InspectionDecision = "REJECTED";
+                report.AcceptedQuantity = 0;
+                report.RejectedQuantity = report.ReceivedQuantity > 0 ? report.ReceivedQuantity : report.TestedMaterialWeight;
+            }
+
+            var hist = new FormApprovalHistory
+            {
+                FormType = "LaboratoryRawMaterial",
+                FormId = report.Id,
+                PONumber = report.PONumber ?? string.Empty,
+                TransactionOrMovementNumber = $"REF-#{report.SampleCode}",
+                PreviousStatus = "PENDING_CHEMICAL",
+                NewStatus = report.OverallStatus,
+                Action = isCompliant ? "DUAL_APPROVED" : "CHEMICAL_REJECTED",
+                ActorName = userName,
+                ActorUserId = userId,
+                ActorRole = role,
+                Comment = isCompliant 
+                    ? $"تم فحص المادة بالمعمل الكيميائي ومطابقتها للمواصفات. تم اعتماد المادة رسمياً (Dual Approval Gate Passed) وأصبحت جاهزة للاستلام في المستودع."
+                    : $"تم فحص المادة بالمعمل الكيميائي وتبيّن عدم مطابقتها للمواصفات. تم حظر المادة ومنع توريدها.",
+                Timestamp = DateTime.UtcNow
+            };
+            await _db.FormApprovalHistories.AddAsync(hist);
+
+            await _db.SaveChangesAsync();
+            await dbTransaction.CommitAsync();
+
+            // Real-time broadcast
+            try
+            {
+                await _hubContext.Clients.All.SendAsync("OnDepartmentDataChanged", new
+                {
+                    Department = "Laboratory",
+                    Action = isCompliant ? "LAB_DUAL_APPROVED" : "LAB_CHEMICAL_REJECTED",
+                    ReportId = report.Id,
+                    SampleCode = report.SampleCode,
+                    Status = report.OverallStatus,
+                    Timestamp = DateTime.UtcNow
+                });
+                if (isCompliant)
+                {
+                    await _hubContext.Clients.All.SendAsync("OnWarehouseInventoryChanged", new
+                    {
+                        Action = "LAB_MATERIAL_QUALIFIED",
+                        SampleCode = report.SampleCode,
+                        Timestamp = DateTime.UtcNow
+                    });
+                }
+            }
+            catch (Exception exSignal)
+            {
+                _logger.LogWarning(exSignal, "SignalR notification failed for chemical inspection");
+            }
+
+            var resultDto = MapRawMaterialToDto(report);
+            var msg = isCompliant
+                ? $"تم حفظ واعتماد الفحص الكيميائي للمرجع {report.SampleCode} بنجاح. المادة أصبحت مطابقة ومعتمدة بالكامل ومتاحة للاستلام في المستودع."
+                : $"تم تسجيل نتيجة الفحص الكيميائي كـ (غير مطابق) للمرجع {report.SampleCode}. تم حظر المادة ومنع توريدها للمستودع.";
+
+            return Ok(ApiResponse<RawMaterialReportDto>.Ok(resultDto, msg));
+        }
+        catch (Exception ex)
+        {
+            await dbTransaction.RollbackAsync();
+            _logger.LogError(ex, "Failed to submit Chemical Laboratory inspection.");
+            return StatusCode(StatusCodes.Status500InternalServerError, ApiResponse.Fail("حدث خطأ أثناء حفظ الفحص الكيميائي: " + ex.Message));
         }
     }
 
@@ -1048,6 +1317,8 @@ public class LaboratoryController : ControllerBase
                 CertificateNumber = certNumber,
                 ProductionReferenceNumber = dto.ProductionReferenceNumber,
                 RawMaterialReportId = rawReport.Id,
+                SampleNumber = rawReport.SampleNumber,
+                SampleCode = rawReport.SampleCode,
                 LaboratorySection = section,
                 FinalProductName = prodName,
                 ActualFinalProductQuantity = Math.Round(dto.ActualFinalProductQuantity, 3),
@@ -1071,7 +1342,9 @@ public class LaboratoryController : ControllerBase
                 AttachmentFileSize = attachRes.FileSize,
                 ResponsibleEmployee = userName,
                 ResponsibleUserId = userId,
-                ApprovalStatus = "PENDING",
+                ApprovalStatus = "APPROVED",
+                ReviewedBy = "System (Auto-Approved)",
+                ReviewedAt = DateTime.UtcNow,
                 IsStoragePosted = false,
                 CreatedAt = DateTime.UtcNow,
                 CreatedBy = userName
@@ -1119,11 +1392,11 @@ public class LaboratoryController : ControllerBase
                 PONumber = rawReport.PONumber ?? string.Empty,
                 TransactionOrMovementNumber = cert.CertificateNumber,
                 PreviousStatus = "NONE",
-                NewStatus = "PENDING",
-                Action = "SUBMITTED",
-                ActorName = userName,
+                NewStatus = "APPROVED",
+                Action = "APPROVED",
+                ActorName = "System (Auto-Approved)",
                 ActorUserId = userId,
-                ActorRole = role,
+                ActorRole = "System",
                 Comment = $"تم إصدار شهادة مطابقة منتج نهائي ({cert.CertificateNumber}) للرقم المرجعي #{dto.ProductionReferenceNumber} بقرار: {decision}. بانتظار اعتماد قسم التحكم والمراقبة.",
                 Timestamp = DateTime.UtcNow
             };
@@ -1303,6 +1576,8 @@ public class LaboratoryController : ControllerBase
             {
                 ProductionReferenceNumber = dto.ProductionReferenceNumber,
                 RawMaterialReportId = rawReport.Id,
+                SampleNumber = rawReport.SampleNumber,
+                SampleCode = rawReport.SampleCode,
                 ProductionBatchNumber = (dto.ProductionBatchNumber ?? $"BATCH-{dto.ProductionReferenceNumber}").Trim(),
                 ProductionWorkInProcessId = dto.ProductionWorkInProcessId,
                 LaboratorySection = section,
@@ -1456,6 +1731,50 @@ public class LaboratoryController : ControllerBase
         return (int)nextValParam.Value;
     }
 
+    private async Task<(int SampleNumber, string SampleCode)> GetNextGlobalSampleNumberAsync()
+    {
+        var seqParam = new Microsoft.Data.SqlClient.SqlParameter("@seqName", "LAB_SAMPLE_NUMBER");
+        var nextValParam = new Microsoft.Data.SqlClient.SqlParameter("@nextVal", System.Data.SqlDbType.Int)
+        {
+            Direction = System.Data.ParameterDirection.Output
+        };
+
+        await _db.Database.ExecuteSqlRawAsync(@"
+            UPDATE LaboratoryProductionSequences WITH (UPDLOCK, ROWLOCK)
+            SET @nextVal = NextValue, NextValue = NextValue + 1
+            WHERE SequenceName = @seqName;
+            IF @@ROWCOUNT = 0
+            BEGIN
+                DECLARE @maxExisting INT;
+                SELECT @maxExisting = ISNULL(MAX(SampleNumber), 0) FROM LaboratoryRawMaterialReports;
+                SET @nextVal = @maxExisting + 1;
+                INSERT INTO LaboratoryProductionSequences (SequenceName, NextValue) VALUES (@seqName, @nextVal + 1);
+            END", seqParam, nextValParam);
+
+        int sampleNumber = (int)nextValParam.Value;
+        string sampleCode = $"LAB-REF-{DateTime.UtcNow.Year}-{sampleNumber:D6}";
+        return (sampleNumber, sampleCode);
+    }
+
+    private async Task<(int SampleNumber, string SampleCode)> PeekNextGlobalSampleNumberAsync()
+    {
+        var seq = await _db.LaboratoryProductionSequences
+            .AsNoTracking()
+            .FirstOrDefaultAsync(s => s.SequenceName == "LAB_SAMPLE_NUMBER");
+
+        int nextVal;
+        if (seq != null)
+        {
+            nextVal = seq.NextValue;
+        }
+        else
+        {
+            var maxExisting = await _db.LaboratoryRawMaterialReports.MaxAsync(r => (int?)r.SampleNumber) ?? 0;
+            nextVal = maxExisting + 1;
+        }
+        return (nextVal, $"LAB-REF-{DateTime.UtcNow.Year}-{nextVal:D6}");
+    }
+
     private async Task<int> GetNextUserSampleNumberAsync(Guid userId)
     {
         var userParam = new Microsoft.Data.SqlClient.SqlParameter("@userId", userId);
@@ -1521,6 +1840,8 @@ public class LaboratoryController : ControllerBase
             var dto = new CreateRawMaterialReportDto
             {
                 LaboratorySection = form["laboratorySection"].FirstOrDefault(),
+                SampleCode = form["sampleCode"].FirstOrDefault(),
+                MaterialClassification = form["materialClassification"].FirstOrDefault() ?? "MECHANICAL",
                 SampleName = form["sampleName"].FirstOrDefault() ?? "سيليكا باودر (Micro Silica Powder)",
                 SampleDescription = form["sampleDescription"].FirstOrDefault() ?? "بودرة رمادية اللون",
                 BatchNumber = form["batchNumber"].FirstOrDefault(),
@@ -1534,8 +1855,14 @@ public class LaboratoryController : ControllerBase
                 Notes = form["notes"].FirstOrDefault(),
                 AnalysisResultsJson = form["analysisResultsJson"].FirstOrDefault(),
                 Attachment = form.Files.GetFile("attachment"),
-                AttachmentPath = form["attachmentPath"].FirstOrDefault()
+                AttachmentPath = form["attachmentPath"].FirstOrDefault(),
+                QuantityConfirmationDocument = form.Files.GetFile("quantityConfirmationDocument") ?? form.Files.GetFile("quantityDoc"),
+                QuantityConfirmationPath = form["quantityConfirmationPath"].FirstOrDefault(),
+                QuantityConfirmationFileName = form["quantityConfirmationFileName"].FirstOrDefault()
             };
+
+            if (int.TryParse(form["sampleNumber"].FirstOrDefault(), out var sNum))
+                dto.SampleNumber = sNum;
 
             if (int.TryParse(form["productionReferenceNumber"].FirstOrDefault(), out var pRef))
                 dto.ProductionReferenceNumber = pRef;
@@ -1554,6 +1881,9 @@ public class LaboratoryController : ControllerBase
 
             if (decimal.TryParse(form["receivedQuantity"].FirstOrDefault(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var rQty))
                 dto.ReceivedQuantity = rQty;
+
+            if (decimal.TryParse(form["testedMaterialWeight"].FirstOrDefault(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var tWeight))
+                dto.TestedMaterialWeight = tWeight;
 
             if (decimal.TryParse(form["acceptedQuantity"].FirstOrDefault(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var aQty))
                 dto.AcceptedQuantity = aQty;
@@ -1781,6 +2111,8 @@ public class LaboratoryController : ControllerBase
         Id = r.Id,
         ProductionReferenceNumber = r.ProductionReferenceNumber,
         SampleNumber = r.SampleNumber,
+        SampleCode = !string.IsNullOrWhiteSpace(r.SampleCode) ? r.SampleCode : $"SMP-{r.SampleNumber:D4}",
+        MaterialClassification = !string.IsNullOrWhiteSpace(r.MaterialClassification) ? r.MaterialClassification : "MECHANICAL",
         SampleName = !string.IsNullOrWhiteSpace(r.SampleName) ? r.SampleName : r.RawMaterialDescription,
         SampleDescription = r.SampleDescription,
         BatchNumber = r.BatchNumber,
@@ -1801,6 +2133,7 @@ public class LaboratoryController : ControllerBase
         PurchaseOrderId = r.PurchaseOrderId,
         PONumber = r.PONumber,
         ReceivedQuantity = r.ReceivedQuantity,
+        TestedMaterialWeight = r.TestedMaterialWeight,
         AcceptedQuantity = r.AcceptedQuantity,
         RejectedQuantity = r.RejectedQuantity,
         AnalysisResultsJson = r.AnalysisResultsJson,
@@ -1810,6 +2143,21 @@ public class LaboratoryController : ControllerBase
         AttachmentFileName = r.AttachmentFileName,
         AttachmentFileType = r.AttachmentFileType,
         AttachmentFileSize = r.AttachmentFileSize,
+        QuantityConfirmationPath = r.QuantityConfirmationPath,
+        QuantityConfirmationFileName = r.QuantityConfirmationFileName,
+        QuantityConfirmationFileType = r.QuantityConfirmationFileType,
+        QuantityConfirmationFileSize = r.QuantityConfirmationFileSize,
+        Unit = !string.IsNullOrWhiteSpace(r.Unit) ? r.Unit : "طن",
+        PhysicalInspectionStatus = r.PhysicalInspectionStatus,
+        PhysicalInspectedBy = r.PhysicalInspectedBy,
+        PhysicalInspectedAt = r.PhysicalInspectedAt,
+        PhysicalNotes = r.PhysicalNotes,
+        ChemicalInspectionStatus = r.ChemicalInspectionStatus,
+        ChemicalInspectedBy = r.ChemicalInspectedBy,
+        ChemicalInspectedAt = r.ChemicalInspectedAt,
+        ChemicalNotes = r.ChemicalNotes,
+        ChemicalResultsJson = r.ChemicalResultsJson,
+        OverallStatus = r.OverallStatus,
         ResponsibleEmployee = r.ResponsibleEmployee,
         ApprovalStatus = r.ApprovalStatus,
         ReviewedBy = r.ReviewedBy,
@@ -1827,6 +2175,8 @@ public class LaboratoryController : ControllerBase
         Id = p.Id,
         ProductionReferenceNumber = p.ProductionReferenceNumber,
         RawMaterialReportId = p.RawMaterialReportId,
+        SampleNumber = p.SampleNumber ?? p.RawMaterialReport?.SampleNumber,
+        SampleCode = p.SampleCode ?? p.RawMaterialReport?.SampleCode ?? (p.RawMaterialReport != null ? $"SMP-{p.RawMaterialReport.SampleNumber:D4}" : null),
         ProductionBatchNumber = p.ProductionBatchNumber,
         ProductionWorkInProcessId = p.ProductionWorkInProcessId,
         LaboratorySection = p.LaboratorySection,
@@ -1852,6 +2202,8 @@ public class LaboratoryController : ControllerBase
         CertificateNumber = c.CertificateNumber,
         ProductionReferenceNumber = c.ProductionReferenceNumber,
         RawMaterialReportId = c.RawMaterialReportId,
+        SampleNumber = c.SampleNumber ?? c.RawMaterialReport?.SampleNumber,
+        SampleCode = c.SampleCode ?? c.RawMaterialReport?.SampleCode ?? (c.RawMaterialReport != null ? $"SMP-{c.RawMaterialReport.SampleNumber:D4}" : null),
         LaboratorySection = c.LaboratorySection,
         FinalProductName = c.FinalProductName,
         ActualFinalProductQuantity = c.ActualFinalProductQuantity,
@@ -1890,6 +2242,8 @@ public class LaboratoryController : ControllerBase
         return new LaboratoryReferenceLookupDto
         {
             ProductionReferenceNumber = r.ProductionReferenceNumber,
+            SampleNumber = r.SampleNumber,
+            SampleCode = !string.IsNullOrWhiteSpace(r.SampleCode) ? r.SampleCode : $"SMP-{r.SampleNumber:D4}",
             LaboratorySection = r.LaboratorySection,
             RawMaterialDescription = r.RawMaterialDescription,
             RawMaterialId = r.RawMaterialId,
@@ -1912,4 +2266,564 @@ public class LaboratoryController : ControllerBase
             ConformityDecision = finalCert?.ConformityDecision
         };
     }
+
+    // =========================================================================
+    // 9. LABORATORY PRODUCTION ORDERS (إصدار أمر إنتاج وسجل أوامر الإنتاج)
+    // =========================================================================
+
+    [HttpGet("available-warehouse-batches")]
+    [HttpGet("production-orders/available-batches")]
+    [ProducesResponseType(typeof(ApiResponse<List<WarehouseBatchAvailabilityDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetAvailableWarehouseBatches()
+    {
+        var batches = await _inventoryService.GetAuthoritativeBatchesAsync();
+        return Ok(ApiResponse<List<WarehouseBatchAvailabilityDto>>.Ok(batches));
+    }
+
+    [HttpGet("next-order-number")]
+    [ProducesResponseType(typeof(ApiResponse<string>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetNextOrderNumber()
+    {
+        var nextNum = await PreviewNextLabProductionOrderNumberAsync();
+        return Ok(ApiResponse<string>.Ok(nextNum));
+    }
+
+    [HttpPost("production-orders")]
+    [ProducesResponseType(typeof(ApiResponse<LaboratoryProductionOrderSummaryDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> CreateProductionOrder([FromBody] CreateLaboratoryProductionOrderRequestDto request)
+    {
+        var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+        var userName = User.Identity?.Name ?? User.FindFirst(ClaimTypes.Name)?.Value ?? "مدير المختبر";
+        Guid? userId = null;
+        var subClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (Guid.TryParse(subClaim, out var g))
+        {
+            userId = g;
+        }
+
+        if (!AppRoles.HasLaboratoryAccess(role) && role != "GeneralManager" && role != "Admin" && role != "SuperAdmin")
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponse.Fail("غير مصرح لك بإصدار أوامر الإنتاج من المختبر."));
+        }
+
+        if (string.IsNullOrWhiteSpace(request.ProductName))
+        {
+            return BadRequest(ApiResponse.Fail("اسم المنتج النهائي مطلوب."));
+        }
+
+        if (request.RequiredQuantity <= 0)
+        {
+            return BadRequest(ApiResponse.Fail("الكمية المطلوبة للمنتج النهائي يجب أن تكون أكبر من الصفر."));
+        }
+
+        if (request.Items == null || request.Items.Count == 0)
+        {
+            return BadRequest(ApiResponse.Fail("يجب تحديد تركيبة المواد الخام وأرقام التشغيلات المطلوبة."));
+        }
+
+        // Validate items and quantities
+        var batchIds = request.Items.Select(i => i.WarehouseBatchId).Distinct().ToList();
+        var batches = await _db.WarehouseBatches
+            .Include(b => b.StorageLocation)
+            .Include(b => b.RawMaterial)
+            .Where(b => batchIds.Contains(b.Id))
+            .ToListAsync();
+
+        if (batches.Count != batchIds.Count)
+        {
+            return BadRequest(ApiResponse.Fail("إحدى تشغيلات المستودع المحددة غير موجودة في النظام."));
+        }
+
+        foreach (var item in request.Items)
+        {
+            if (item.RequestedQuantity <= 0)
+            {
+                return BadRequest(ApiResponse.Fail("الكمية المطلوبة لكل مادة خام يجب أن تكون أكبر من الصفر."));
+            }
+
+            var batch = batches.FirstOrDefault(b => b.Id == item.WarehouseBatchId);
+            if (batch == null)
+            {
+                return BadRequest(ApiResponse.Fail($"التشغيلة ذات المعرف {item.WarehouseBatchId} غير موجودة."));
+            }
+
+            if (!batch.IsActive || batch.Status == "REJECTED")
+            {
+                return BadRequest(ApiResponse.Fail($"التشغيلة {batch.BatchNumber} غير مطابقة للمواصفات أو مرفوضة ولا يمكن استخدامها."));
+            }
+
+            if (item.RequestedQuantity > batch.CurrentQuantity)
+            {
+                return BadRequest(ApiResponse.Fail($"الكمية المطلوبة ({item.RequestedQuantity:N3} طن) من التشغيلة {batch.BatchNumber} تتجاوز الرصيد المتاح بالمستودع ({batch.CurrentQuantity:N3} طن)."));
+            }
+        }
+
+        using var transaction = await _db.Database.BeginTransactionAsync();
+        try
+        {
+            var orderNumber = await GenerateNextLabProductionOrderNumberAsync();
+            var firstBatch = batches.First();
+            var storageLocationId = (request.StorageLocationId.HasValue && request.StorageLocationId.Value > 0)
+                ? request.StorageLocationId.Value
+                : firstBatch.StorageLocationId;
+            var storageLocation = await _db.StorageLocations.FindAsync(storageLocationId);
+            var storageLocationName = storageLocation?.Name ?? firstBatch.StorageLocation?.Name ?? "المستودع الرئيسي";
+
+            var totalPlannedQty = request.Items.Sum(i => i.RequestedQuantity);
+
+            var order = new ProductionOrder
+            {
+                OrderNumber = orderNumber,
+                ProductName = request.ProductName.Trim(),
+                ProductDescription = request.ProductDescription?.Trim(),
+                RequestedQuantity = request.RequiredQuantity,
+                Unit = string.IsNullOrWhiteSpace(request.Unit) ? "طن" : request.Unit.Trim(),
+                StorageLocationId = storageLocationId,
+                StorageLocationName = storageLocationName,
+                Status = "PENDING_TRANSFER",
+                CurrentStage = "في انتظار نقل المستودع",
+                ResponsibleEmployee = "مسؤول مستودع المواد الأولية",
+                LaboratoryManagerName = userName,
+                LaboratoryManagerId = userId,
+                ProductionInstructions = request.ProductionInstructions?.Trim(),
+                Notes = request.Notes?.Trim(),
+                FormulaVersion = 1,
+                TotalPlannedRawMaterialQuantity = totalPlannedQty,
+                TotalTransferredQuantity = 0,
+                CreatedAt = DateTime.UtcNow,
+                CreatedBy = userName
+            };
+
+            _db.ProductionOrders.Add(order);
+            await _db.SaveChangesAsync(); // Generates order.Id
+
+            foreach (var item in request.Items)
+            {
+                var b = batches.First(x => x.Id == item.WarehouseBatchId);
+                var orderItem = new ProductionOrderItem
+                {
+                    ProductionOrderId = order.Id,
+                    WarehouseBatchId = b.Id,
+                    BatchNumber = b.BatchNumber,
+                    ProductionReferenceNumber = b.ProductionReferenceNumber,
+                    SampleCode = b.SampleCode,
+                    RawMaterialId = b.RawMaterialId,
+                    MaterialName = b.MaterialName,
+                    MaterialType = !string.IsNullOrWhiteSpace(item.MaterialType) ? item.MaterialType.Trim() : (b.MaterialClassification ?? ""),
+                    StorageLocationName = b.StorageLocation?.Name ?? storageLocationName,
+                    AvailableQuantityBefore = b.CurrentQuantity,
+                    RequestedQuantity = item.RequestedQuantity,
+                    IssuedQuantity = 0,
+                    ConsumedQuantity = 0,
+                    Unit = string.IsNullOrWhiteSpace(item.Unit) ? "طن" : item.Unit.Trim()
+                };
+                _db.ProductionOrderItems.Add(orderItem);
+            }
+
+            var formulaVersion = new ProductionOrderFormulaVersion
+            {
+                ProductionOrderId = order.Id,
+                VersionNumber = 1,
+                ProductName = order.ProductName,
+                ProductDescription = order.ProductDescription,
+                TargetOutputQuantity = order.RequestedQuantity,
+                TotalInputQuantity = totalPlannedQty,
+                Unit = order.Unit,
+                FormulaJson = JsonSerializer.Serialize(request.Items),
+                CreatedAt = DateTime.UtcNow,
+                CreatedBy = userName
+            };
+            _db.ProductionOrderFormulaVersions.Add(formulaVersion);
+
+            // CRITICAL: Stock is NOT deducted upon order issuance! It will be deducted only upon physical Warehouse Transfer confirmation.
+            await _db.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            try
+            {
+                await _hubContext.Clients.All.SendAsync("OnDepartmentDataChanged", new
+                {
+                    Department = "Laboratory",
+                    Action = "PRODUCTION_ORDER_CREATED",
+                    OrderId = order.Id,
+                    OrderNumber = order.OrderNumber,
+                    Timestamp = DateTime.UtcNow
+                });
+                await _hubContext.Clients.All.SendAsync("OnProductionOrderChanged", new
+                {
+                    OrderId = order.Id,
+                    OrderNumber = order.OrderNumber,
+                    Status = order.Status,
+                    Timestamp = DateTime.UtcNow
+                });
+            }
+            catch (Exception exSignal)
+            {
+                _logger.LogWarning(exSignal, "Failed to broadcast production order SignalR event for {OrderNumber}", order.OrderNumber);
+            }
+
+            var summary = new LaboratoryProductionOrderSummaryDto
+            {
+                Id = order.Id,
+                OrderNumber = order.OrderNumber,
+                ProductName = order.ProductName,
+                ProductDescription = order.ProductDescription,
+                RequestedQuantity = order.RequestedQuantity,
+                Unit = order.Unit,
+                StorageLocationId = order.StorageLocationId,
+                StorageLocationName = order.StorageLocationName,
+                TotalPlannedRawMaterialQuantity = order.TotalPlannedRawMaterialQuantity,
+                TotalTransferredQuantity = order.TotalTransferredQuantity,
+                Status = order.Status,
+                StatusArabic = GetProductionOrderStatusArabic(order.Status),
+                LaboratoryManagerName = order.LaboratoryManagerName ?? userName,
+                FormulaVersion = order.FormulaVersion,
+                CreatedAt = order.CreatedAt,
+                ItemsCount = request.Items.Count
+            };
+
+            return Ok(ApiResponse<LaboratoryProductionOrderSummaryDto>.Ok(summary, "تم إصدار أمر الإنتاج بنجاح وإرساله إلى مستودع المواد الأولية للنقل."));
+        }
+        catch (Exception ex)
+        {
+            await transaction.RollbackAsync();
+            _logger.LogError(ex, "Error creating Laboratory Production Order");
+            return StatusCode(StatusCodes.Status500InternalServerError, ApiResponse.Fail("حدث خطأ أثناء إصدار أمر الإنتاج: " + ex.Message));
+        }
+    }
+
+    [HttpGet("production-orders")]
+    [ProducesResponseType(typeof(ApiResponse<List<LaboratoryProductionOrderSummaryDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetProductionOrders(
+        [FromQuery] string? search = null,
+        [FromQuery] string? status = null,
+        [FromQuery] DateTime? fromDate = null,
+        [FromQuery] DateTime? toDate = null)
+    {
+        var query = _db.ProductionOrders
+            .AsNoTracking()
+            .Include(o => o.Items)
+            .Where(o => o.OrderNumber.StartsWith("LAB-PO-") || o.FormulaVersion >= 1)
+            .AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(status) && !status.Equals("ALL", StringComparison.OrdinalIgnoreCase))
+        {
+            var stNorm = status.Trim().ToUpperInvariant();
+            query = query.Where(o => o.Status == stNorm);
+        }
+
+        if (fromDate.HasValue)
+        {
+            query = query.Where(o => o.CreatedAt >= fromDate.Value.Date);
+        }
+
+        if (toDate.HasValue)
+        {
+            var endOfDay = toDate.Value.Date.AddDays(1).AddTicks(-1);
+            query = query.Where(o => o.CreatedAt <= endOfDay);
+        }
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var s = search.Trim();
+            query = query.Where(o => o.OrderNumber.Contains(s)
+                || o.ProductName.Contains(s)
+                || (o.ProductDescription != null && o.ProductDescription.Contains(s))
+                || o.Items.Any(i => (i.BatchNumber != null && i.BatchNumber.Contains(s))
+                    || (i.SampleCode != null && i.SampleCode.Contains(s))
+                    || (i.ProductionReferenceNumber.HasValue && i.ProductionReferenceNumber.Value.ToString().Contains(s))));
+        }
+
+        var orders = await query
+            .OrderByDescending(o => o.CreatedAt)
+            .ToListAsync();
+
+        var summaries = orders.Select(o => new LaboratoryProductionOrderSummaryDto
+        {
+            Id = o.Id,
+            OrderNumber = o.OrderNumber,
+            ProductName = o.ProductName,
+            ProductDescription = o.ProductDescription,
+            RequestedQuantity = o.RequestedQuantity,
+            Unit = o.Unit,
+            StorageLocationId = o.StorageLocationId,
+            StorageLocationName = o.StorageLocationName,
+            TotalPlannedRawMaterialQuantity = o.TotalPlannedRawMaterialQuantity,
+            TotalTransferredQuantity = o.TotalTransferredQuantity,
+            Status = o.Status,
+            StatusArabic = GetProductionOrderStatusArabic(o.Status),
+            LaboratoryManagerName = o.LaboratoryManagerName ?? o.CreatedBy,
+            FormulaVersion = o.FormulaVersion,
+            LinkedProductionProcessId = o.LinkedProductionProcessId,
+            LinkedProductionProcessNumber = o.LinkedProductionProcessNumber,
+            CreatedAt = o.CreatedAt,
+            ItemsCount = o.Items.Count
+        }).ToList();
+
+        return Ok(ApiResponse<List<LaboratoryProductionOrderSummaryDto>>.Ok(summaries));
+    }
+
+    [HttpGet("production-orders/{id:int}")]
+    [ProducesResponseType(typeof(ApiResponse<LaboratoryProductionOrderDetailDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetProductionOrderById(int id)
+    {
+        var order = await _db.ProductionOrders
+            .AsNoTracking()
+            .Include(o => o.Items)
+            .Include(o => o.Transfers)
+            .FirstOrDefaultAsync(o => o.Id == id);
+
+        if (order == null)
+        {
+            return NotFound(ApiResponse.Fail("أمر الإنتاج المطلوب غير موجود."));
+        }
+
+        // Load current batch quantities for comparison
+        var batchIds = order.Items.Select(i => i.WarehouseBatchId ?? 0).Where(b => b > 0).Distinct().ToList();
+        var batchNumbers = order.Items.Select(i => i.BatchNumber).Where(b => !string.IsNullOrWhiteSpace(b)).Distinct().ToList();
+
+        var currentBatches = await _db.WarehouseBatches
+            .AsNoTracking()
+            .Where(b => batchIds.Contains(b.Id) || (b.BatchNumber != null && batchNumbers.Contains(b.BatchNumber)))
+            .ToListAsync();
+
+        var currentBatchesById = currentBatches.ToDictionary(b => b.Id, b => b.CurrentQuantity);
+        var currentBatchesByNumber = currentBatches
+            .Where(b => !string.IsNullOrWhiteSpace(b.BatchNumber))
+            .GroupBy(b => b.BatchNumber!)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(b => b.CurrentQuantity).First().CurrentQuantity);
+
+        var itemDtos = order.Items.Select(i => {
+            decimal curQty = 0;
+            if (i.WarehouseBatchId.HasValue && currentBatchesById.ContainsKey(i.WarehouseBatchId.Value))
+            {
+                curQty = currentBatchesById[i.WarehouseBatchId.Value];
+            }
+            else if (!string.IsNullOrWhiteSpace(i.BatchNumber) && currentBatchesByNumber.ContainsKey(i.BatchNumber))
+            {
+                curQty = currentBatchesByNumber[i.BatchNumber];
+            }
+
+            return new LaboratoryProductionOrderItemDto
+            {
+                Id = i.Id,
+                WarehouseBatchId = i.WarehouseBatchId ?? 0,
+                BatchNumber = i.BatchNumber ?? string.Empty,
+                ProductionReferenceNumber = i.ProductionReferenceNumber ?? 0,
+                SampleCode = i.SampleCode ?? string.Empty,
+                RawMaterialId = i.RawMaterialId,
+                MaterialName = i.MaterialName,
+                MaterialType = i.MaterialType ?? string.Empty,
+                StorageLocationName = i.StorageLocationName ?? order.StorageLocationName,
+                AvailableQuantityBefore = i.AvailableQuantityBefore,
+                CurrentWarehouseBatchQuantity = curQty,
+                RequestedQuantity = i.RequestedQuantity,
+                IssuedQuantity = i.IssuedQuantity,
+                Unit = i.Unit
+            };
+        }).ToList();
+
+        var transferDtos = order.Transfers.OrderByDescending(t => t.ConfirmedAt).Select(t => new LaboratoryProductionOrderTransferDto
+        {
+            Id = t.Id,
+            ProductionOrderItemId = t.ProductionOrderItemId,
+            WarehouseBatchId = t.WarehouseBatchId,
+            BatchNumber = t.BatchNumber,
+            MaterialName = t.MaterialName,
+            TransferredQuantity = t.TransferredQuantity,
+            Unit = t.Unit,
+            StorageLocationName = t.StorageLocationName,
+            ConfirmedBy = t.ConfirmedBy,
+            ConfirmedAt = t.ConfirmedAt,
+            TransferTransactionNumber = t.TransferTransactionNumber,
+            Notes = t.Notes
+        }).ToList();
+
+        ProductionProcessDetailDto? linkedProcessDto = null;
+        if (order.LinkedProductionProcessId.HasValue)
+        {
+            var proc = await _db.ProductionProcesses
+                .AsNoTracking()
+                .Include(p => p.Materials)
+                .Include(p => p.FinishedProducts)
+                .FirstOrDefaultAsync(p => p.Id == order.LinkedProductionProcessId.Value);
+
+            if (proc != null)
+            {
+                linkedProcessDto = new ProductionProcessDetailDto
+                {
+                    Id = proc.Id,
+                    ProcessNumber = proc.ProcessNumber,
+                    ProductionDate = proc.ProductionDate,
+                    StorageLocationId = proc.StorageLocationId,
+                    StorageLocationName = proc.StorageLocationName,
+                    TotalInputQuantity = proc.TotalInputQuantity,
+                    TotalOutputQuantity = proc.TotalOutputQuantity,
+                    TotalWasteQuantity = proc.TotalWasteQuantity,
+                    WastePercentage = proc.WastePercentage,
+                    Unit = proc.Unit,
+                    Status = proc.Status,
+                    ResponsibleEmployee = proc.ResponsibleEmployee,
+                    Notes = proc.Notes,
+                    CreatedAt = proc.CreatedAt,
+                    CreatedBy = proc.CreatedBy,
+                    Materials = proc.Materials.Select(m => new ProductionProcessMaterialDto
+                    {
+                        Id = m.Id,
+                        ProductionProcessId = m.ProductionProcessId,
+                        WarehouseBatchId = m.WarehouseBatchId,
+                        BatchNumber = m.BatchNumber,
+                        LaboratoryReportId = m.LaboratoryReportId,
+                        ProductionReferenceNumber = m.ProductionReferenceNumber,
+                        SampleCode = m.SampleCode,
+                        RawMaterialId = m.RawMaterialId,
+                        MaterialName = m.MaterialName,
+                        MaterialClassification = m.MaterialClassification,
+                        StorageLocationId = m.StorageLocationId,
+                        StorageLocationName = m.StorageLocationName,
+                        AvailableQuantityBefore = m.AvailableQuantityBefore,
+                        ConsumedQuantity = m.ConsumedQuantity,
+                        RemainingQuantityAfter = m.RemainingQuantityAfter,
+                        Unit = m.Unit,
+                        CreatedAt = m.CreatedAt
+                    }).ToList(),
+                    FinishedProducts = proc.FinishedProducts.Select(f => new ProductionFinishedProductDto
+                    {
+                        Id = f.Id,
+                        ProductionProcessId = f.ProductionProcessId,
+                        ProcessNumber = proc.ProcessNumber,
+                        FinishedProductName = f.FinishedProductName,
+                        ManufactureNumber = f.ManufactureNumber,
+                        ManufacturedQuantity = f.ManufacturedQuantity,
+                        Unit = f.Unit,
+                        ProductionDate = f.ProductionDate,
+                        Notes = f.Notes,
+                        CreatedAt = f.CreatedAt,
+                        CreatedBy = f.CreatedBy
+                    }).ToList()
+                };
+            }
+        }
+
+        var detail = new LaboratoryProductionOrderDetailDto
+        {
+            Id = order.Id,
+            OrderNumber = order.OrderNumber,
+            ProductName = order.ProductName,
+            ProductDescription = order.ProductDescription,
+            RequestedQuantity = order.RequestedQuantity,
+            Unit = order.Unit,
+            StorageLocationId = order.StorageLocationId,
+            StorageLocationName = order.StorageLocationName,
+            TotalPlannedRawMaterialQuantity = order.TotalPlannedRawMaterialQuantity,
+            TotalTransferredQuantity = order.TotalTransferredQuantity,
+            Status = order.Status,
+            StatusArabic = GetProductionOrderStatusArabic(order.Status),
+            LaboratoryManagerName = order.LaboratoryManagerName ?? order.CreatedBy,
+            FormulaVersion = order.FormulaVersion,
+            LinkedProductionProcessId = order.LinkedProductionProcessId,
+            LinkedProductionProcessNumber = order.LinkedProductionProcessNumber,
+            ProductionInstructions = order.ProductionInstructions,
+            Notes = order.Notes,
+            CreatedAt = order.CreatedAt,
+            ItemsCount = order.Items.Count,
+            Items = itemDtos,
+            Transfers = transferDtos,
+            LinkedProcess = linkedProcessDto
+        };
+
+        return Ok(ApiResponse<LaboratoryProductionOrderDetailDto>.Ok(detail));
+    }
+
+    [HttpPost("production-orders/{id:int}/cancel")]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> CancelProductionOrder(int id)
+    {
+        var order = await _db.ProductionOrders.FirstOrDefaultAsync(o => o.Id == id);
+        if (order == null)
+        {
+            return NotFound(ApiResponse.Fail("أمر الإنتاج غير موجود."));
+        }
+
+        if (order.Status != "PENDING_TRANSFER")
+        {
+            return BadRequest(ApiResponse.Fail("لا يمكن إلغاء أمر الإنتاج لأنه تم البدء في نقله أو تصنيعه بالفعل."));
+        }
+
+        order.Status = "CANCELLED";
+        await _db.SaveChangesAsync();
+        return Ok(ApiResponse.Ok("تم إلغاء أمر الإنتاج بنجاح."));
+    }
+
+    private async Task<string> GenerateNextLabProductionOrderNumberAsync()
+    {
+        var year = DateTime.UtcNow.Year;
+        int nextVal = 1;
+        if (_db.Database.IsSqlServer())
+        {
+            var result = await _db.Database
+                .SqlQueryRaw<int>(
+                    "SELECT NextValue FROM ProductionSequences WITH (UPDLOCK, ROWLOCK) WHERE SequenceType = {0}",
+                    "LAB_PO")
+                .ToListAsync();
+
+            if (result.Count > 0)
+            {
+                nextVal = result[0];
+                await _db.Database.ExecuteSqlRawAsync(
+                    "UPDATE ProductionSequences SET NextValue = NextValue + 1 WHERE SequenceType = {0}",
+                    "LAB_PO");
+            }
+            else
+            {
+                var seq = new ProductionSequence { SequenceType = "LAB_PO", NextValue = 2 };
+                _db.ProductionSequences.Add(seq);
+                await _db.SaveChangesAsync();
+                nextVal = 1;
+            }
+        }
+        else
+        {
+            var seq = await _db.ProductionSequences.FirstOrDefaultAsync(s => s.SequenceType == "LAB_PO");
+            if (seq == null)
+            {
+                seq = new ProductionSequence { SequenceType = "LAB_PO", NextValue = 2 };
+                _db.ProductionSequences.Add(seq);
+                await _db.SaveChangesAsync();
+                nextVal = 1;
+            }
+            else
+            {
+                nextVal = seq.NextValue;
+                seq.NextValue += 1;
+                await _db.SaveChangesAsync();
+            }
+        }
+
+        return $"LAB-PO-{year}-{nextVal:D6}";
+    }
+
+    private async Task<string> PreviewNextLabProductionOrderNumberAsync()
+    {
+        var year = DateTime.UtcNow.Year;
+        var seq = await _db.ProductionSequences.AsNoTracking().FirstOrDefaultAsync(s => s.SequenceType == "LAB_PO");
+        var val = seq?.NextValue ?? 1;
+        return $"LAB-PO-{year}-{val:D6}";
+    }
+
+    private static string GetProductionOrderStatusArabic(string status) => status switch
+    {
+        "PENDING_TRANSFER" => "في انتظار نقل المستودع",
+        "PARTIALLY_TRANSFERRED" => "تم النقل جزئياً",
+        "TRANSFERRED_TO_PRODUCTION" => "تم النقل للإنتاج",
+        "IN_PRODUCTION" => "قيد التصنيع بالإنتاج",
+        "COMPLETED" => "مكتمل التصنيع",
+        "CANCELLED" => "ملغي",
+        _ => status
+    };
 }

@@ -2190,6 +2190,7 @@
 #card-nav-finance-bank:hover::before { background: #0284C7; }
 #card-nav-finance-expenses:hover::before { background: #EA580C; }
 #card-nav-finance-employees:hover::before { background: #10B981; }
+#card-nav-finance-invoices:hover::before { background: #0284C7; }
 
 .finance-nav-card-header {
   display: flex;
@@ -2219,6 +2220,7 @@
 .icon-bank { background: #F0F9FF; color: #0284C7; }
 .icon-expenses { background: #FFF7ED; color: #EA580C; }
 .icon-employees { background: #F0FDF4; color: #16A34A; }
+.icon-invoices { background: #E0F2FE; color: #0284C7; }
 
 .finance-nav-card-badge {
   font-size: 0.75rem;
@@ -2501,6 +2503,235 @@
   }
   .finance-modal-form-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+/* ==========================================================================
+   22. INVOICES MODULE & PRINTABLE A4 STYLES
+   ========================================================================== */
+.fin-wizard-steps {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  border-bottom: 1px solid #E2E8F0;
+  padding-bottom: 1rem;
+}
+.fin-step-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: #64748B;
+  transition: all 0.2s ease;
+}
+.fin-step-item.active {
+  color: #0284C7;
+}
+.fin-step-item.active span:first-child {
+  background: #0284C7 !important;
+  color: #FFFFFF !important;
+  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.2);
+}
+.fin-step-item.completed {
+  color: #059669;
+}
+.fin-step-item.completed span:first-child {
+  background: #059669 !important;
+  color: #FFFFFF !important;
+}
+
+/* Printable A4 Invoice Container */
+#invoice-printable-container {
+  width: 100%;
+  max-width: 820px;
+  margin: 0 auto;
+  background: #FFFFFF;
+  color: #0F172A;
+  font-family: 'Cairo', sans-serif;
+  line-height: 1.5;
+}
+
+.inv-print-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  border-bottom: 2px solid #0F172A;
+  padding-bottom: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.inv-print-logo-area {
+  display: flex;
+  flex-direction: column;
+}
+
+.inv-print-brand {
+  font-size: 1.6rem;
+  font-weight: 900;
+  color: #0F172A;
+  letter-spacing: -0.02em;
+}
+
+.inv-print-brand-sub {
+  font-size: 0.85rem;
+  color: #64748B;
+  font-weight: 600;
+}
+
+.inv-print-meta {
+  text-align: left;
+}
+
+.inv-print-number {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: #0284C7;
+  font-family: monospace;
+}
+
+.inv-print-info-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.inv-print-info-block h5 {
+  margin: 0 0 6px 0;
+  font-size: 0.8rem;
+  color: #64748B;
+  text-transform: uppercase;
+}
+
+.inv-print-info-block p {
+  margin: 0;
+  font-weight: 700;
+  color: #0F172A;
+  font-size: 0.95rem;
+}
+
+.inv-print-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1.5rem;
+}
+
+.inv-print-table th {
+  background: #0F172A;
+  color: #FFFFFF;
+  font-weight: 700;
+  font-size: 0.85rem;
+  padding: 10px 8px;
+  text-align: right;
+  border: 1px solid #0F172A;
+}
+
+.inv-print-table td {
+  padding: 10px 8px;
+  font-size: 0.85rem;
+  border: 1px solid #CBD5E1;
+  color: #0F172A;
+}
+
+.inv-print-table tr:nth-child(even) td {
+  background: #F8FAFC;
+}
+
+.inv-print-totals-box {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 2rem;
+}
+
+.inv-print-totals-table {
+  width: 320px;
+  border-collapse: collapse;
+}
+
+.inv-print-totals-table td {
+  padding: 6px 10px;
+  font-size: 0.9rem;
+}
+
+.inv-print-totals-table tr.total-row td {
+  border-top: 2px solid #0F172A;
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #0284C7;
+}
+
+.inv-print-signatures {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2rem;
+  margin-top: 3rem;
+  border-top: 1px dashed #CBD5E1;
+  padding-top: 1.5rem;
+  text-align: center;
+}
+
+.inv-print-sig-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #475569;
+  margin-bottom: 2.5rem;
+}
+
+.inv-print-sig-line {
+  border-top: 1px solid #0F172A;
+  margin: 0 1.5rem;
+  font-size: 0.8rem;
+  color: #64748B;
+  padding-top: 4px;
+}
+
+/* Print CSS Media Query */
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+  #finance-print-modal-container,
+  #finance-print-modal-container * {
+    visibility: visible !important;
+  }
+  #finance-print-invoice-modal-backdrop {
+    display: block !important;
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  #finance-print-modal-container {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  #invoice-printable-container {
+    padding: 0 !important;
+    margin: 0 auto !important;
+    width: 100% !important;
+  }
+  @page {
+    size: A4 portrait;
+    margin: 1.5cm;
   }
 }
 

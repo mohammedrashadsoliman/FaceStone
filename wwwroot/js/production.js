@@ -15,18 +15,30 @@
       this.root = document.getElementById('production-page-root');
       if (!this.root) return;
 
-      this.currentSection = 'form';
+      this.currentSection = 'process';
       this.shiftInfo = null;
       this.catalog = [];
       this.selectedProducts = new Map(); // productCode -> { id, code, name, category, quantity, unit }
       this.editSelectedProducts = new Map();
 
+      // Production Department Flow State
+      this.availableBatches = [];
+      this.selectedBatches = new Map(); // batchId -> { batch, consumedQuantity }
+      this.currentProcessForFinished = null;
+      this.currentOrderForFinished = null;
+      this.eligibleOrdersForFinished = [];
+
       this.bindUiEvents();
+      this.initProcessSection();
+      this.initFinishedSection();
+      this.initTraceabilitySection();
+
       this.loadShiftInfo();
       this.loadCatalog();
       this.loadStats();
       this.loadSubmissions();
       this.setDefaultDateAndTimes();
+      this.showSection('process');
     }
 
     static updateUserBadge(user) {
@@ -161,8 +173,9 @@
 
     static showSection(section) {
       if (section === 'inventory' || section === 'orders' || section === 'batches') {
-        section = 'form';
+        section = 'process';
       }
+      if (!section) section = 'process';
       this.currentSection = section;
 
       const tabBtns = this.root.querySelectorAll('.prd-tab-btn');
@@ -170,23 +183,43 @@
         btn.classList.toggle('active', btn.dataset.section === section);
       });
 
+      const secProcess = document.getElementById('prd-sec-process');
+      const secFinished = document.getElementById('prd-sec-finished');
+      const secHistory = document.getElementById('prd-sec-history');
       const secForm = document.getElementById('prd-sec-form');
       const secSummary = document.getElementById('prd-sec-summary');
 
+      if (secProcess) secProcess.style.display = (section === 'process') ? 'block' : 'none';
+      if (secFinished) secFinished.style.display = (section === 'finished') ? 'block' : 'none';
+      if (secHistory) secHistory.style.display = (section === 'history') ? 'block' : 'none';
       if (secForm) secForm.style.display = (section === 'form') ? 'block' : 'none';
-      if (secSummary) {
-        secSummary.style.display = (section === 'summary') ? 'block' : 'none';
-        if (section === 'summary') {
-          this.loadSubmissions();
-        }
+      if (secSummary) secSummary.style.display = (section === 'summary') ? 'block' : 'none';
+
+      if (section === 'process') {
+        this.loadNextNumbers();
+        this.loadAvailableBatches();
+      } else if (section === 'finished') {
+        this.loadOrdersForFinished();
+        this.loadProcessesForFinished();
+        this.loadNextNumbers();
+      } else if (section === 'history') {
+        this.loadTraceabilityHistory();
+      } else if (section === 'summary') {
+        this.loadSubmissions();
       }
     }
 
     static handleRoute(subRoute) {
       if (subRoute === '/production/summary' || subRoute === 'summary') {
         this.showSection('summary');
-      } else {
+      } else if (subRoute === '/production/finished' || subRoute === 'finished') {
+        this.showSection('finished');
+      } else if (subRoute === '/production/history' || subRoute === 'history') {
+        this.showSection('history');
+      } else if (subRoute === '/production/form' || subRoute === 'form') {
         this.showSection('form');
+      } else {
+        this.showSection('process');
       }
     }
 
@@ -1360,6 +1393,1329 @@
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
     }
+
+    /* ----------------------------------------------------------------------
+       1. PRODUCTION PROCESS SECTION (عملية الإنتاج - سحب المواد الخام)
+       ---------------------------------------------------------------------- */
+    static initProcessSection() {
+      const procDate = document.getElementById('prd-proc-date');
+      if (procDate && !procDate.value) {
+        const now = new Date();
+        const tzOffset = now.getTimezoneOffset() * 60000;
+        procDate.value = (new Date(now.getTime() - tzOffset)).toISOString().slice(0, 16);
+      }
+
+      const locFilter = document.getElementById('prd-proc-location-filter');
+      locFilter?.addEventListener('change', () => this.filterAndRenderBatches());
+
+      const searchInput = document.getElementById('prd-proc-search');
+      searchInput?.addEventListener('input', () => this.filterAndRenderBatches());
+
+      const refreshBatchesBtn = document.getElementById('prd-proc-btn-refresh-batches');
+      refreshBatchesBtn?.addEventListener('click', () => {
+        this.loadAvailableBatches();
+        this.loadNextNumbers();
+      });
+
+      const resetBtn = document.getElementById('prd-proc-btn-reset');
+      resetBtn?.addEventListener('click', () => this.resetProcessForm());
+
+      const procForm = document.getElementById('prd-process-form');
+      procForm?.addEventListener('submit', (e) => {
+        e.preventDefault();
+        this.handleProcessSubmit();
+      });
+
+      // Ready Orders Selection Event
+      const orderSelect = document.getElementById('prd-proc-order-select');
+      orderSelect?.addEventListener('change', () => {
+        const oId = parseInt(orderSelect.value, 10);
+        const badge = document.getElementById('prd-proc-order-info-badge');
+        if (!oId) {
+          if (badge) badge.style.display = 'none';
+          return;
+        }
+        if (badge) badge.style.display = 'block';
+        const order = this.cachedReadyOrders ? this.cachedReadyOrders.find(x => x.id === oId) : null;
+        if (order) {
+          const notesInput = document.getElementById('prd-proc-notes');
+          if (notesInput && !notesInput.value) {
+            notesInput.value = `أمر إنتاج المختبر: ${order.orderNumber} - المنتج: ${order.productName} - ${order.productionInstructions || ''}`;
+          }
+          (order.items || []).forEach(it => {
+            if (it.issuedQuantity > 0) {
+              const b = this.availableBatches.find(x => x.id === it.warehouseBatchId);
+              if (b) {
+                this.selectedBatches.set(b.id, {
+                  batch: b,
+                  consumedQuantity: it.issuedQuantity
+                });
+              } else {
+                const virtualBatch = {
+                  id: it.warehouseBatchId,
+                  batchNumber: it.batchNumber,
+                  materialName: it.materialName,
+                  materialClassification: it.materialType,
+                  currentQuantity: it.issuedQuantity,
+                  unit: it.unit || 'طن',
+                  storageLocationName: it.storageLocationName,
+                  sampleCode: it.sampleCode,
+                  productionReferenceNumber: it.productionReferenceNumber
+                };
+                this.selectedBatches.set(it.warehouseBatchId, {
+                  batch: virtualBatch,
+                  consumedQuantity: it.issuedQuantity
+                });
+              }
+            }
+          });
+          this.renderSelectedBatches();
+          this.filterAndRenderBatches();
+        }
+      });
+    }
+
+    static async loadReadyOrdersForProcess() {
+      const select = document.getElementById('prd-proc-order-select');
+      if (!select) return;
+      try {
+        const res = await window.ChatApi.getProductionReadyOrders();
+        if (res && res.success && Array.isArray(res.data)) {
+          this.cachedReadyOrders = res.data;
+          select.innerHTML = '<option value="">-- تشغيل مباشر بدون أمر إنتاج مسبق --</option>' +
+            res.data.map(o => '<option value="' + o.id + '">' +
+              o.orderNumber + ' — ' + o.productName + ' (المنقول: ' + Number(o.totalTransferredQuantity).toFixed(3) + ' طن - ' + (o.statusArabic || o.status) + ')' +
+            '</option>').join('');
+        }
+      } catch (err) {
+        console.warn('Could not load ready production orders', err);
+      }
+    }
+
+    static async loadNextNumbers() {
+      try {
+        const res = await window.ChatApi.getProductionNextNumbers();
+        if (res && res.success && res.data) {
+          const badge = document.getElementById('prd-process-expected-id');
+          if (badge && res.data.nextProcessNumber) {
+            badge.textContent = res.data.nextProcessNumber;
+          }
+          const mfgInput = document.getElementById('prd-fin-mfg-number');
+          if (mfgInput && !mfgInput.value && res.data.nextManufactureNumber) {
+            mfgInput.value = res.data.nextManufactureNumber;
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to load production next numbers:', err);
+      }
+    }
+
+    static async loadAvailableBatches() {
+      const tbody = document.getElementById('prd-proc-batches-tbody');
+      if (tbody) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 2rem; color: var(--prd-text-muted);">جاري تحميل تشغيلات المستودع المتاحة...</td></tr>';
+      }
+      try {
+        const res = await window.ChatApi.getAvailableProductionBatches();
+        if (res && res.success && Array.isArray(res.data)) {
+          this.availableBatches = res.data;
+          this.populateLocationFilter();
+          this.filterAndRenderBatches();
+          this.loadReadyOrdersForProcess();
+        } else {
+          if (tbody) {
+            tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 2rem; color: #ef4444;">${this.escape(res?.message || 'فشل تحميل تشغيلات المستودع')}</td></tr>`;
+          }
+        }
+      } catch (err) {
+        console.error('Error loading available batches:', err);
+        if (tbody) {
+          tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 2rem; color: #ef4444;">حدث خطأ أثناء تحميل تشغيلات المستودع</td></tr>';
+        }
+      }
+    }
+
+    static populateLocationFilter() {
+      const locFilter = document.getElementById('prd-proc-location-filter');
+      if (!locFilter) return;
+      const currentVal = locFilter.value;
+      const locations = new Set();
+      (this.availableBatches || []).forEach(b => {
+        if (b.warehouseLocation && b.warehouseLocation.trim()) {
+          locations.add(b.warehouseLocation.trim());
+        }
+      });
+
+      let opts = '<option value="">جميع المستودعات والمواقع</option>';
+      locations.forEach(loc => {
+        opts += `<option value="${this.escape(loc)}">${this.escape(loc)}</option>`;
+      });
+      locFilter.innerHTML = opts;
+      if (locations.has(currentVal)) {
+        locFilter.value = currentVal;
+      }
+    }
+
+    static filterAndRenderBatches() {
+      const tbody = document.getElementById('prd-proc-batches-tbody');
+      if (!tbody) return;
+
+      const locFilter = document.getElementById('prd-proc-location-filter');
+      const searchInput = document.getElementById('prd-proc-search');
+
+      const selectedLoc = locFilter ? locFilter.value.trim().toLowerCase() : '';
+      const search = searchInput ? searchInput.value.trim().toLowerCase() : '';
+
+      const filtered = (this.availableBatches || []).filter(b => {
+        if (selectedLoc && (b.warehouseLocation || '').toLowerCase() !== selectedLoc) {
+          return false;
+        }
+        if (search) {
+          const matchBatch = (b.batchNumber || '').toLowerCase().includes(search);
+          const matchRef = (b.laboratoryReferenceNumber || '').toLowerCase().includes(search);
+          const matchSample = (b.sampleCode || '').toLowerCase().includes(search);
+          const matchMat = (b.materialName || '').toLowerCase().includes(search);
+          const matchLoc = (b.warehouseLocation || '').toLowerCase().includes(search);
+          if (!matchBatch && !matchRef && !matchSample && !matchMat && !matchLoc) {
+            return false;
+          }
+        }
+        return true;
+      });
+
+      if (filtered.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 2rem; color: var(--prd-text-muted);">لا توجد تشغيلات مطابقة للمستودع المحدد أو معايير البحث</td></tr>';
+        this.updateProcessSummary();
+        return;
+      }
+
+      let html = '';
+      filtered.forEach(b => {
+        const isSelected = this.selectedBatches.has(b.id);
+        const selData = isSelected ? this.selectedBatches.get(b.id) : null;
+        const currentQtyVal = isSelected ? selData.consumedQuantity : b.currentQuantity;
+        const rowBg = isSelected ? '#f0fdf4' : 'transparent';
+
+        html += `
+          <tr style="border-bottom: 1px solid #e2e8f0; background: ${rowBg};" data-row-batch-id="${b.id}">
+            <td style="padding: 0.65rem 0.5rem; text-align: center;">
+              <input type="checkbox" class="prd-proc-batch-chk" data-id="${b.id}" ${isSelected ? 'checked' : ''} style="width: 18px; height: 18px; cursor: pointer;">
+            </td>
+            <td style="padding: 0.65rem 0.75rem; font-weight: 700; color: var(--prd-navy-dark);">
+              ${this.escape(b.batchNumber)}
+            </td>
+            <td style="padding: 0.65rem 0.75rem;">
+              <span class="prd-badge" style="background: #e0f2fe; color: #0369a1; font-weight: 700;">
+                ${this.escape(b.laboratoryReferenceNumber || '—')}
+              </span>
+            </td>
+            <td style="padding: 0.65rem 0.75rem; font-size: 0.85rem; color: #64748b;">
+              ${this.escape(b.sampleCode || '—')}
+            </td>
+            <td style="padding: 0.65rem 0.75rem; font-weight: 600;">
+              ${this.escape(b.materialName || '—')}
+              ${b.materialType ? `<span style="font-size: 0.75rem; color: #64748b; display: block;">${this.escape(b.materialType)}</span>` : ''}
+            </td>
+            <td style="padding: 0.65rem 0.75rem; font-size: 0.85rem;">
+              ${this.escape(b.warehouseLocation || 'المستودع الرئيسي')}
+            </td>
+            <td style="padding: 0.65rem 0.75rem;">
+              <strong style="color: #0284c7;">${parseFloat(b.currentQuantity).toFixed(3)}</strong>
+              <span style="font-size: 0.75rem; color: #64748b;">${this.escape(b.unit || 'طن')}</span>
+            </td>
+            <td style="padding: 0.65rem 0.75rem;">
+              <input type="number" class="prd-input prd-proc-batch-qty" data-id="${b.id}" step="0.001" min="0.001" max="${b.currentQuantity}" value="${parseFloat(currentQtyVal).toFixed(3)}" ${isSelected ? '' : 'disabled'} style="width: 140px; padding: 0.4rem 0.6rem; font-weight: 700;">
+            </td>
+          </tr>
+        `;
+      });
+
+      tbody.innerHTML = html;
+
+      // Bind checkboxes & inputs
+      const chks = tbody.querySelectorAll('.prd-proc-batch-chk');
+      chks.forEach(chk => {
+        chk.addEventListener('change', () => {
+          const bId = parseInt(chk.dataset.id, 10);
+          const batchObj = this.availableBatches.find(x => x.id === bId);
+          if (!batchObj) return;
+
+          const row = tbody.querySelector(`tr[data-row-batch-id="${bId}"]`);
+          const qtyInput = row?.querySelector('.prd-proc-batch-qty');
+
+          if (chk.checked) {
+            if (row) row.style.background = '#f0fdf4';
+            if (qtyInput) {
+              qtyInput.disabled = false;
+              let qty = parseFloat(qtyInput.value);
+              if (isNaN(qty) || qty <= 0 || qty > batchObj.currentQuantity) {
+                qty = batchObj.currentQuantity;
+                qtyInput.value = qty.toFixed(3);
+              }
+              this.selectedBatches.set(bId, {
+                batch: batchObj,
+                consumedQuantity: qty
+              });
+            }
+          } else {
+            if (row) row.style.background = 'transparent';
+            if (qtyInput) qtyInput.disabled = true;
+            this.selectedBatches.delete(bId);
+          }
+
+          this.updateProcessSummary();
+        });
+      });
+
+      const qtyInputs = tbody.querySelectorAll('.prd-proc-batch-qty');
+      qtyInputs.forEach(input => {
+        input.addEventListener('input', () => {
+          const bId = parseInt(input.dataset.id, 10);
+          const batchObj = this.availableBatches.find(x => x.id === bId);
+          if (!batchObj) return;
+
+          let val = parseFloat(input.value);
+          if (!isNaN(val) && val > 0) {
+            if (val > batchObj.currentQuantity) {
+              this.notify(`الكمية المدخلة (${val}) تتجاوز المتاح بالتشغيلة (${batchObj.currentQuantity})`, 'warning');
+              val = batchObj.currentQuantity;
+              input.value = val.toFixed(3);
+            }
+            if (this.selectedBatches.has(bId)) {
+              this.selectedBatches.get(bId).consumedQuantity = val;
+            }
+          }
+          this.updateProcessSummary();
+        });
+      });
+
+      this.updateProcessSummary();
+    }
+
+    static updateProcessSummary() {
+      const countEl = document.getElementById('prd-proc-selected-batches-count');
+      const totalEl = document.getElementById('prd-proc-total-consumed-qty');
+
+      let totalQty = 0;
+      this.selectedBatches.forEach(item => {
+        totalQty += (parseFloat(item.consumedQuantity) || 0);
+      });
+
+      if (countEl) countEl.textContent = this.selectedBatches.size;
+      if (totalEl) totalEl.textContent = totalQty.toFixed(3);
+    }
+
+    static resetProcessForm() {
+      this.selectedBatches.clear();
+      const searchInput = document.getElementById('prd-proc-search');
+      if (searchInput) searchInput.value = '';
+      const locFilter = document.getElementById('prd-proc-location-filter');
+      if (locFilter) locFilter.value = '';
+      const fileInput = document.getElementById('prd-proc-weighbridge-file');
+      if (fileInput) fileInput.value = '';
+      const notesInput = document.getElementById('prd-proc-notes');
+      if (notesInput) notesInput.value = '';
+      const procDate = document.getElementById('prd-proc-date');
+      if (procDate) {
+        const now = new Date();
+        const tzOffset = now.getTimezoneOffset() * 60000;
+        procDate.value = (new Date(now.getTime() - tzOffset)).toISOString().slice(0, 16);
+      }
+      this.filterAndRenderBatches();
+          this.loadReadyOrdersForProcess();
+    }
+
+    static async handleProcessSubmit() {
+      if (this.selectedBatches.size === 0) {
+        this.notify('يرجى تحديد تشغيلة أو مادة أولية واحدة على الأقل للاستهلاك في عملية الإنتاج', 'error');
+        return;
+      }
+
+      const materialsPayload = [];
+      let hasInvalidQty = false;
+
+      const orderSelect = document.getElementById('prd-proc-order-select');
+      const selectedOrderId = orderSelect ? orderSelect.value : '';
+      const selectedOrder = selectedOrderId && this.cachedReadyOrders ? this.cachedReadyOrders.find(o => o.id === parseInt(selectedOrderId, 10)) : null;
+
+      this.selectedBatches.forEach((item, bId) => {
+        const qty = parseFloat(item.consumedQuantity);
+        const orderItem = selectedOrder ? (selectedOrder.items || []).find(it => it.warehouseBatchId === bId) : null;
+        const maxAllowed = orderItem ? orderItem.issuedQuantity : item.batch.currentQuantity;
+
+        if (isNaN(qty) || qty <= 0 || (maxAllowed > 0 && qty > maxAllowed)) {
+          hasInvalidQty = true;
+        } else {
+          materialsPayload.push({
+            warehouseBatchId: bId,
+            consumedQuantity: qty,
+            unit: item.batch.unit || 'طن'
+          });
+        }
+      });
+
+      if (hasInvalidQty || materialsPayload.length === 0) {
+        this.notify('يرجى التأكد من أن جميع الكميات المستهلكة المحددة موجبة ولا تتجاوز الكميات المنقولة أو الرصيد المتاح', 'error');
+        return;
+      }
+
+      const fileInput = document.getElementById('prd-proc-weighbridge-file');
+      if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+        this.notify('يرجى إرفاق تذكرة ميزان البسكول للمواد الخام الواردة للعملية (PDF, JPG, PNG)', 'error');
+        return;
+      }
+
+      const file = fileInput.files[0];
+      const validExts = ['.pdf', '.jpg', '.jpeg', '.png'];
+      const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+      if (!validExts.includes(ext)) {
+        this.notify('نوع ملف ميزان البسكول غير مدعوم. الصيغ المسموحة: PDF, JPG, PNG', 'error');
+        return;
+      }
+      if (file.size > 25 * 1024 * 1024) {
+        this.notify('حجم ملف ميزان البسكول يتجاوز الحد الأقصى المسموح (25 ميجابايت)', 'error');
+        return;
+      }
+
+      const procDate = document.getElementById('prd-proc-date')?.value || new Date().toISOString();
+      const notes = document.getElementById('prd-proc-notes')?.value || '';
+
+      const formData = new FormData();
+      formData.append('ProductionDate', procDate);
+      formData.append('Notes', notes);
+      if (selectedOrderId) {
+        formData.append('ProductionOrderId', selectedOrderId);
+      }
+      formData.append('MaterialsJson', JSON.stringify(materialsPayload));
+      formData.append('incomingWeighbridge', file);
+      formData.append('weighbridgeFile', file);
+
+      const submitBtn = document.getElementById('prd-proc-btn-submit');
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'جاري حفظ وتأكيد العملية وخصم المخزون...';
+      }
+
+      try {
+        const res = await window.ChatApi.submitProductionProcess(formData);
+        if (res && res.success && res.data) {
+          const p = res.data;
+          this.notify(`تم إنشاء عملية الإنتاج بنجاح برقم: ${p.processNumber}. تم خصم ${p.totalInputQuantity} طن من المستودع وحفظ تذكرة البسكول.`, 'success');
+          this.resetProcessForm();
+          this.loadAvailableBatches();
+          this.loadNextNumbers();
+
+          // Switch to Finished Product tab and pre-select new process
+          this.showSection('finished');
+          setTimeout(() => {
+            this.loadProcessesForFinished(p.id);
+          }, 300);
+        } else {
+          this.notify(res?.message || 'فشل حفظ وتأكيد عملية الإنتاج', 'error');
+        }
+      } catch (err) {
+        console.error('Error submitting production process:', err);
+        this.notify('حدث خطأ أثناء حفظ وتأكيد عملية الإنتاج', 'error');
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'حفظ وتأكيد عملية الإنتاج';
+        }
+      }
+    }
+
+    /* ----------------------------------------------------------------------
+       2. FINISHED PRODUCT & WASTE CALCULATION SECTION (المنتج النهائي وحساب الهالك)
+       ---------------------------------------------------------------------- */
+    static initFinishedSection() {
+      // Production Process Selection
+      const procSelect = document.getElementById('prd-fin-process-select');
+      procSelect?.addEventListener('change', () => {
+        const val = procSelect.value ? parseInt(procSelect.value, 10) : null;
+        this.onProcessSelectedForFinished(val);
+      });
+
+      // Production Order Selection
+      const orderSelect = document.getElementById('prd-fin-order-select');
+      orderSelect?.addEventListener('change', () => {
+        const val = orderSelect.value ? parseInt(orderSelect.value, 10) : null;
+        this.onOrderSelectedForFinished(val);
+      });
+
+      const refreshOrdersBtn = document.getElementById('btn-refresh-finished-orders');
+      refreshOrdersBtn?.addEventListener('click', () => {
+        this.loadEligibleProcesses();
+        this.loadOrdersForFinished();
+        this.loadStorageLocationsForFinished();
+      });
+
+      const qtyInput = document.getElementById('prd-fin-quantity');
+      qtyInput?.addEventListener('input', () => this.updateWasteCalculation());
+
+      const resetBtn = document.getElementById('prd-fin-btn-reset');
+      resetBtn?.addEventListener('click', () => this.resetFinishedForm());
+
+      const finishedForm = document.getElementById('prd-finished-form');
+      finishedForm?.addEventListener('submit', (e) => {
+        e.preventDefault();
+        this.handleFinishedSubmit();
+      });
+
+      // Load initial lists
+      this.loadEligibleProcesses();
+      this.loadOrdersForFinished();
+      this.loadStorageLocationsForFinished();
+
+      // Real-time synchronization
+      window.addEventListener('facestone:production-order-changed', () => {
+        if (this.currentSection === 'finished') {
+          this.loadEligibleProcesses();
+          this.loadOrdersForFinished();
+        }
+      });
+      window.addEventListener('facestone:warehouse-inventory-changed', () => {
+        if (this.currentSection === 'finished') {
+          this.loadStorageLocationsForFinished();
+        }
+      });
+      window.addEventListener('facestone:data-changed', (e) => {
+        if (['storage', 'production', 'laboratory'].includes(e.detail?.department) && this.currentSection === 'finished') {
+          this.loadEligibleProcesses();
+          this.loadOrdersForFinished();
+          this.loadStorageLocationsForFinished();
+        }
+      });
+    }
+
+    static async loadStorageLocationsForFinished() {
+      const select = document.getElementById('prd-fin-destination-warehouse');
+      if (!select) return;
+
+      try {
+        const res = await window.ChatApi.getStorageLocations();
+        let opts = '<option value="">-- اختر مستودع تخزين المنتج النهائي --</option>';
+        if (res && res.success && Array.isArray(res.data)) {
+          this.storageLocationsForFinished = res.data;
+          res.data.forEach(loc => {
+            opts += `<option value="${loc.id}">${this.escape(loc.name)} (${this.escape(loc.code || 'WH')})</option>`;
+          });
+        }
+        select.innerHTML = opts;
+      } catch (err) {
+        console.error('Error loading storage locations for finished product:', err);
+      }
+    }
+
+    static async loadProcessesForFinished(selectedId = null) {
+      return this.loadEligibleProcesses(selectedId);
+    }
+
+    static renderSelectedBatches() {
+      this.updateProcessSummary();
+    }
+
+    static async loadEligibleProcesses(selectedId = null) {
+      const select = document.getElementById('prd-fin-process-select');
+      if (!select) return;
+
+      try {
+        const res = await window.ChatApi.getEligibleProductionProcesses();
+        let opts = '<option value="">-- اختر رقم عملية الإنتاج من قاعدة البيانات --</option>';
+
+        if (res && res.success && Array.isArray(res.data)) {
+          this.eligibleProcessesForFinished = res.data;
+          res.data.forEach(p => {
+            const isSel = selectedId && (p.id === selectedId || p.processNumber === selectedId);
+            const statusBadge = p.status === 'COMPLETED' ? 'مكتملة' : 'قيد التشغيل';
+            const orderTxt = p.productionOrderNumber ? ` [أمر: ${p.productionOrderNumber}]` : '';
+            opts += `<option value="${p.id}" ${isSel ? 'selected' : ''}>${this.escape(p.processNumber)}${this.escape(orderTxt)} — ${this.escape(p.targetProductName || 'منتج')} (المدخلات: ${parseFloat(p.totalInputQuantity).toFixed(2)} طن) [${statusBadge}]</option>`;
+          });
+        } else {
+          this.eligibleProcessesForFinished = [];
+        }
+
+        select.innerHTML = opts;
+
+        if (selectedId) {
+          const matchOpt = Array.from(select.options).find(o => o.value == selectedId);
+          if (matchOpt) {
+            select.value = selectedId;
+            this.onProcessSelectedForFinished(parseInt(selectedId, 10));
+          }
+        } else if (select.value) {
+          this.onProcessSelectedForFinished(parseInt(select.value, 10));
+        }
+      } catch (err) {
+        console.error('Error loading eligible production processes:', err);
+      }
+    }
+
+    static async onProcessSelectedForFinished(processId) {
+      const card = document.getElementById('prd-fin-order-details-card');
+      if (!processId) {
+        this.currentProcessForFinished = null;
+        if (card && !this.currentOrderForFinished) card.style.display = 'none';
+        this.updateWasteCalculation();
+        return;
+      }
+
+      const proc = (this.eligibleProcessesForFinished || []).find(p => p.id === processId);
+      if (!proc) {
+        this.currentProcessForFinished = null;
+        if (card && !this.currentOrderForFinished) card.style.display = 'none';
+        this.updateWasteCalculation();
+        return;
+      }
+
+      this.currentProcessForFinished = proc;
+      if (card) card.style.display = 'block';
+
+      // Sync Order Select if linked
+      if (proc.productionOrderId) {
+        const orderSelect = document.getElementById('prd-fin-order-select');
+        if (orderSelect) {
+          orderSelect.value = proc.productionOrderId;
+        }
+      }
+
+      const numEl = document.getElementById('prd-fin-disp-order-number');
+      const prodEl = document.getElementById('prd-fin-disp-order-product');
+      const targetEl = document.getElementById('prd-fin-disp-target-qty');
+      const transEl = document.getElementById('prd-fin-disp-transferred-qty');
+      const procEl = document.getElementById('prd-fin-disp-proc-number');
+      const statusEl = document.getElementById('prd-fin-disp-order-status');
+
+      if (numEl) numEl.textContent = proc.productionOrderNumber || '—';
+      if (prodEl) prodEl.textContent = proc.targetProductName || '—';
+      if (targetEl) targetEl.textContent = `${parseFloat(proc.totalInputQuantity).toFixed(3)} ${proc.unit || 'طن'}`;
+      if (transEl) transEl.textContent = `${parseFloat(proc.totalInputQuantity).toFixed(3)} ${proc.unit || 'طن'}`;
+      if (procEl) procEl.textContent = proc.processNumber;
+      if (statusEl) {
+        statusEl.textContent = proc.status === 'COMPLETED' ? 'مكتملة' : 'قيد المعالجة (IN_PROGRESS)';
+        statusEl.style.background = proc.status === 'COMPLETED' ? '#dcfce7' : '#fef3c7';
+        statusEl.style.color = proc.status === 'COMPLETED' ? '#15803d' : '#92400e';
+      }
+
+      // Auto-fill finished product name as READ-ONLY
+      const prodNameInp = document.getElementById('prd-fin-product-name');
+      if (prodNameInp) {
+        prodNameInp.value = proc.targetProductName || '';
+        prodNameInp.readOnly = true;
+      }
+
+      // Auto-fill target quantity as READ-ONLY
+      const targetQtyInp = document.getElementById('prd-fin-target-quantity');
+      if (targetQtyInp) {
+        targetQtyInp.value = `${parseFloat(proc.targetQuantity || proc.totalInputQuantity || 0).toFixed(3)} طن`;
+      }
+
+      // Render consumed materials formula table
+      const matTbody = document.getElementById('prd-fin-consumed-materials-tbody');
+      if (matTbody) {
+        let rows = '';
+        (proc.consumedMaterials || []).forEach(m => {
+          rows += `
+            <tr style="border-bottom: 1px solid #e2e8f0;">
+              <td style="padding: 6px 10px; font-weight: 700; color: #1e293b;">${this.escape(m.materialName)}</td>
+              <td style="padding: 6px 10px;">${this.escape(m.materialClassification || '—')}</td>
+              <td style="padding: 6px 10px;"><span class="prd-badge" style="background: #e0f2fe; color: #0369a1;">${this.escape(m.productionReferenceNumber || '—')}</span></td>
+              <td style="padding: 6px 10px; font-weight: 600;">${this.escape(m.batchNumber || '—')}</td>
+              <td style="padding: 6px 10px; color: #64748b;">${this.escape(m.sampleCode || '—')}</td>
+              <td style="padding: 6px 10px; font-weight: 600;">${parseFloat(m.consumedQuantity).toFixed(3)} ${this.escape(m.unit || 'طن')}</td>
+              <td style="padding: 6px 10px; font-weight: 700; color: #0284c7;">${parseFloat(m.consumedQuantity).toFixed(3)} ${this.escape(m.unit || 'طن')}</td>
+              <td style="padding: 6px 10px; font-weight: 700; color: #059669;">${parseFloat(m.consumedQuantity).toFixed(3)} ${this.escape(m.unit || 'طن')}</td>
+            </tr>
+          `;
+        });
+        matTbody.innerHTML = rows || '<tr><td colspan="8" style="text-align: center; color: var(--prd-text-muted); padding: 1rem;">لا توجد مواد مسجلة بالعملية</td></tr>';
+      }
+
+      // Next manufacture number auto-suggest
+      const mfgInput = document.getElementById('prd-fin-mfg-number');
+      if (mfgInput && !mfgInput.value) {
+        this.loadNextNumbers();
+      }
+
+      this.updateWasteCalculation();
+    }
+
+    static async loadOrdersForFinished(selectedId = null) {
+      const select = document.getElementById('prd-fin-order-select');
+      if (!select) return;
+
+      try {
+        const res = await window.ChatApi.getProductionEligibleOrdersForFinished();
+        let opts = '<option value="">-- اختر أمر الإنتاج المسؤول عن تصنيع المنتج النهائي --</option>';
+
+        if (res && res.success && Array.isArray(res.data)) {
+          this.eligibleOrdersForFinished = res.data;
+          res.data.forEach(o => {
+            const isSel = selectedId && o.id === selectedId;
+            const statusBadge = o.statusArabic || o.status;
+            opts += `<option value="${o.id}" ${isSel ? 'selected' : ''}>${this.escape(o.orderNumber)} – ${this.escape(o.productName)} (${this.escape(statusBadge)}) - منقول للإنتاج: ${parseFloat(o.totalTransferredQuantity).toFixed(2)} طن</option>`;
+          });
+        } else {
+          this.eligibleOrdersForFinished = [];
+        }
+
+        select.innerHTML = opts;
+
+        if (selectedId) {
+          const matchOpt = Array.from(select.options).find(o => o.value == selectedId);
+          if (matchOpt) {
+            select.value = selectedId;
+            this.onOrderSelectedForFinished(parseInt(selectedId, 10));
+          }
+        }
+      } catch (err) {
+        console.error('Error loading eligible production orders for finished product:', err);
+      }
+    }
+
+    static onOrderSelectedForFinished(orderId) {
+      if (!orderId) {
+        this.currentOrderForFinished = null;
+        if (!this.currentProcessForFinished) {
+          const card = document.getElementById('prd-fin-order-details-card');
+          if (card) card.style.display = 'none';
+        }
+        this.updateWasteCalculation();
+        return;
+      }
+
+      const order = (this.eligibleOrdersForFinished || []).find(o => o.id === orderId);
+      if (!order) return;
+
+      this.currentOrderForFinished = order;
+      const card = document.getElementById('prd-fin-order-details-card');
+      if (card) card.style.display = 'block';
+
+      // If order has linked process, select it in process dropdown
+      if (order.linkedProductionProcessId) {
+        const procSelect = document.getElementById('prd-fin-process-select');
+        if (procSelect) {
+          procSelect.value = order.linkedProductionProcessId;
+          const matchProc = (this.eligibleProcessesForFinished || []).find(p => p.id === order.linkedProductionProcessId);
+          if (matchProc) this.currentProcessForFinished = matchProc;
+        }
+      }
+
+      const numEl = document.getElementById('prd-fin-disp-order-number');
+      const prodEl = document.getElementById('prd-fin-disp-order-product');
+      const targetEl = document.getElementById('prd-fin-disp-target-qty');
+      const transEl = document.getElementById('prd-fin-disp-transferred-qty');
+      const procEl = document.getElementById('prd-fin-disp-proc-number');
+      const statusEl = document.getElementById('prd-fin-disp-order-status');
+
+      if (numEl) numEl.textContent = order.orderNumber;
+      if (prodEl) prodEl.textContent = order.productName;
+      if (targetEl) targetEl.textContent = `${parseFloat(order.targetQuantity).toFixed(3)} ${order.unit || 'طن'}`;
+      if (transEl) transEl.textContent = `${parseFloat(order.totalTransferredQuantity).toFixed(3)} ${order.unit || 'طن'}`;
+      if (procEl) procEl.textContent = order.linkedProductionProcessNumber || 'سيتم الربط/الإنشاء التلقائي';
+      if (statusEl) {
+        statusEl.textContent = order.statusArabic || order.status;
+        statusEl.style.background = '#dcfce7';
+        statusEl.style.color = '#15803d';
+      }
+
+      const prodNameInp = document.getElementById('prd-fin-product-name');
+      if (prodNameInp && order.productName) {
+        prodNameInp.value = order.productName;
+        prodNameInp.readOnly = true;
+      }
+      const targetQtyInp = document.getElementById('prd-fin-target-quantity');
+      if (targetQtyInp) {
+        targetQtyInp.value = `${parseFloat(order.targetQuantity || 0).toFixed(3)} ${order.unit || 'طن'}`;
+      }
+
+      // Render consumed materials formula table
+      const matTbody = document.getElementById('prd-fin-consumed-materials-tbody');
+      if (matTbody && order.materials) {
+        let rows = '';
+        order.materials.forEach(m => {
+          rows += `
+            <tr style="border-bottom: 1px solid #e2e8f0;">
+              <td style="padding: 6px 10px; font-weight: 700; color: #1e293b;">${this.escape(m.materialName)}</td>
+              <td style="padding: 6px 10px;">${this.escape(m.materialClassification || '—')}</td>
+              <td style="padding: 6px 10px;"><span class="prd-badge" style="background: #e0f2fe; color: #0369a1;">${this.escape(m.laboratoryReferenceNumber || '—')}</span></td>
+              <td style="padding: 6px 10px; font-weight: 600;">${this.escape(m.batchNumber || '—')}</td>
+              <td style="padding: 6px 10px; color: #64748b;">${this.escape(m.sampleCode || '—')}</td>
+              <td style="padding: 6px 10px; font-weight: 600;">${parseFloat(m.plannedQuantity).toFixed(3)} ${this.escape(m.unit || 'طن')}</td>
+              <td style="padding: 6px 10px; font-weight: 700; color: #0284c7;">${parseFloat(m.transferredQuantity).toFixed(3)} ${this.escape(m.unit || 'طن')}</td>
+              <td style="padding: 6px 10px; font-weight: 700; color: #059669;">${parseFloat(m.availableToProduction).toFixed(3)} ${this.escape(m.unit || 'طن')}</td>
+            </tr>
+          `;
+        });
+        matTbody.innerHTML = rows || '<tr><td colspan="8" style="text-align: center; color: var(--prd-text-muted); padding: 1rem;">لا توجد مواد مسجلة بأمر الإنتاج</td></tr>';
+      }
+
+      this.updateWasteCalculation();
+    }
+
+    static updateWasteCalculation() {
+      const inputEl = document.getElementById('prd-fin-calc-input');
+      const outputEl = document.getElementById('prd-fin-calc-output');
+      const wasteEl = document.getElementById('prd-fin-calc-waste');
+      const wastePctEl = document.getElementById('prd-fin-calc-waste-pct');
+      const warningEl = document.getElementById('prd-fin-waste-warning');
+      const qtyInput = document.getElementById('prd-fin-quantity');
+
+      let inputQty = 0;
+      if (this.currentProcessForFinished) {
+        inputQty = parseFloat(this.currentProcessForFinished.totalInputQuantity) || 0;
+      } else if (this.currentOrderForFinished) {
+        inputQty = parseFloat(this.currentOrderForFinished.totalTransferredQuantity) || 0;
+      }
+
+      const outputQty = qtyInput ? parseFloat(qtyInput.value) || 0 : 0;
+      const wasteQty = inputQty - outputQty;
+      const wastePct = inputQty > 0 ? (wasteQty / inputQty) * 100 : 0;
+
+      if (inputEl) inputEl.textContent = `${inputQty.toFixed(3)} طن`;
+      if (outputEl) outputEl.textContent = `${outputQty.toFixed(3)} طن`;
+      if (wasteEl) wasteEl.textContent = `${wasteQty.toFixed(3)} طن`;
+      if (wastePctEl) wastePctEl.textContent = `${wastePct.toFixed(2)}%`;
+
+      if (outputQty > inputQty && inputQty > 0) {
+        if (warningEl) warningEl.style.display = 'block';
+        if (wasteEl) wasteEl.style.color = '#dc2626';
+        if (wastePctEl) wastePctEl.style.color = '#dc2626';
+      } else {
+        if (warningEl) warningEl.style.display = 'none';
+        if (wasteEl) wasteEl.style.color = '#ef4444';
+        if (wastePctEl) wastePctEl.style.color = '#8b5cf6';
+      }
+
+      // Live difference calculation between actual manufactured quantity and target quantity
+      const diffEl = document.getElementById('prd-fin-quantity-difference');
+      const targetInput = document.getElementById('prd-fin-target-quantity');
+      let targetQty = 0;
+      if (this.currentOrderForFinished && this.currentOrderForFinished.targetQuantity) {
+        targetQty = parseFloat(this.currentOrderForFinished.targetQuantity) || 0;
+      } else if (this.currentProcessForFinished && this.currentProcessForFinished.targetQuantity) {
+        targetQty = parseFloat(this.currentProcessForFinished.targetQuantity) || 0;
+      } else {
+        targetQty = inputQty;
+      }
+
+      if (targetInput && targetQty > 0) {
+        targetInput.value = `${targetQty.toFixed(3)} طن`;
+      }
+
+      if (diffEl) {
+        const diff = outputQty - targetQty;
+        if (outputQty === 0 && targetQty === 0) {
+          diffEl.textContent = '0.000 طن (مطابق)';
+          diffEl.style.color = '#64748b';
+        } else if (Math.abs(diff) < 0.0001) {
+          diffEl.textContent = '0.000 طن (مطابق تماماً للمستهدف)';
+          diffEl.style.color = '#15803d';
+        } else if (diff > 0) {
+          diffEl.textContent = `+${diff.toFixed(3)} طن (فائض إنتاج عن المستهدف)`;
+          diffEl.style.color = '#0284c7';
+        } else {
+          diffEl.textContent = `${diff.toFixed(3)} طن (عجز عن المستهدف)`;
+          diffEl.style.color = '#d97706';
+        }
+      }
+    }
+
+    static resetFinishedForm() {
+      const form = document.getElementById('prd-finished-form');
+      if (form) form.reset();
+      this.currentOrderForFinished = null;
+      this.currentProcessForFinished = null;
+      const orderCard = document.getElementById('prd-fin-order-details-card');
+      if (orderCard) orderCard.style.display = 'none';
+      this.updateWasteCalculation();
+      this.loadNextNumbers();
+    }
+
+    static async handleFinishedSubmit() {
+      const procSelect = document.getElementById('prd-fin-process-select');
+      const procIdVal = procSelect?.value ? parseInt(procSelect.value, 10) : null;
+
+      const orderSelect = document.getElementById('prd-fin-order-select');
+      const orderIdVal = orderSelect?.value ? parseInt(orderSelect.value, 10) : null;
+
+      if (!procIdVal && !orderIdVal && !this.currentProcessForFinished && !this.currentOrderForFinished) {
+        this.notify('يرجى اختيار رقم عملية الإنتاج (Process Number) أو أمر الإنتاج المسؤول عن تصنيع المنتج النهائي', 'error');
+        return;
+      }
+
+      const productName = document.getElementById('prd-fin-product-name')?.value?.trim();
+      if (!productName) {
+        this.notify('يرجى اختيار أو إدخال اسم المنتج النهائي المصنع', 'error');
+        return;
+      }
+
+      const mfgNumber = document.getElementById('prd-fin-mfg-number')?.value?.trim();
+      if (!mfgNumber) {
+        this.notify('يرجى إدخال رقم التصنيع (Manufacture Number)', 'error');
+        return;
+      }
+
+      const qty = parseFloat(document.getElementById('prd-fin-quantity')?.value);
+      if (isNaN(qty) || qty <= 0) {
+        this.notify('يرجى إدخال كمية مصنعة موجبة أكبر من الصفر', 'error');
+        return;
+      }
+
+      let inputQty = 0;
+      if (this.currentProcessForFinished) {
+        inputQty = parseFloat(this.currentProcessForFinished.totalInputQuantity) || 0;
+      } else if (this.currentOrderForFinished) {
+        inputQty = parseFloat(this.currentOrderForFinished.totalTransferredQuantity) || 0;
+      }
+
+      if (inputQty > 0 && qty > inputQty) {
+        this.notify(`خطأ في تدقيق الكتلة: كمية الناتج المصنع (${qty} طن) أكبر من إجمالي المواد المستلمة للإنتاج (${inputQty} طن). الهالك لا يمكن أن يكون سالباً!`, 'error');
+        return;
+      }
+
+      const destWarehouseSelect = document.getElementById('prd-fin-destination-warehouse');
+      const destLocationId = destWarehouseSelect?.value ? parseInt(destWarehouseSelect.value, 10) : null;
+      if (!destLocationId || destLocationId <= 0) {
+        this.notify('يرجى اختيار مستودع وجهة تخزين المنتج النهائي (Destination Warehouse)', 'error');
+        destWarehouseSelect?.focus();
+        return;
+      }
+
+      const fileInput = document.getElementById('prd-fin-weighbridge-file');
+      if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+        this.notify('يرجى إرفاق تذكرة ميزان البسكول للمنتج التام النهائي (PDF, JPG, PNG) — المرفق إلزامي', 'error');
+        fileInput?.focus();
+        return;
+      }
+
+      const file = fileInput.files[0];
+      const validExts = ['.pdf', '.jpg', '.jpeg', '.png'];
+      const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+      if (!validExts.includes(ext)) {
+        this.notify('نوع ملف ميزان البسكول غير مدعوم. الصيغ المسموحة: PDF, JPG, PNG', 'error');
+        return;
+      }
+      if (file.size > 25 * 1024 * 1024) {
+        this.notify('حجم ملف ميزان البسكول يتجاوز الحد الأقصى المسموح (25 ميجابايت)', 'error');
+        return;
+      }
+
+      const notes = document.getElementById('prd-fin-notes')?.value || '';
+
+      const formData = new FormData();
+      if (procIdVal) {
+        formData.append('ProductionProcessId', procIdVal);
+      } else if (this.currentProcessForFinished?.id) {
+        formData.append('ProductionProcessId', this.currentProcessForFinished.id);
+      }
+      if (orderIdVal) {
+        formData.append('ProductionOrderId', orderIdVal);
+      } else if (this.currentOrderForFinished?.id) {
+        formData.append('ProductionOrderId', this.currentOrderForFinished.id);
+      }
+
+      formData.append('FinishedProductName', productName);
+      formData.append('ManufactureNumber', mfgNumber);
+      formData.append('ManufacturedQuantity', qty);
+      formData.append('Unit', 'طن');
+      const compDate = document.getElementById('prd-fin-completion-date')?.value;
+      if (compDate) {
+        formData.append('ProductionDate', compDate);
+      }
+      formData.append('DestinationStorageLocationId', destLocationId);
+      formData.append('Notes', notes);
+      formData.append('weighbridgeFile', file);
+
+      const submitBtn = document.getElementById('prd-fin-btn-submit');
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'جاري اعتماد المنتج النهائي وإيداعه بالمستودع...';
+      }
+
+      try {
+        const res = await window.ChatApi.submitFinishedProduct(formData);
+        if (res && res.success && res.data) {
+          const p = res.data;
+          this.notify(`تم تسجيل واعتماد المنتج النهائي برقم تصنيع: ${mfgNumber} بنجاح وإيداعه في المستودع! كمية الهالك: ${p.totalWasteQuantity} طن (${parseFloat(p.wastePercentage).toFixed(2)}%).`, 'success');
+          this.resetFinishedForm();
+          this.loadEligibleProcesses();
+          this.loadOrdersForFinished();
+          this.showSection('history');
+          setTimeout(() => {
+            this.loadTraceabilityHistory({ query: mfgNumber });
+          }, 300);
+        } else {
+          this.notify(res?.message || 'فشل اعتماد المنتج النهائي', 'error');
+        }
+      } catch (err) {
+        console.error('Error submitting finished product:', err);
+        this.notify('حدث خطأ أثناء اعتماد المنتج النهائي: ' + (err.message || 'خطأ غير معروف'), 'error');
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'حفظ واعتماد المنتج النهائي';
+        }
+      }
+    }
+    /* ----------------------------------------------------------------------
+       3. TRACEABILITY & HISTORY SECTION (سجل وعمليات التتبع)
+       ---------------------------------------------------------------------- */
+    static initTraceabilitySection() {
+      const searchBtn = document.getElementById('prd-btn-search-traceability');
+      searchBtn?.addEventListener('click', () => this.loadTraceabilityHistory());
+
+      const resetBtn = document.getElementById('prd-btn-reset-traceability');
+      resetBtn?.addEventListener('click', () => {
+        const searchInput = document.getElementById('prd-trace-search-input');
+        const dateFrom = document.getElementById('prd-trace-date-from');
+        const dateTo = document.getElementById('prd-trace-date-to');
+        const statusFilter = document.getElementById('prd-trace-status-filter');
+        if (searchInput) searchInput.value = '';
+        if (dateFrom) dateFrom.value = '';
+        if (dateTo) dateTo.value = '';
+        if (statusFilter) statusFilter.value = '';
+        this.loadTraceabilityHistory();
+      });
+
+      const searchInput = document.getElementById('prd-trace-search-input');
+      searchInput?.addEventListener('keyup', (e) => {
+        if (e.key === 'Enter') {
+          this.loadTraceabilityHistory();
+        }
+      });
+    }
+
+    static async loadTraceabilityHistory(overrideParams = {}) {
+      const tbody = document.getElementById('prd-trace-table-tbody');
+      const countEl = document.getElementById('prd-trace-records-count');
+      if (tbody) {
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; padding: 2rem; color: var(--prd-text-muted);">جاري تحميل سجل عمليات الإنتاج والتتبع...</td></tr>';
+      }
+
+      const search = overrideParams.query ?? document.getElementById('prd-trace-search-input')?.value?.trim();
+      const dateFrom = overrideParams.dateFrom ?? document.getElementById('prd-trace-date-from')?.value;
+      const dateTo = overrideParams.dateTo ?? document.getElementById('prd-trace-date-to')?.value;
+      const status = overrideParams.status ?? document.getElementById('prd-trace-status-filter')?.value;
+
+      const params = {};
+      if (search) params.query = search;
+
+      try {
+        const res = await window.ChatApi.searchProductionTraceability(params);
+        if (res && res.success && Array.isArray(res.data)) {
+          let list = res.data;
+
+          if (dateFrom) {
+            list = list.filter(x => (x.productionDate || '').slice(0, 10) >= dateFrom);
+          }
+          if (dateTo) {
+            list = list.filter(x => (x.productionDate || '').slice(0, 10) <= dateTo);
+          }
+          if (status) {
+            list = list.filter(x => x.status === status);
+          }
+
+          if (countEl) countEl.textContent = list.length;
+
+          if (list.length === 0) {
+            if (tbody) {
+              tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; padding: 2.5rem; color: var(--prd-text-muted);">لا توجد عمليات إنتاج تطابق معايير البحث الحالية</td></tr>';
+            }
+            return;
+          }
+
+          let html = '';
+          list.forEach(item => {
+            const p = item.process || item;
+            const statusBadge = p.status === 'COMPLETED'
+              ? '<span class="prd-badge" style="background: #dcfce7; color: #166534; font-weight: 700;">مكتملة معتمد</span>'
+              : '<span class="prd-badge" style="background: #fef3c7; color: #92400e; font-weight: 700;">قيد المعالجة</span>';
+
+            let matsHtml = '';
+            (p.materials || []).forEach(m => {
+              const refNum = m.productionReferenceNumber || m.laboratoryReferenceNumber || '—';
+              matsHtml += `<div style="margin-bottom: 0.25rem;">
+                <strong style="color: var(--prd-navy-dark);">${this.escape(m.materialName)}</strong>
+                <span style="font-size: 0.75rem; color: #64748b;">(مرجع: <b>${this.escape(refNum)}</b> | تشغيلة: <b>${this.escape(m.batchNumber)}</b>)</span>
+                <span style="font-size: 0.8rem; font-weight: 700; color: #0284c7; margin-right: 0.35rem;">${parseFloat(m.consumedQuantity).toFixed(3)} طن</span>
+              </div>`;
+            });
+
+            let finsHtml = '';
+            if (p.finishedProducts && p.finishedProducts.length > 0) {
+              p.finishedProducts.forEach(f => {
+                finsHtml += `<div style="margin-bottom: 0.25rem;">
+                  <strong style="color: #10b981;">${this.escape(f.finishedProductName)}</strong>
+                  <span style="font-size: 0.75rem; color: #64748b; display: block;">رقم التصنيع: <b style="color: var(--prd-navy-dark);">${this.escape(f.manufactureNumber)}</b></span>
+                </div>`;
+              });
+            } else {
+              finsHtml = '<span style="color: var(--prd-text-muted); font-size: 0.8rem;">بانتظار تسجيل المنتج النهائي</span>';
+            }
+
+            let attHtml = '';
+            if (p.attachments && p.attachments.length > 0) {
+              p.attachments.forEach(att => {
+                const isRaw = att.attachmentType === 'IncomingWeighbridge';
+                const label = isRaw ? 'بسكول مواد خام' : 'بسكول منتج تام';
+                const bg = isRaw ? '#e0f2fe' : '#dcfce7';
+                const color = isRaw ? '#0369a1' : '#166534';
+                attHtml += `<a href="${att.filePath}" target="_blank" class="prd-badge" style="background: ${bg}; color: ${color}; text-decoration: none; display: inline-flex; align-items: center; gap: 0.25rem; margin: 0.15rem; font-size: 0.75rem;" title="${this.escape(att.originalFileName)}">
+                  <span>📄</span> ${label}
+                </a>`;
+              });
+            } else {
+              attHtml = '<span style="color: var(--prd-text-muted); font-size: 0.8rem;">—</span>';
+            }
+
+            html += `
+              <tr style="border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 0.75rem 0.65rem;">
+                  <span class="prd-badge" style="background: #f1f5f9; color: var(--prd-navy-dark); font-weight: 800; font-size: 0.88rem; padding: 0.35rem 0.65rem; border: 1px solid #cbd5e1;">
+                    ${this.escape(p.processNumber)}
+                  </span>
+                  <div style="margin-top: 0.3rem;">${statusBadge}</div>
+                </td>
+                <td style="padding: 0.75rem 0.65rem; font-size: 0.85rem;">
+                  <div>${this.escape(p.formattedDate || this.formatDateTime(p.productionDate))}</div>
+                  <small style="color: var(--prd-text-muted);">${this.escape(p.productionManagerName || 'مسؤول الإنتاج')}</small>
+                </td>
+                <td style="padding: 0.75rem 0.65rem; font-size: 0.82rem;">
+                  ${matsHtml || '—'}
+                </td>
+                <td style="padding: 0.75rem 0.65rem; font-weight: 800; color: #0284c7; font-size: 0.95rem;">
+                  ${parseFloat(p.totalInputQuantity).toFixed(3)} طن
+                </td>
+                <td style="padding: 0.75rem 0.65rem; font-size: 0.82rem;">
+                  ${finsHtml}
+                </td>
+                <td style="padding: 0.75rem 0.65rem; font-weight: 800; color: #10b981; font-size: 0.95rem;">
+                  ${parseFloat(p.totalOutputQuantity).toFixed(3)} طن
+                </td>
+                <td style="padding: 0.75rem 0.65rem; font-size: 0.85rem;">
+                  ${p.status === 'COMPLETED' ? `
+                    <div style="font-weight: 800; color: #ef4444;">${parseFloat(p.totalWasteQuantity).toFixed(3)} طن</div>
+                    <small style="color: #8b5cf6; font-weight: 700;">${parseFloat(p.wastePercentage).toFixed(2)}%</small>
+                  ` : '<span style="color: var(--prd-text-muted);">—</span>'}
+                </td>
+                <td style="padding: 0.75rem 0.65rem;">
+                  ${attHtml}
+                </td>
+                <td style="padding: 0.75rem 0.65rem; text-align: center;">
+                  <button type="button" class="prd-btn prd-btn-outline" onclick="ProductionApp.showTraceabilityModal(${p.id})" style="padding: 0.4rem 0.75rem; font-size: 0.8rem; font-weight: 700;">
+                    سلسلة التتبع الكاملة
+                  </button>
+                </td>
+              </tr>
+            `;
+          });
+
+          if (tbody) tbody.innerHTML = html;
+        } else {
+          if (tbody) {
+            tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 2rem; color: #ef4444;">${this.escape(res?.message || 'فشل تحميل سجل التتبع')}</td></tr>`;
+          }
+        }
+      } catch (err) {
+        console.error('Error loading traceability history:', err);
+        if (tbody) {
+          tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; padding: 2rem; color: #ef4444;">حدث خطأ أثناء تحميل سجل التتبع</td></tr>';
+        }
+      }
+    }
+
+    static async showTraceabilityModal(processId) {
+      const contentEl = document.getElementById('prd-trace-modal-content');
+      const titleEl = document.getElementById('prd-trace-modal-title');
+      if (contentEl) {
+        contentEl.innerHTML = '<div style="text-align: center; padding: 3rem; color: var(--prd-text-muted);">جاري تحميل سلسلة التتبع الكاملة...</div>';
+      }
+      this.openModal('prd-modal-traceability-details');
+
+      try {
+        const res = await window.ChatApi.getProductionProcessById(processId);
+        if (res && res.success && res.data) {
+          const p = res.data;
+          if (titleEl) {
+            titleEl.textContent = `سلسلة التتبع الكاملة لعملية الإنتاج: ${p.processNumber}`;
+          }
+
+          let matsRows = '';
+          (p.materials || []).forEach(m => {
+            const refNum = m.productionReferenceNumber || m.laboratoryReferenceNumber || '—';
+            const locName = m.storageLocationName || m.warehouseLocation || '—';
+            matsRows += `
+              <tr style="border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 0.5rem 0.75rem; font-weight: 700;">${this.escape(m.materialName)}</td>
+                <td style="padding: 0.5rem 0.75rem;"><span class="prd-badge" style="background: #e0f2fe; color: #0369a1; font-weight: 700;">${this.escape(refNum)}</span></td>
+                <td style="padding: 0.5rem 0.75rem; font-weight: 600;">${this.escape(m.batchNumber)}</td>
+                <td style="padding: 0.5rem 0.75rem;">${this.escape(m.sampleCode || '—')}</td>
+                <td style="padding: 0.5rem 0.75rem;">${this.escape(locName)}</td>
+                <td style="padding: 0.5rem 0.75rem; font-weight: 800; color: #0284c7;">${parseFloat(m.consumedQuantity).toFixed(3)} طن</td>
+              </tr>
+            `;
+          });
+
+          let finRows = '';
+          (p.finishedProducts || []).forEach(f => {
+            finRows += `
+              <tr style="border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 0.5rem 0.75rem; font-weight: 700; color: #10b981;">${this.escape(f.finishedProductName)}</td>
+                <td style="padding: 0.5rem 0.75rem;"><strong style="color: var(--prd-navy-dark);">${this.escape(f.manufactureNumber)}</strong></td>
+                <td style="padding: 0.5rem 0.75rem; font-weight: 800; color: #10b981;">${parseFloat(f.manufacturedQuantity).toFixed(3)} ${this.escape(f.unit || 'طن')}</td>
+                <td style="padding: 0.5rem 0.75rem;">${this.escape(this.formatDateTime(f.productionDate))}</td>
+                <td style="padding: 0.5rem 0.75rem;">
+                  ${f.weighbridgeAttachmentPath ? `<a href="${f.weighbridgeAttachmentPath}" target="_blank" class="prd-badge" style="background: #dcfce7; color: #166534; text-decoration: none;">📄 تذكرة وزن المنتج</a>` : '—'}
+                </td>
+              </tr>
+            `;
+          });
+
+          let attRows = '';
+          (p.attachments || []).forEach(att => {
+            const isRaw = att.attachmentType === 'IncomingWeighbridge';
+            attRows += `
+              <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 0.75rem 1rem; display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                <div>
+                  <strong style="color: var(--prd-navy-dark); display: block;">${isRaw ? '⚖️ ميزان بسكول المواد الخام الواردة للعملية' : '⚖️ ميزان بسكول المنتج النهائي المصنع'}</strong>
+                  <small style="color: var(--prd-text-muted);">${this.escape(att.originalFileName)} (${(att.fileSize / 1024).toFixed(1)} KB) - تم الرفع بواسطة: ${this.escape(att.uploadedBy)}</small>
+                </div>
+                <a href="${att.filePath}" target="_blank" class="prd-btn prd-btn-outline" style="padding: 0.35rem 0.85rem; font-size: 0.8rem; text-decoration: none;">
+                  معاينة / تحميل 📥
+                </a>
+              </div>
+            `;
+          });
+
+          contentEl.innerHTML = `
+            <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+              <!-- Header Banner -->
+              <div style="background: #f1f5f9; border-radius: 10px; padding: 1.25rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                <div>
+                  <span style="font-size: 0.82rem; color: var(--prd-text-muted); display: block;">معرف عملية الإنتاج الموحد</span>
+                  <h2 style="margin: 0.2rem 0; font-size: 1.4rem; font-weight: 800; color: var(--prd-navy-dark);">${this.escape(p.processNumber)}</h2>
+                  <span style="font-size: 0.85rem; color: #64748b;">تاريخ العملية: ${this.escape(p.formattedDate || this.formatDateTime(p.productionDate))} | مسؤول الإنتاج: <strong>${this.escape(p.productionManagerName || '—')}</strong></span>
+                </div>
+                <div>
+                  <span class="prd-badge" style="background: ${p.status === 'COMPLETED' ? '#dcfce7' : '#fef3c7'}; color: ${p.status === 'COMPLETED' ? '#166534' : '#92400e'}; font-size: 0.95rem; font-weight: 800; padding: 0.4rem 0.9rem; border-radius: 8px;">
+                    ${p.status === 'COMPLETED' ? 'مكتملة معتمدة (COMPLETED)' : 'قيد المعالجة (IN_PROGRESS)'}
+                  </span>
+                </div>
+              </div>
+
+              <!-- Stage 1: Warehouse & Raw Materials Consumed -->
+              <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 1.25rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.85rem;">
+                  <h4 style="margin: 0; font-size: 1rem; font-weight: 800; color: var(--prd-navy-dark); display: flex; align-items: center; gap: 0.5rem;">
+                    <span style="color: #0284c7;">①</span> مصادر المستودع والمواد الأولية المستهلكة (Warehouse & Raw Materials)
+                  </h4>
+                  <span style="font-size: 0.85rem; color: #0284c7; font-weight: 800;">إجمالي الاستهلاك: ${parseFloat(p.totalInputQuantity).toFixed(3)} طن</span>
+                </div>
+                <div class="table-responsive" style="overflow-x: auto;">
+                  <table class="prd-table" style="width: 100%; border-collapse: collapse; font-size: 0.82rem; text-align: right;">
+                    <thead>
+                      <tr style="background: #f8fafc; color: var(--prd-navy-dark); border-bottom: 2px solid #e2e8f0;">
+                        <th style="padding: 0.5rem 0.75rem;">اسم الخامة</th>
+                        <th style="padding: 0.5rem 0.75rem;">الرقم المرجعي (المعمل)</th>
+                        <th style="padding: 0.5rem 0.75rem;">رقم التشغيلة</th>
+                        <th style="padding: 0.5rem 0.75rem;">كود العينة</th>
+                        <th style="padding: 0.5rem 0.75rem;">المستودع المصدر</th>
+                        <th style="padding: 0.5rem 0.75rem;">الكمية المستهلكة</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${matsRows || '<tr><td colspan="6" style="text-align: center; color: var(--prd-text-muted);">لا توجد مواد مسجلة</td></tr>'}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- Stage 2: Finished Products Manufactured -->
+              <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 1.25rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.85rem;">
+                  <h4 style="margin: 0; font-size: 1rem; font-weight: 800; color: var(--prd-navy-dark); display: flex; align-items: center; gap: 0.5rem;">
+                    <span style="color: #10b981;">②</span> المنتجات النهائية المصنعة وأرقام التصنيع (Finished Products & MFG)
+                  </h4>
+                  <span style="font-size: 0.85rem; color: #10b981; font-weight: 800;">إجمالي الناتج: ${parseFloat(p.totalOutputQuantity).toFixed(3)} طن</span>
+                </div>
+                <div class="table-responsive" style="overflow-x: auto;">
+                  <table class="prd-table" style="width: 100%; border-collapse: collapse; font-size: 0.82rem; text-align: right;">
+                    <thead>
+                      <tr style="background: #f8fafc; color: var(--prd-navy-dark); border-bottom: 2px solid #e2e8f0;">
+                        <th style="padding: 0.5rem 0.75rem;">اسم المنتج النهائي</th>
+                        <th style="padding: 0.5rem 0.75rem;">رقم التصنيع المستقل (MFG #)</th>
+                        <th style="padding: 0.5rem 0.75rem;">الكمية المصنعة</th>
+                        <th style="padding: 0.5rem 0.75rem;">تاريخ الإنتاج</th>
+                        <th style="padding: 0.5rem 0.75rem;">تذكرة البسكول</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${finRows || '<tr><td colspan="5" style="text-align: center; color: var(--prd-text-muted);">بانتظار تسجيل المنتج النهائي</td></tr>'}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- Stage 3: Mass Balance & Waste Audit -->
+              <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 10px; padding: 1.25rem;">
+                <h4 style="margin: 0 0 1rem; font-size: 1rem; font-weight: 800; color: var(--prd-navy-dark); display: flex; align-items: center; gap: 0.5rem;">
+                  <span style="color: #8b5cf6;">③</span> تدقيق ميزان الكتلة وحساب الهالك (Mass Balance & Waste Calculation)
+                </h4>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem;">
+                  <div style="background: #ffffff; padding: 0.85rem 1rem; border-radius: 8px; border-top: 3px solid #0284c7;">
+                    <span style="font-size: 0.78rem; color: var(--prd-text-muted); display: block;">إجمالي المدخلات (Raw Input)</span>
+                    <strong style="font-size: 1.25rem; color: #0284c7;">${parseFloat(p.totalInputQuantity).toFixed(3)} طن</strong>
+                  </div>
+                  <div style="background: #ffffff; padding: 0.85rem 1rem; border-radius: 8px; border-top: 3px solid #10b981;">
+                    <span style="font-size: 0.78rem; color: var(--prd-text-muted); display: block;">إجمالي المخرجات (Finished Output)</span>
+                    <strong style="font-size: 1.25rem; color: #10b981;">${parseFloat(p.totalOutputQuantity).toFixed(3)} طن</strong>
+                  </div>
+                  <div style="background: #ffffff; padding: 0.85rem 1rem; border-radius: 8px; border-top: 3px solid #ef4444;">
+                    <span style="font-size: 0.78rem; color: var(--prd-text-muted); display: block;">كمية الهالك (Waste Quantity)</span>
+                    <strong style="font-size: 1.25rem; color: #ef4444;">${parseFloat(p.totalWasteQuantity).toFixed(3)} طن</strong>
+                  </div>
+                  <div style="background: #ffffff; padding: 0.85rem 1rem; border-radius: 8px; border-top: 3px solid #8b5cf6;">
+                    <span style="font-size: 0.78rem; color: var(--prd-text-muted); display: block;">نسبة الهالك (Waste Percentage)</span>
+                    <strong style="font-size: 1.25rem; color: #8b5cf6;">${parseFloat(p.wastePercentage).toFixed(2)}%</strong>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Stage 4: Weighbridge Documents -->
+              <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 1.25rem;">
+                <h4 style="margin: 0 0 0.85rem; font-size: 1rem; font-weight: 800; color: var(--prd-navy-dark); display: flex; align-items: center; gap: 0.5rem;">
+                  <span style="color: #3b82f6;">④</span> مستندات ميزان البسكول المحفوظة (Weighbridge Documents)
+                </h4>
+                ${attRows || '<p style="color: var(--prd-text-muted); font-size: 0.85rem; margin: 0;">لا توجد مرفقات مسجلة لهذه العملية</p>'}
+              </div>
+
+              <!-- Stage 5: Transportation Integration Information -->
+              <div style="background: #f0fdf4; border: 1px solid #86efac; border-radius: 10px; padding: 1rem 1.25rem;">
+                <div style="display: flex; gap: 0.75rem; align-items: flex-start;">
+                  <span style="font-size: 1.25rem;">🚚</span>
+                  <div>
+                    <strong style="color: #166534; font-size: 0.92rem; display: block;">جاهزية الشحن والنقل (Transportation Department Integration)</strong>
+                    <p style="margin: 0.25rem 0 0; font-size: 0.82rem; color: #15803d; line-height: 1.5;">
+                      تم ربط المنتجات النهائية المصنعة برقم عملية الإنتاج <strong>${this.escape(p.processNumber)}</strong> وأرقام التصنيع الفريدة. قسم النقل يستطيع التحقق والتحميل مباشرة بناءً على هذه الأرقام المرجعية الثابتة دون الحاجة لأي تعديل على نماذج أو عمليات النقل.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          `;
+        } else {
+          if (contentEl) {
+            contentEl.innerHTML = `<div style="text-align: center; padding: 3rem; color: #ef4444;">${this.escape(res?.message || 'فشل تحميل بيانات العملية')}</div>`;
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching process for modal:', err);
+        if (contentEl) {
+          contentEl.innerHTML = '<div style="text-align: center; padding: 3rem; color: #ef4444;">حدث خطأ أثناء تحميل تفاصيل العملية</div>';
+        }
+      }
+    }
+
   }
 
   // Expose to window for app navigation and cross-module calls

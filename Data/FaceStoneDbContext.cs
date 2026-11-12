@@ -31,6 +31,7 @@ public class FaceStoneDbContext : DbContext
     public DbSet<AttendanceSubmission> AttendanceSubmissions => Set<AttendanceSubmission>();
     public DbSet<AttendanceAttachment> AttendanceAttachments => Set<AttendanceAttachment>();
     public DbSet<FormApprovalHistory> FormApprovalHistories => Set<FormApprovalHistory>();
+    public DbSet<ProjectCode> ProjectCodes => Set<ProjectCode>();
 
     // New 3-Card Storage Department Redesign Entities
     public DbSet<StorageLocation> StorageLocations => Set<StorageLocation>();
@@ -40,6 +41,7 @@ public class FaceStoneDbContext : DbContext
     public DbSet<StorageOperation> StorageOperations => Set<StorageOperation>();
     public DbSet<StorageOperationItem> StorageOperationItems => Set<StorageOperationItem>();
     public DbSet<StorageInventoryLedger> StorageInventoryLedger => Set<StorageInventoryLedger>();
+    public DbSet<WarehouseBatch> WarehouseBatches => Set<WarehouseBatch>();
     public DbSet<ProductionWorkInProcess> ProductionWorkInProcess => Set<ProductionWorkInProcess>();
 
     // Laboratory Department Entities
@@ -53,11 +55,22 @@ public class FaceStoneDbContext : DbContext
     public DbSet<ProductionSequence> ProductionSequences => Set<ProductionSequence>();
     public DbSet<ProductionOrder> ProductionOrders => Set<ProductionOrder>();
     public DbSet<ProductionOrderItem> ProductionOrderItems => Set<ProductionOrderItem>();
+    public DbSet<ProductionOrderTransfer> ProductionOrderTransfers => Set<ProductionOrderTransfer>();
+    public DbSet<ProductionOrderFormulaVersion> ProductionOrderFormulaVersions => Set<ProductionOrderFormulaVersion>();
     public DbSet<ProductionBatch> ProductionBatches => Set<ProductionBatch>();
     public DbSet<ProductionOutput> ProductionOutputs => Set<ProductionOutput>();
     public DbSet<ProductionRework> ProductionReworks => Set<ProductionRework>();
     public DbSet<DailyProductionSubmission> DailyProductionSubmissions => Set<DailyProductionSubmission>();
     public DbSet<DailyProductionDetail> DailyProductionDetails => Set<DailyProductionDetail>();
+    public DbSet<ProductionProcess> ProductionProcesses => Set<ProductionProcess>();
+    public DbSet<ProductionProcessMaterial> ProductionProcessMaterials => Set<ProductionProcessMaterial>();
+    public DbSet<ProductionFinishedProduct> ProductionFinishedProducts => Set<ProductionFinishedProduct>();
+    public DbSet<ProductionAttachment> ProductionAttachments => Set<ProductionAttachment>();
+    public DbSet<ProductionWasteRecord> ProductionWasteRecords => Set<ProductionWasteRecord>();
+    public DbSet<Invoice> Invoices => Set<Invoice>();
+    public DbSet<InvoiceItem> InvoiceItems => Set<InvoiceItem>();
+    public DbSet<Supplier> Suppliers => Set<Supplier>();
+    public DbSet<SupplierFinancialTransaction> SupplierFinancialTransactions => Set<SupplierFinancialTransaction>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -215,6 +228,14 @@ public class FaceStoneDbContext : DbContext
 
             entity.Property(e => e.TransactionNumber)
                   .IsRequired();
+
+            entity.HasOne(e => e.ProjectCode)
+                  .WithMany()
+                  .HasForeignKey(e => e.ProjectCodeId)
+                  .OnDelete(DeleteBehavior.SetNull);
+
+            entity.Property(e => e.ProjectCodeValue)
+                  .HasMaxLength(50);
 
             entity.HasIndex(e => new { e.PONumber, e.TransactionNumber })
                   .IsUnique();
@@ -448,6 +469,26 @@ public class FaceStoneDbContext : DbContext
                   .HasForeignKey(e => e.PurchaseOrderId)
                   .OnDelete(DeleteBehavior.SetNull);
 
+            entity.HasOne(e => e.StorageOperation)
+                  .WithMany()
+                  .HasForeignKey(e => e.StorageOperationId)
+                  .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(e => e.StorageOperationItem)
+                  .WithMany()
+                  .HasForeignKey(e => e.StorageOperationItemId)
+                  .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(e => e.ProductionOrder)
+                  .WithMany()
+                  .HasForeignKey(e => e.ProductionOrderId)
+                  .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(e => e.ProductionProcess)
+                  .WithMany()
+                  .HasForeignKey(e => e.ProductionProcessId)
+                  .OnDelete(DeleteBehavior.SetNull);
+
             entity.Property(e => e.DateOfSubmit)
                   .IsRequired();
 
@@ -469,6 +510,21 @@ public class FaceStoneDbContext : DbContext
             entity.Property(e => e.RejectionReason)
                   .HasMaxLength(1000)
                   .IsRequired(false);
+        });
+
+        modelBuilder.Entity<ProjectCode>(entity =>
+        {
+            entity.ToTable("ProjectCodes");
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.Code).IsUnique();
+            entity.Property(e => e.Code).IsRequired().HasMaxLength(50);
+            entity.Property(e => e.ProjectName).IsRequired().HasMaxLength(200);
+            entity.Property(e => e.ClientName).HasMaxLength(200);
+            entity.Property(e => e.Description).HasMaxLength(500);
+            entity.HasOne(e => e.StorageClientDestination)
+                  .WithMany()
+                  .HasForeignKey(e => e.StorageClientDestinationId)
+                  .OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<Management>(entity =>
@@ -1446,14 +1502,88 @@ public class FaceStoneDbContext : DbContext
                   .HasForeignKey(e => e.TransportationId)
                   .OnDelete(DeleteBehavior.SetNull);
 
+            entity.HasOne(e => e.ProductionOrder)
+                  .WithMany()
+                  .HasForeignKey(e => e.ProductionOrderId)
+                  .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(e => e.ProductionProcess)
+                  .WithMany()
+                  .HasForeignKey(e => e.ProductionProcessId)
+                  .OnDelete(DeleteBehavior.SetNull);
+
             entity.HasMany(e => e.ProductionBatches)
                   .WithOne(p => p.StorageOperation)
                   .HasForeignKey(p => p.StorageOperationId)
                   .OnDelete(DeleteBehavior.NoAction);
 
+            entity.Property(e => e.SampleCode).HasMaxLength(50);
+            entity.Property(e => e.SelectionMode).HasMaxLength(50);
+            entity.HasIndex(e => e.SampleCode);
             entity.HasIndex(e => e.TransactionDate);
             entity.HasIndex(e => e.ApprovalStatus);
             entity.HasIndex(e => e.StorageLocationId);
+        });
+
+        modelBuilder.Entity<WarehouseBatch>(entity =>
+        {
+            entity.ToTable("WarehouseBatches");
+            entity.HasKey(e => e.Id);
+
+            entity.HasIndex(e => e.BatchNumber).IsUnique();
+            entity.HasIndex(e => e.SampleCode);
+            entity.HasIndex(e => e.ProductionReferenceNumber);
+            entity.HasIndex(e => e.LaboratoryReportId);
+            entity.HasIndex(e => e.StorageLocationId);
+            entity.HasIndex(e => e.RawMaterialId);
+            entity.HasIndex(e => e.Status);
+
+            entity.Property(e => e.BatchNumber).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.SampleCode).HasMaxLength(50).IsRequired();
+            entity.Property(e => e.MaterialName).HasMaxLength(250).IsRequired();
+            entity.Property(e => e.MaterialClassification).HasMaxLength(50).HasDefaultValue("MECHANICAL").IsRequired();
+            entity.Property(e => e.SupplierName).HasMaxLength(200);
+            entity.Property(e => e.InitialQuantity).HasPrecision(18, 3).IsRequired();
+            entity.Property(e => e.CurrentQuantity).HasPrecision(18, 3).IsRequired();
+            entity.Property(e => e.Status).HasMaxLength(50).HasDefaultValue("PENDING").IsRequired();
+            entity.Property(e => e.CreatedBy).HasMaxLength(150);
+            entity.Property(e => e.Notes).HasMaxLength(1000);
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+            entity.HasOne(e => e.LaboratoryReport)
+                  .WithMany(r => r.Batches)
+                  .HasForeignKey(e => e.LaboratoryReportId)
+                  .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.RawMaterial)
+                  .WithMany()
+                  .HasForeignKey(e => e.RawMaterialId)
+                  .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.StorageLocation)
+                  .WithMany()
+                  .HasForeignKey(e => e.StorageLocationId)
+                  .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.StorageOperation)
+                  .WithMany(o => o.CreatedBatches)
+                  .HasForeignKey(e => e.StorageOperationId)
+                  .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.StorageOperationItem)
+                  .WithMany()
+                  .HasForeignKey(e => e.StorageOperationItemId)
+                  .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.ProductionOrder)
+                  .WithMany()
+                  .HasForeignKey(e => e.ProductionOrderId)
+                  .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(e => e.ProductionProcess)
+                  .WithMany()
+                  .HasForeignKey(e => e.ProductionProcessId)
+                  .OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<StorageOperationItem>(entity =>
@@ -1463,14 +1593,33 @@ public class FaceStoneDbContext : DbContext
             entity.Property(e => e.MaterialName).HasMaxLength(200).IsRequired();
             entity.Property(e => e.Quantity).HasPrecision(18, 3).IsRequired();
             entity.Property(e => e.TrackingNumber).HasMaxLength(100);
+            entity.Property(e => e.BatchNumber).HasMaxLength(100);
+            entity.Property(e => e.SampleCode).HasMaxLength(50);
 
             entity.HasOne(e => e.RawMaterial)
                   .WithMany()
                   .HasForeignKey(e => e.RawMaterialId)
                   .OnDelete(DeleteBehavior.Restrict);
 
+            entity.HasOne(e => e.WarehouseBatch)
+                  .WithMany(b => b.OperationItems)
+                  .HasForeignKey(e => e.WarehouseBatchId)
+                  .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.ProductionOrder)
+                  .WithMany()
+                  .HasForeignKey(e => e.ProductionOrderId)
+                  .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(e => e.ProductionProcess)
+                  .WithMany()
+                  .HasForeignKey(e => e.ProductionProcessId)
+                  .OnDelete(DeleteBehavior.SetNull);
+
             entity.HasIndex(e => e.StorageOperationId);
             entity.HasIndex(e => e.RawMaterialId);
+            entity.HasIndex(e => e.WarehouseBatchId);
+            entity.HasIndex(e => e.BatchNumber);
         });
 
         modelBuilder.Entity<StorageInventoryLedger>(entity =>
@@ -1480,6 +1629,7 @@ public class FaceStoneDbContext : DbContext
             entity.Property(e => e.MovementType).HasMaxLength(50).IsRequired();
             entity.Property(e => e.Quantity).HasPrecision(18, 3).IsRequired();
             entity.Property(e => e.RunningBalance).HasPrecision(18, 3).IsRequired();
+            entity.Property(e => e.BatchNumber).HasMaxLength(100);
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
 
             entity.HasOne(e => e.StorageLocation)
@@ -1490,6 +1640,11 @@ public class FaceStoneDbContext : DbContext
             entity.HasOne(e => e.RawMaterial)
                   .WithMany()
                   .HasForeignKey(e => e.RawMaterialId)
+                  .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.WarehouseBatch)
+                  .WithMany(b => b.LedgerMovements)
+                  .HasForeignKey(e => e.WarehouseBatchId)
                   .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasOne(e => e.StorageOperation)
@@ -1503,6 +1658,7 @@ public class FaceStoneDbContext : DbContext
                   .OnDelete(DeleteBehavior.NoAction);
 
             entity.HasIndex(e => new { e.StorageLocationId, e.RawMaterialId });
+            entity.HasIndex(e => e.WarehouseBatchId);
             entity.HasIndex(e => e.MovementDate);
         });
 
@@ -1512,6 +1668,8 @@ public class FaceStoneDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.TrackingNumber).HasMaxLength(100).IsRequired();
             entity.HasIndex(e => e.TrackingNumber).IsUnique();
+            entity.Property(e => e.BatchNumber).HasMaxLength(100);
+            entity.Property(e => e.SampleCode).HasMaxLength(50);
             entity.Property(e => e.MaterialQuantityIssued).HasPrecision(18, 3).IsRequired();
             entity.Property(e => e.FinalProductQuantity).HasPrecision(18, 3);
             entity.Property(e => e.WasteQuantity).HasPrecision(18, 3);
@@ -1534,6 +1692,13 @@ public class FaceStoneDbContext : DbContext
                   .WithMany()
                   .HasForeignKey(e => e.RawMaterialId)
                   .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.WarehouseBatch)
+                  .WithMany(b => b.ProductionWipTransfers)
+                  .HasForeignKey(e => e.WarehouseBatchId)
+                  .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(e => e.WarehouseBatchId);
 
             entity.Property(e => e.WasteClassification).HasMaxLength(50).HasDefaultValue("ORDINARY_WASTE").IsRequired();
             entity.Property(e => e.RecoverableProductName).HasMaxLength(200);
@@ -1579,10 +1744,14 @@ public class FaceStoneDbContext : DbContext
             entity.HasKey(e => e.Id);
 
             entity.HasIndex(e => e.ProductionReferenceNumber);
+            entity.HasIndex(e => e.SampleCode)
+                  .IsUnique()
+                  .HasFilter("[SampleCode] IS NOT NULL");
             entity.HasIndex(e => new { e.ResponsibleUserId, e.SampleNumber })
                   .IsUnique()
                   .HasFilter("[ResponsibleUserId] IS NOT NULL AND [SampleNumber] > 0");
             entity.HasIndex(e => e.SampleNumber);
+            entity.HasIndex(e => e.MaterialClassification);
             entity.HasIndex(e => e.BatchNumber);
             entity.HasIndex(e => e.ComplyStatus);
             entity.HasIndex(e => e.LaboratorySection);
@@ -1593,6 +1762,8 @@ public class FaceStoneDbContext : DbContext
             entity.HasIndex(e => e.PurchaseOrderId);
 
             entity.Property(e => e.SampleName).HasMaxLength(250).HasDefaultValue("سيليكا باودر (Micro Silica Powder)").IsRequired();
+            entity.Property(e => e.SampleCode).HasMaxLength(50);
+            entity.Property(e => e.MaterialClassification).HasMaxLength(50).HasDefaultValue("MECHANICAL").IsRequired();
             entity.Property(e => e.SampleDescription).HasMaxLength(500);
             entity.Property(e => e.BatchNumber).HasMaxLength(100);
             entity.Property(e => e.ComplyStatus).HasMaxLength(50).HasDefaultValue("COMPLY").IsRequired();
@@ -1603,6 +1774,11 @@ public class FaceStoneDbContext : DbContext
             entity.Property(e => e.SupplierName).HasMaxLength(200);
             entity.Property(e => e.PONumber).HasMaxLength(100);
             entity.Property(e => e.ReceivedQuantity).HasPrecision(18, 3);
+            entity.Property(e => e.TestedMaterialWeight).HasPrecision(18, 3).HasDefaultValue(0m);
+            entity.Property(e => e.QuantityConfirmationPath).HasMaxLength(500);
+            entity.Property(e => e.QuantityConfirmationFileName).HasMaxLength(255);
+            entity.Property(e => e.QuantityConfirmationFileType).HasMaxLength(100);
+            entity.Property(e => e.QuantityConfirmationFileSize).HasDefaultValue(0L);
             entity.Property(e => e.AcceptedQuantity).HasPrecision(18, 3);
             entity.Property(e => e.RejectedQuantity).HasPrecision(18, 3);
             entity.Property(e => e.InspectionDecision).HasMaxLength(50).IsRequired();
@@ -1642,6 +1818,7 @@ public class FaceStoneDbContext : DbContext
 
             entity.Property(e => e.LaboratorySection).HasMaxLength(20).IsRequired();
             entity.Property(e => e.ProductName).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.SampleCode).HasMaxLength(50);
             entity.Property(e => e.ProductionBatchNumber).HasMaxLength(100).IsRequired();
             entity.Property(e => e.ProductionStage).HasMaxLength(100).IsRequired();
             entity.Property(e => e.InspectionDecision).HasMaxLength(50).IsRequired();
@@ -1673,6 +1850,7 @@ public class FaceStoneDbContext : DbContext
             entity.HasIndex(e => e.ApprovalStatus);
 
             entity.Property(e => e.CertificateNumber).HasMaxLength(50).IsRequired();
+            entity.Property(e => e.SampleCode).HasMaxLength(50);
             entity.Property(e => e.LaboratorySection).HasMaxLength(20).IsRequired();
             entity.Property(e => e.FinalProductName).HasMaxLength(200).IsRequired();
             entity.Property(e => e.QuantityUnit).HasMaxLength(50).HasDefaultValue("طن").IsRequired();
@@ -1733,7 +1911,13 @@ public class FaceStoneDbContext : DbContext
 
             entity.Property(e => e.OrderNumber).HasMaxLength(50).IsRequired();
             entity.Property(e => e.ProductName).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.ProductDescription).HasMaxLength(1000);
+            entity.Property(e => e.LaboratoryManagerName).HasMaxLength(255);
+            entity.Property(e => e.ProductionInstructions);
+            entity.Property(e => e.LinkedProductionProcessNumber).HasMaxLength(100);
             entity.Property(e => e.RequestedQuantity).HasPrecision(18, 3);
+            entity.Property(e => e.TotalPlannedRawMaterialQuantity).HasPrecision(18, 3);
+            entity.Property(e => e.TotalTransferredQuantity).HasPrecision(18, 3);
             entity.Property(e => e.Unit).HasMaxLength(50).HasDefaultValue("طن").IsRequired();
             entity.Property(e => e.StorageLocationName).HasMaxLength(150).IsRequired();
             entity.Property(e => e.Status).HasMaxLength(50).HasDefaultValue("DRAFT").IsRequired();
@@ -1750,6 +1934,16 @@ public class FaceStoneDbContext : DbContext
                   .WithMany()
                   .HasForeignKey(e => e.StorageOperationId)
                   .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasMany(e => e.Transfers)
+                  .WithOne(t => t.ProductionOrder)
+                  .HasForeignKey(t => t.ProductionOrderId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasMany(e => e.FormulaVersions)
+                  .WithOne(f => f.ProductionOrder)
+                  .HasForeignKey(f => f.ProductionOrderId)
+                  .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<ProductionOrderItem>(entity =>
@@ -1759,11 +1953,20 @@ public class FaceStoneDbContext : DbContext
 
             entity.HasIndex(e => e.ProductionOrderId);
             entity.HasIndex(e => e.RawMaterialId);
+            entity.HasIndex(e => e.WarehouseBatchId);
+            entity.HasIndex(e => e.BatchNumber);
+            entity.HasIndex(e => e.ProductionReferenceNumber);
 
             entity.Property(e => e.MaterialName).HasMaxLength(150).IsRequired();
+            entity.Property(e => e.MaterialType).HasMaxLength(100);
+            entity.Property(e => e.BatchNumber).HasMaxLength(100);
+            entity.Property(e => e.ProductionReferenceNumber);
+            entity.Property(e => e.SampleCode).HasMaxLength(100);
+            entity.Property(e => e.StorageLocationName).HasMaxLength(255);
             entity.Property(e => e.RequestedQuantity).HasPrecision(18, 3);
             entity.Property(e => e.IssuedQuantity).HasPrecision(18, 3);
             entity.Property(e => e.ConsumedQuantity).HasPrecision(18, 3);
+            entity.Property(e => e.AvailableQuantityBefore).HasPrecision(18, 3);
             entity.Property(e => e.Unit).HasMaxLength(50).HasDefaultValue("طن").IsRequired();
 
             entity.HasOne(e => e.ProductionOrder)
@@ -1775,6 +1978,84 @@ public class FaceStoneDbContext : DbContext
                   .WithMany()
                   .HasForeignKey(e => e.RawMaterialId)
                   .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.WarehouseBatch)
+                  .WithMany()
+                  .HasForeignKey(e => e.WarehouseBatchId)
+                  .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ProductionOrderTransfer>(entity =>
+        {
+            entity.ToTable("ProductionOrderTransfers");
+            entity.HasKey(e => e.Id);
+
+            entity.HasIndex(e => e.ProductionOrderId);
+            entity.HasIndex(e => e.ProductionOrderItemId);
+            entity.HasIndex(e => e.WarehouseBatchId);
+            entity.HasIndex(e => e.RawMaterialId);
+            entity.HasIndex(e => e.StorageOperationId);
+            entity.HasIndex(e => e.TransferTransactionNumber);
+
+            entity.Property(e => e.BatchNumber).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.MaterialName).HasMaxLength(255).IsRequired();
+            entity.Property(e => e.TransferTransactionNumber).HasMaxLength(100);
+            entity.Property(e => e.TransferredQuantity).HasPrecision(18, 3);
+            entity.Property(e => e.Unit).HasMaxLength(50).HasDefaultValue("طن").IsRequired();
+            entity.Property(e => e.StorageLocationName).HasMaxLength(255).IsRequired();
+            entity.Property(e => e.ConfirmedBy).HasMaxLength(255).IsRequired();
+            entity.Property(e => e.Notes).HasMaxLength(1000);
+
+            entity.HasOne(e => e.ProductionOrder)
+                  .WithMany(o => o.Transfers)
+                  .HasForeignKey(e => e.ProductionOrderId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(e => e.ProductionOrderItem)
+                  .WithMany()
+                  .HasForeignKey(e => e.ProductionOrderItemId)
+                  .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.WarehouseBatch)
+                  .WithMany()
+                  .HasForeignKey(e => e.WarehouseBatchId)
+                  .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.RawMaterial)
+                  .WithMany()
+                  .HasForeignKey(e => e.RawMaterialId)
+                  .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.StorageLocation)
+                  .WithMany()
+                  .HasForeignKey(e => e.StorageLocationId)
+                  .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.StorageOperation)
+                  .WithMany()
+                  .HasForeignKey(e => e.StorageOperationId)
+                  .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<ProductionOrderFormulaVersion>(entity =>
+        {
+            entity.ToTable("ProductionOrderFormulaVersions");
+            entity.HasKey(e => e.Id);
+
+            entity.HasIndex(e => e.ProductionOrderId);
+            entity.HasIndex(e => new { e.ProductionOrderId, e.VersionNumber }).IsUnique();
+
+            entity.Property(e => e.ProductName).HasMaxLength(255).IsRequired();
+            entity.Property(e => e.ProductDescription).HasMaxLength(1000);
+            entity.Property(e => e.TargetOutputQuantity).HasPrecision(18, 3);
+            entity.Property(e => e.TotalInputQuantity).HasPrecision(18, 3);
+            entity.Property(e => e.Unit).HasMaxLength(50).HasDefaultValue("طن").IsRequired();
+            entity.Property(e => e.CreatedBy).HasMaxLength(255).IsRequired();
+
+            entity.HasOne(e => e.ProductionOrder)
+                  .WithMany(o => o.FormulaVersions)
+                  .HasForeignKey(e => e.ProductionOrderId)
+                  .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<ProductionBatch>(entity =>
@@ -1921,6 +2202,331 @@ public class FaceStoneDbContext : DbContext
             entity.Property(e => e.ProductionRatePerHour).HasPrecision(18, 3);
             entity.Property(e => e.ProductWaste).HasPrecision(18, 3);
             entity.Property(e => e.NetQuantity).HasPrecision(18, 3);
+        });
+
+        // Production Department: Process & Traceability Entities Configuration
+        modelBuilder.Entity<ProductionProcess>(entity =>
+        {
+            entity.ToTable("ProductionProcesses");
+            entity.HasKey(e => e.Id);
+
+            entity.HasIndex(e => e.ProcessNumber).IsUnique();
+            entity.HasIndex(e => e.ProductionDate);
+            entity.HasIndex(e => e.Status);
+            entity.HasIndex(e => e.ProductionOrderId);
+
+            entity.Property(e => e.ProcessNumber).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.ProductionOrderNumber).HasMaxLength(100);
+            entity.Property(e => e.StorageLocationName).HasMaxLength(255);
+            entity.Property(e => e.Status).HasMaxLength(50).HasDefaultValue("IN_PROGRESS").IsRequired();
+            entity.Property(e => e.ResponsibleEmployee).HasMaxLength(255).IsRequired();
+            entity.Property(e => e.CreatedBy).HasMaxLength(255).IsRequired();
+            entity.Property(e => e.Unit).HasMaxLength(50).HasDefaultValue("طن").IsRequired();
+
+            entity.Property(e => e.TotalInputQuantity).HasPrecision(18, 3);
+            entity.Property(e => e.TotalOutputQuantity).HasPrecision(18, 3);
+            entity.Property(e => e.TotalWasteQuantity).HasPrecision(18, 3);
+            entity.Property(e => e.WastePercentage).HasPrecision(18, 2);
+
+            entity.Property(e => e.IncomingWeighbridgePath).HasMaxLength(1000);
+            entity.Property(e => e.IncomingWeighbridgeFileName).HasMaxLength(255);
+            entity.Property(e => e.IncomingWeighbridgeFileType).HasMaxLength(100);
+
+            entity.HasOne(e => e.StorageLocation)
+                  .WithMany()
+                  .HasForeignKey(e => e.StorageLocationId)
+                  .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasMany(e => e.Materials)
+                  .WithOne(m => m.ProductionProcess)
+                  .HasForeignKey(m => m.ProductionProcessId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasMany(e => e.FinishedProducts)
+                  .WithOne(f => f.ProductionProcess)
+                  .HasForeignKey(f => f.ProductionProcessId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasMany(e => e.Attachments)
+                  .WithOne(a => a.ProductionProcess)
+                  .HasForeignKey(a => a.ProductionProcessId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasMany(e => e.WasteRecords)
+                  .WithOne(w => w.ProductionProcess)
+                  .HasForeignKey(w => w.ProductionProcessId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ProductionProcessMaterial>(entity =>
+        {
+            entity.ToTable("ProductionProcessMaterials");
+            entity.HasKey(e => e.Id);
+
+            entity.HasIndex(e => e.ProductionProcessId);
+            entity.HasIndex(e => e.WarehouseBatchId);
+            entity.HasIndex(e => e.ProductionReferenceNumber);
+            entity.HasIndex(e => e.BatchNumber);
+
+            entity.Property(e => e.BatchNumber).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.SampleCode).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.MaterialName).HasMaxLength(255).IsRequired();
+            entity.Property(e => e.MaterialClassification).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.StorageLocationName).HasMaxLength(255).IsRequired();
+            entity.Property(e => e.Unit).HasMaxLength(50).HasDefaultValue("طن").IsRequired();
+
+            entity.Property(e => e.AvailableQuantityBefore).HasPrecision(18, 3);
+            entity.Property(e => e.ConsumedQuantity).HasPrecision(18, 3);
+            entity.Property(e => e.RemainingQuantityAfter).HasPrecision(18, 3);
+
+            entity.HasOne(e => e.ProductionProcess)
+                  .WithMany(p => p.Materials)
+                  .HasForeignKey(e => e.ProductionProcessId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(e => e.WarehouseBatch)
+                  .WithMany()
+                  .HasForeignKey(e => e.WarehouseBatchId)
+                  .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.RawMaterial)
+                  .WithMany()
+                  .HasForeignKey(e => e.RawMaterialId)
+                  .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.StorageLocation)
+                  .WithMany()
+                  .HasForeignKey(e => e.StorageLocationId)
+                  .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ProductionFinishedProduct>(entity =>
+        {
+            entity.ToTable("ProductionFinishedProducts");
+            entity.HasKey(e => e.Id);
+
+            entity.HasIndex(e => e.ProductionProcessId);
+            entity.HasIndex(e => e.ProductionOrderId);
+            entity.HasIndex(e => e.ManufactureNumber);
+
+            entity.Property(e => e.FinishedProductName).HasMaxLength(255).IsRequired();
+            entity.Property(e => e.ManufactureNumber).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.ProductionOrderNumber).HasMaxLength(100);
+            entity.Property(e => e.Unit).HasMaxLength(50).HasDefaultValue("طن").IsRequired();
+            entity.Property(e => e.CreatedBy).HasMaxLength(255).IsRequired();
+
+            entity.Property(e => e.ManufacturedQuantity).HasPrecision(18, 3);
+
+            entity.Property(e => e.WeighbridgeAttachmentPath).HasMaxLength(1000);
+            entity.Property(e => e.WeighbridgeFileName).HasMaxLength(255);
+            entity.Property(e => e.WeighbridgeFileType).HasMaxLength(100);
+
+            entity.HasOne(e => e.ProductionProcess)
+                  .WithMany(p => p.FinishedProducts)
+                  .HasForeignKey(e => e.ProductionProcessId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(e => e.ProductionOrder)
+                  .WithMany(o => o.FinishedProducts)
+                  .HasForeignKey(e => e.ProductionOrderId)
+                  .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ProductionAttachment>(entity =>
+        {
+            entity.ToTable("ProductionAttachments");
+            entity.HasKey(e => e.Id);
+
+            entity.HasIndex(e => e.ProductionProcessId);
+            entity.HasIndex(e => e.FinishedProductId);
+
+            entity.Property(e => e.AttachmentType).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.FilePath).HasMaxLength(1000).IsRequired();
+            entity.Property(e => e.FileName).HasMaxLength(255).IsRequired();
+            entity.Property(e => e.FileType).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.UploadedBy).HasMaxLength(255).IsRequired();
+
+            entity.HasOne(e => e.ProductionProcess)
+                  .WithMany(p => p.Attachments)
+                  .HasForeignKey(e => e.ProductionProcessId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(e => e.FinishedProduct)
+                  .WithMany()
+                  .HasForeignKey(e => e.FinishedProductId)
+                  .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<ProductionWasteRecord>(entity =>
+        {
+            entity.ToTable("ProductionWasteRecords");
+            entity.HasKey(e => e.Id);
+
+            entity.HasIndex(e => e.ProductionProcessId);
+
+            entity.Property(e => e.Unit).HasMaxLength(50).HasDefaultValue("طن").IsRequired();
+            entity.Property(e => e.CalculatedBy).HasMaxLength(255).IsRequired();
+
+            entity.Property(e => e.TotalInputQuantity).HasPrecision(18, 3);
+            entity.Property(e => e.TotalOutputQuantity).HasPrecision(18, 3);
+            entity.Property(e => e.WasteQuantity).HasPrecision(18, 3);
+            entity.Property(e => e.WastePercentage).HasPrecision(18, 2);
+
+            entity.HasOne(e => e.ProductionProcess)
+                  .WithMany(p => p.WasteRecords)
+                  .HasForeignKey(e => e.ProductionProcessId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<Invoice>(entity =>
+        {
+            entity.ToTable("Invoices");
+            entity.HasKey(e => e.Id);
+
+            entity.HasIndex(e => e.InvoiceNumber).IsUnique();
+            entity.HasIndex(e => e.ProjectCodeId);
+            entity.HasIndex(e => e.PurchaseOrderId);
+            entity.HasIndex(e => e.CompanyId);
+            entity.HasIndex(e => e.Status);
+            entity.HasIndex(e => e.InvoiceDate);
+
+            entity.Property(e => e.InvoiceNumber).HasMaxLength(50).IsRequired();
+            entity.Property(e => e.ProjectCodeValue).HasMaxLength(50);
+            entity.Property(e => e.ProjectName).HasMaxLength(200);
+            entity.Property(e => e.RelatedEntityType).HasMaxLength(30).HasDefaultValue("COMPANY").IsRequired();
+            entity.Property(e => e.PONumber).HasMaxLength(100);
+            entity.Property(e => e.CompanyName).HasMaxLength(200);
+            entity.Property(e => e.CompanyAddress).HasMaxLength(300);
+            entity.Property(e => e.CompanyTaxNumber).HasMaxLength(50);
+            entity.Property(e => e.CompanyPhone).HasMaxLength(50);
+            entity.Property(e => e.Status).HasMaxLength(30).HasDefaultValue("ISSUED").IsRequired();
+            entity.Property(e => e.CreatedBy).HasMaxLength(150).IsRequired();
+
+            entity.Property(e => e.Subtotal).HasPrecision(18, 3);
+            entity.Property(e => e.ShippingPrice).HasPrecision(18, 3).HasDefaultValue(0);
+            entity.Property(e => e.TaxRate).HasPrecision(5, 2);
+            entity.Property(e => e.TaxAmount).HasPrecision(18, 3);
+            entity.Property(e => e.DiscountAmount).HasPrecision(18, 3);
+            entity.Property(e => e.TotalAmount).HasPrecision(18, 3);
+            entity.Property(e => e.OrderedQuantity).HasPrecision(18, 3);
+            entity.Property(e => e.InvoicedQuantity).HasPrecision(18, 3);
+            entity.Property(e => e.PoUnitPrice).HasPrecision(18, 3);
+            entity.Property(e => e.InvoiceUnitPrice).HasPrecision(18, 3);
+
+            entity.HasIndex(e => e.SupplierId);
+
+            entity.HasOne(e => e.SupplierEntity)
+                  .WithMany()
+                  .HasForeignKey(e => e.SupplierId)
+                  .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(e => e.ProjectCode)
+                  .WithMany()
+                  .HasForeignKey(e => e.ProjectCodeId)
+                  .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(e => e.PurchaseOrder)
+                  .WithMany(p => p.Invoices)
+                  .HasForeignKey(e => e.PurchaseOrderId)
+                  .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(e => e.Company)
+                  .WithMany()
+                  .HasForeignKey(e => e.CompanyId)
+                  .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasMany(e => e.Items)
+                  .WithOne(i => i.Invoice)
+                  .HasForeignKey(i => i.InvoiceId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<InvoiceItem>(entity =>
+        {
+            entity.ToTable("InvoiceItems");
+            entity.HasKey(e => e.Id);
+
+            entity.HasIndex(e => e.InvoiceId);
+            entity.HasIndex(e => e.TransportationId);
+            entity.HasIndex(e => e.PurchaseOrderId);
+
+            entity.Property(e => e.ProductName).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.WarehouseExportNumber).HasMaxLength(100);
+            entity.Property(e => e.ReferenceNumber).HasMaxLength(100);
+            entity.Property(e => e.BatchNumber).HasMaxLength(100);
+            entity.Property(e => e.ProductionOrderNumber).HasMaxLength(100);
+            entity.Property(e => e.PONumber).HasMaxLength(100);
+            entity.Property(e => e.Unit).HasMaxLength(50).HasDefaultValue("طن").IsRequired();
+            entity.Property(e => e.Destination).HasMaxLength(200);
+
+            entity.Property(e => e.Quantity).HasPrecision(18, 3);
+            entity.Property(e => e.UnitPrice).HasPrecision(18, 3);
+            entity.Property(e => e.LineTotal).HasPrecision(18, 3);
+
+            entity.HasOne(e => e.Transportation)
+                  .WithMany()
+                  .HasForeignKey(e => e.TransportationId)
+                  .IsRequired(false)
+                  .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<Supplier>(entity =>
+        {
+            entity.ToTable("Suppliers");
+            entity.HasKey(e => e.Id);
+
+            entity.HasIndex(e => e.SupplierCode);
+            entity.HasIndex(e => e.Name);
+
+            entity.Property(e => e.SupplierCode).HasMaxLength(50).IsRequired();
+            entity.Property(e => e.Name).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.PhoneNumber).HasMaxLength(50);
+            entity.Property(e => e.Email).HasMaxLength(100);
+            entity.Property(e => e.Address).HasMaxLength(300);
+            entity.Property(e => e.TaxNumber).HasMaxLength(50);
+            entity.Property(e => e.CommercialRegister).HasMaxLength(50);
+            entity.Property(e => e.ContactPerson).HasMaxLength(100);
+            entity.Property(e => e.PrimaryMaterialName).HasMaxLength(200);
+            entity.Property(e => e.PrimaryMaterialType).HasMaxLength(100);
+            entity.Property(e => e.SourceDepartment).HasMaxLength(50).HasDefaultValue("FINANCE");
+            entity.Property(e => e.RelatedLaboratoryReferenceNumber).HasMaxLength(100);
+            entity.Property(e => e.RelatedWarehouseImportNumber).HasMaxLength(100);
+            entity.Property(e => e.CreatedBy).HasMaxLength(150);
+
+            entity.Property(e => e.TotalAmountOwed).HasPrecision(18, 3).HasDefaultValue(0);
+            entity.Property(e => e.TotalAmountPaid).HasPrecision(18, 3).HasDefaultValue(0);
+            entity.Property(e => e.RemainingBalance).HasPrecision(18, 3).HasDefaultValue(0);
+
+            entity.HasMany(e => e.FinancialTransactions)
+                  .WithOne(t => t.Supplier)
+                  .HasForeignKey(t => t.SupplierId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasMany(e => e.PurchaseOrders)
+                  .WithOne(p => p.SupplierEntity)
+                  .HasForeignKey(p => p.SupplierId)
+                  .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<SupplierFinancialTransaction>(entity =>
+        {
+            entity.ToTable("SupplierFinancialTransactions");
+            entity.HasKey(e => e.Id);
+
+            entity.HasIndex(e => e.SupplierId);
+            entity.HasIndex(e => e.TransactionType);
+            entity.HasIndex(e => e.TransactionDate);
+
+            entity.Property(e => e.TransactionType).HasMaxLength(30).IsRequired();
+            entity.Property(e => e.Description).HasMaxLength(500).IsRequired();
+            entity.Property(e => e.ReferenceNumber).HasMaxLength(100);
+            entity.Property(e => e.CreatedBy).HasMaxLength(150);
+            entity.Property(e => e.Amount).HasPrecision(18, 3);
+
+            entity.HasOne(e => e.Invoice)
+                  .WithMany()
+                  .HasForeignKey(e => e.InvoiceId)
+                  .OnDelete(DeleteBehavior.SetNull);
         });
     }
 }

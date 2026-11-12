@@ -1,10 +1,22 @@
-/* ==========================================================================
+﻿/* ==========================================================================
    FACESTONE MOBILE APPLICATION CONTROLLER (PWA)
    Service Worker Registration, Bottom Navigation, Touch Gestures, Camera & Install Prompt
    ========================================================================== */
 
 (function () {
   'use strict';
+  let globalCapturedPrompt = null;
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    globalCapturedPrompt = e;
+    console.log('[FaceStone PWA] Captured beforeinstallprompt event. Ready for user-initiated install.');
+    if (window.FaceStoneMobileApp) {
+      window.FaceStoneMobileApp.deferredInstallPrompt = e;
+      if (!sessionStorage.getItem('fs_pwa_banner_dismissed') && window.FaceStoneMobileApp.installBanner) {
+        window.FaceStoneMobileApp.installBanner.classList.add('visible');
+      }
+    }
+  });
 
   class FaceStoneMobileApp {
     static init() {
@@ -195,6 +207,12 @@
     }
 
     static initInstallPrompt() {
+      if (globalCapturedPrompt) {
+        this.deferredInstallPrompt = globalCapturedPrompt;
+        if (!sessionStorage.getItem('fs_pwa_banner_dismissed') && this.installBanner) {
+          this.installBanner.classList.add('visible');
+        }
+      }
       window.addEventListener('beforeinstallprompt', (e) => {
         e.preventDefault();
         this.deferredInstallPrompt = e;

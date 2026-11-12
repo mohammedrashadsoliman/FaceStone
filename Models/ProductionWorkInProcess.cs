@@ -29,6 +29,22 @@ public class ProductionWorkInProcess
     public RawMaterial? RawMaterial { get; set; }
 
     /// <summary>
+    /// Foreign key to originating WarehouseBatch
+    /// </summary>
+    public int? WarehouseBatchId { get; set; }
+    public WarehouseBatch? WarehouseBatch { get; set; }
+
+    /// <summary>
+    /// Batch Number (رقم الدفعة, e.g. B-0001)
+    /// </summary>
+    public string? BatchNumber { get; set; }
+
+    /// <summary>
+    /// Sample Code / Reference Number from Laboratory (رقم العينة, e.g. SMP-0001)
+    /// </summary>
+    public string? SampleCode { get; set; }
+
+    /// <summary>
     /// الرقم المرجعي التتبعي للإنتاج المشترك الصادر من قسم المعمل
     /// </summary>
     public int? ProductionReferenceNumber { get; set; }

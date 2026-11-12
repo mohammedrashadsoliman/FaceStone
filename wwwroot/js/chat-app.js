@@ -1,4 +1,4 @@
-/* ==========================================================================
+﻿/* ==========================================================================
    FACESTONE REAL-TIME CHAT — MAIN APPLICATION CONTROLLER
    Bright, Fast, Minimalist Messaging Engine Inspired by WhatsApp / Messenger
    ========================================================================== */
@@ -918,7 +918,7 @@ class ChatApp {
       cardManagement.style.display = hasManagement ? 'flex' : 'none';
     }
     if (cardControl) {
-      cardControl.style.display = hasControlMonitoring ? 'flex' : 'none';
+      cardControl.style.display = 'none'; // Hidden from UI
     }
     if (cardAttendance) {
       cardAttendance.style.display = hasAttendance ? 'flex' : 'none';
@@ -952,8 +952,8 @@ class ChatApp {
       const targetSubRoute = path.startsWith('/management') ? window.location.pathname : hash.replace('#', '');
       this.enterDepartment('management', targetSubRoute);
     } else if (path.startsWith('/control-monitoring') || hash.startsWith('#/control-monitoring')) {
-      const targetSubRoute = path.startsWith('/control-monitoring') ? window.location.pathname : hash.replace('#', '');
-      this.enterDepartment('control-monitoring', targetSubRoute);
+      this.showView('departments');
+      if (window.location.pathname !== '/') history.replaceState({}, '', '/');
     } else if (path.startsWith('/attendance') || hash.startsWith('#/attendance')) {
       this.enterDepartment('attendance');
     } else if (path.startsWith('/laboratory') || hash.startsWith('#/laboratory')) {

@@ -55,8 +55,10 @@
       this.initDefaultDates();
       this.bindEvents();
       this.bindNewHubAndSubviewsEvents();
+      this.bindInvoicesEvents();
       this.loadPoDropdown();
       this.loadStatistics();
+      this.loadInvoiceStatistics();
       this.loadPurchaseOrdersHistory();
       this.loadData();
     }
@@ -96,6 +98,33 @@
       this.dashboardView = document.getElementById('finance-dashboard-view');
       this.poDetailsView = document.getElementById('finance-po-details-view');
       this.performanceView = document.getElementById('finance-performance-view');
+      this.invoicesView = document.getElementById('finance-invoices-view');
+
+      // Invoices Module State
+      this.invoicesPage = 1;
+      this.invoicesPageSize = 20;
+      this.invoicesFilters = {
+        search: '',
+        status: 'ALL',
+        projectCodeId: '',
+        fromDate: '',
+        toDate: ''
+      };
+      this.invWizardStep = 1;
+      this.invSelectedProjectId = null;
+      this.invSelectedProjectObj = null;
+      this.invEligibleTransList = [];
+      this.invSelectedTransMap = new Map();
+      this.invPricingList = [];
+      this.invAssociationType = 'COMPANY';
+      this.invSelectedCompanyId = null;
+      this.invSelectedPoId = null;
+      this.invCachedProjects = [];
+      this.invCachedCompanies = [];
+      this.invCachedPos = [];
+      this.invoiceCreationMode = 'PO';
+      this.invEligiblePosList = [];
+      this.invSelectedDirectPo = null;
 
       // User Profile Header
       this.userNameEl = document.getElementById('finance-mgmt-user-name');
@@ -425,6 +454,7 @@
         this.expensesView,
         this.employeesView,
         this.employeeDetailsView,
+        this.invoicesView,
         this.dashboardView
       ];
       views.forEach(v => {
@@ -469,6 +499,8 @@
         }
       } else if (cleanPath === '/finance/employees' || cleanPath.endsWith('/employees')) {
         this.showEmployeesView();
+      } else if (cleanPath === '/finance/invoices' || cleanPath.endsWith('/invoices')) {
+        this.showInvoicesView();
       } else {
         this.showHubCardsView();
       }
@@ -478,6 +510,7 @@
       this.currentView = 'hub';
       this.hideAllSubViews();
       if (this.hubCardsView) this.hubCardsView.style.display = 'block';
+      this.loadInvoiceStatistics();
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
@@ -1617,7 +1650,7 @@
     }
 
     bindNewHubAndSubviewsEvents() {
-      // 7 Hub Cards click & keyboard navigation
+      // 8 Hub Cards click & keyboard navigation
       const cards = [
         { id: 'card-nav-finance-history', route: '/finance/history' },
         { id: 'card-nav-finance-suppliers', route: '/finance/suppliers' },
@@ -1625,7 +1658,8 @@
         { id: 'card-nav-finance-performance', route: '/finance/performance' },
         { id: 'card-nav-finance-bank', route: '/finance/bank' },
         { id: 'card-nav-finance-expenses', route: '/finance/expenses' },
-        { id: 'card-nav-finance-employees', route: '/finance/employees' }
+        { id: 'card-nav-finance-employees', route: '/finance/employees' },
+        { id: 'card-nav-finance-invoices', route: '/finance/invoices' }
       ];
       cards.forEach(c => {
         const el = document.getElementById(c.id);
@@ -1654,7 +1688,8 @@
         { id: 'finance-bank-back-btn', route: '/finance' },
         { id: 'finance-expenses-back-btn', route: '/finance' },
         { id: 'finance-employees-back-btn', route: '/finance' },
-        { id: 'finance-emp-detail-back-btn', route: '/finance/employees' }
+        { id: 'finance-emp-detail-back-btn', route: '/finance/employees' },
+        { id: 'finance-invoices-back-btn', route: '/finance' }
       ];
       backButtons.forEach(b => {
         const btn = document.getElementById(b.id);
@@ -1727,7 +1762,7 @@
         });
       }
 
-      // 2. Suppliers Search & Refresh
+      // 2. Suppliers Search, Refresh, Add & Sync
       const supSearch = document.getElementById('finance-suppliers-search-input');
       if (supSearch) {
         let t = null;
@@ -1736,12 +1771,50 @@
           t = setTimeout(() => this.filterSuppliersClientSide(), 250);
         });
       }
+      const supDeptFilter = document.getElementById('finance-suppliers-dept-filter');
+      if (supDeptFilter) {
+        supDeptFilter.addEventListener('change', () => this.filterSuppliersClientSide());
+      }
       const supRefresh = document.getElementById('finance-suppliers-refresh-btn');
       if (supRefresh) {
         supRefresh.addEventListener('click', () => this.loadSuppliersData());
       }
+      const supAddBtn = document.getElementById('fin-supplier-btn-add');
+      if (supAddBtn) {
+        supAddBtn.addEventListener('click', () => this.openAddSupplierModal());
+      }
+      const supSyncBtn = document.getElementById('fin-supplier-btn-sync');
+      if (supSyncBtn) {
+        supSyncBtn.addEventListener('click', () => this.syncSuppliers());
+      }
+      const supModalClose = document.getElementById('fin-supplier-modal-close-btn');
+      const supFormCancel = document.getElementById('fin-supplier-form-cancel-btn');
+      [supModalClose, supFormCancel].forEach(b => {
+        if (b) b.addEventListener('click', () => this.closeSupplierModal());
+      });
+      const supForm = document.getElementById('finance-supplier-form');
+      if (supForm) {
+        supForm.addEventListener('submit', (e) => this.submitSupplierForm(e));
+      }
+      const supTxAddBtn = document.getElementById('supplier-detail-add-tx-btn');
+      if (supTxAddBtn) {
+        supTxAddBtn.addEventListener('click', () => this.openAddSupplierTransactionModal(this.currentSupplierId, this.currentSupplierName));
+      }
+      const supDetailEditBtn = document.getElementById('supplier-detail-edit-btn');
+      if (supDetailEditBtn) {
+        supDetailEditBtn.addEventListener('click', () => this.openEditSupplierModal(this.currentSupplierId));
+      }
+      const supTxModalClose = document.getElementById('fin-supplier-tx-modal-close-btn');
+      const supTxFormCancel = document.getElementById('fin-supplier-tx-cancel-btn');
+      [supTxModalClose, supTxFormCancel].forEach(b => {
+        if (b) b.addEventListener('click', () => this.closeSupplierTransactionModal());
+      });
+      const supTxForm = document.getElementById('finance-supplier-tx-form');
+      if (supTxForm) {
+        supTxForm.addEventListener('submit', (e) => this.submitSupplierTransaction(e));
+      }
 
-      // 3. Purchase Orders Filters & Refresh
+      // 3. Purchase Orders Filters, Refresh & Add
       const posSearch = document.getElementById('finance-pos-search-input');
       if (posSearch) {
         let t = null;
@@ -1758,6 +1831,24 @@
       if (posRefresh) {
         posRefresh.addEventListener('click', () => this.loadAllPurchaseOrdersData());
       }
+      const poAddBtn = document.getElementById('fin-po-btn-add');
+      if (poAddBtn) {
+        poAddBtn.addEventListener('click', () => this.openAddPurchaseOrderModal());
+      }
+      const poModalClose = document.getElementById('fin-po-modal-close-btn');
+      const poFormCancel = document.getElementById('fin-po-form-cancel-btn');
+      [poModalClose, poFormCancel].forEach(b => {
+        if (b) b.addEventListener('click', () => this.closePurchaseOrderModal());
+      });
+      const poForm = document.getElementById('finance-po-form');
+      if (poForm) {
+        poForm.addEventListener('submit', (e) => this.submitPurchaseOrderForm(e));
+      }
+      const poQtyInput = document.getElementById('po-form-quantity');
+      const poPriceInput = document.getElementById('po-form-unit-price');
+      [poQtyInput, poPriceInput].forEach(inp => {
+        if (inp) inp.addEventListener('input', () => this.calculatePoTotalValue());
+      });
 
       // 5. Bank Add Modal & Form
       const addBankBtn = document.getElementById('finance-btn-add-bank-trans');
@@ -2016,14 +2107,22 @@
     filterSuppliersClientSide() {
       if (!this.suppliersRawList) return;
       const term = document.getElementById('finance-suppliers-search-input')?.value?.trim().toLowerCase() || '';
-      if (!term) {
-        this.renderSuppliersTable(this.suppliersRawList);
-        return;
-      }
-      const filtered = this.suppliersRawList.filter(s =>
-        (s.supplierName && s.supplierName.toLowerCase().includes(term)) ||
-        (s.materials && s.materials.toLowerCase().includes(term))
-      );
+      const dept = document.getElementById('finance-suppliers-dept-filter')?.value || 'all';
+
+      const filtered = this.suppliersRawList.filter(s => {
+        const matchesTerm = !term ||
+          (s.name && s.name.toLowerCase().includes(term)) ||
+          (s.supplierCode && s.supplierCode.toLowerCase().includes(term)) ||
+          (s.primaryMaterialName && s.primaryMaterialName.toLowerCase().includes(term));
+
+        let matchesDept = true;
+        if (dept !== 'all') {
+          matchesDept = (s.sourceDepartment && s.sourceDepartment.toLowerCase().includes(dept.toLowerCase()));
+        }
+
+        return matchesTerm && matchesDept;
+      });
+
       this.renderSuppliersTable(filtered);
     }
 
@@ -2039,73 +2138,134 @@
       }
       if (emptyEl) emptyEl.style.display = 'none';
 
-      tbody.innerHTML = items.map(s => `
-        <tr>
-          <td><strong style="color: #0F172A; font-size: 0.95rem;">${this.escapeHtml(s.supplierName)}</strong></td>
-          <td><span style="font-size: 0.85rem; color: #475569;">${this.escapeHtml(s.materials || '-')}</span></td>
-          <td><span class="finance-status-badge badge-neutral">${s.purchaseOrdersCount} عقود</span></td>
-          <td><strong dir="ltr">${this.formatWeight(s.totalContractedQuantity)} طن</strong></td>
-          <td><strong dir="ltr" style="color: #059669;">${this.formatWeight(s.totalDeliveredQuantity)} طن</strong></td>
-          <td><strong dir="ltr" style="color: #D97706;">${this.formatWeight(s.totalRemainingQuantity)} طن</strong></td>
-          <td><strong dir="ltr" style="font-family: monospace;">${this.formatCurrency(s.totalFinancialValue)}</strong></td>
-          <td><strong dir="ltr" style="color: #059669;">${this.formatCurrency(s.totalPaidAmount)}</strong></td>
-          <td><strong dir="ltr" style="color: #DC2626;">${this.formatCurrency(s.totalOutstandingAmount)}</strong></td>
-          <td>
-            <button type="button" class="finance-btn-table-action" onclick="window.FinanceManagementApp.navigateTo('/finance/suppliers/' + encodeURIComponent('${this.escapeHtml(s.supplierName)}'))">
-              <span>عرض التفاصيل</span>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-            </button>
-          </td>
-        </tr>
-      `).join('');
+      tbody.innerHTML = items.map(s => {
+        const deptBadgeClass = s.sourceDepartment.includes('LAB') ? 'badge-highlight' : (s.sourceDepartment.includes('WAREHOUSE') ? 'badge-positive' : 'badge-neutral');
+        const deptDisplay = s.sourceDepartment === 'COMBINED' || s.sourceDepartment === 'LABORATORY & WAREHOUSE' 
+          ? 'معمل ومستودع' 
+          : (s.sourceDepartment === 'LABORATORY' ? 'المعمل' : (s.sourceDepartment === 'WAREHOUSE_IMPORT' ? 'المستودع' : 'المالية'));
+        const lastPay = s.lastPaymentDate ? this.formatDate(s.lastPaymentDate) : '-';
+
+        return `
+          <tr>
+            <td><strong dir="ltr" style="font-family: monospace; color: #0284C7; font-size: 0.95rem;">${this.escapeHtml(s.supplierCode || '-')}</strong></td>
+            <td><strong style="color: #0F172A; font-size: 0.95rem;">${this.escapeHtml(s.name)}</strong></td>
+            <td><span style="font-size: 0.85rem; color: #475569;">${this.escapeHtml(s.primaryMaterialName || '-')}</span></td>
+            <td><span class="finance-status-badge ${deptBadgeClass}">${this.escapeHtml(deptDisplay)}</span></td>
+            <td><span dir="ltr" style="font-family: monospace; font-size: 0.8rem; color: #64748B;">${this.escapeHtml(s.relatedLaboratoryReferenceNumber || '-')}</span></td>
+            <td><span dir="ltr" style="font-family: monospace; font-size: 0.85rem; color: #059669; font-weight: 700;">${this.escapeHtml(s.relatedWarehouseImportNumber || '-')}</span></td>
+            <td><strong dir="ltr" style="color: #0F172A;">${this.formatCurrency(s.totalAmountOwed)}</strong></td>
+            <td><strong dir="ltr" style="color: #059669;">${this.formatCurrency(s.totalAmountPaid)}</strong></td>
+            <td><strong dir="ltr" style="color: ${s.remainingBalance > 0 ? '#DC2626' : '#059669'}; font-weight: 800;">${this.formatCurrency(s.remainingBalance)}</strong></td>
+            <td><span dir="ltr" style="font-size: 0.85rem;">${lastPay}</span></td>
+            <td style="white-space: nowrap;">
+              <div style="display: flex; gap: 6px;">
+                <button type="button" class="finance-btn-table-action" title="عرض الملف التفصيلي" onclick="window.FinanceManagementApp.navigateTo('/finance/suppliers/' + ${s.id})">
+                  <span>عرض</span>
+                </button>
+                <button type="button" class="finance-btn-table-action" title="تعديل بيانات المورد" onclick="window.FinanceManagementApp.openEditSupplierModal(${s.id})" style="background: #E2E8F0; color: #1E293B;">
+                  <span>تعديل</span>
+                </button>
+                <button type="button" class="finance-btn-table-action" title="إضافة حركة مالية / سداد" onclick="window.FinanceManagementApp.openAddSupplierTransactionModal(${s.id}, '${this.escapeHtml(s.name)}')" style="background: #DCFCE7; color: #15803D;">
+                  <span>+ حركة</span>
+                </button>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join('');
     }
 
     async loadSupplierDetail(id) {
       if (!id) return;
-      const nameEl = document.getElementById('supplier-detail-name');
-      if (nameEl) nameEl.textContent = id;
-
       try {
-        const res = await window.ChatApi.getFinanceSupplierDetail(id);
+        const res = await window.ChatApi.getFinanceSupplierDetails(id);
         if (res && res.success && res.data) {
           const d = res.data;
-          if (nameEl) nameEl.textContent = d.supplierName;
+          this.currentSupplierId = d.id;
+          this.currentSupplierName = d.name;
+
+          const nameEl = document.getElementById('supplier-detail-name');
+          const codeBadge = document.getElementById('supplier-detail-code-badge');
+          if (nameEl) nameEl.textContent = d.name;
+          if (codeBadge) codeBadge.textContent = d.supplierCode || `SUP-${d.id}`;
+
           const matSub = document.getElementById('supplier-detail-materials-sub');
-          if (matSub) matSub.textContent = `المواد: ${d.materials || '-'}`;
-          const poSub = document.getElementById('supplier-detail-po-count-sub');
-          if (poSub) poSub.textContent = `عدد العقود: ${d.purchaseOrdersCount}`;
+          if (matSub) matSub.textContent = `المادة: ${d.primaryMaterialName || '-'}`;
+          const txSub = document.getElementById('supplier-detail-tx-count-sub');
+          if (txSub) txSub.textContent = `عدد المعاملات: ${d.transactions ? d.transactions.length : 0}`;
+          const deptSub = document.getElementById('supplier-detail-dept-sub');
+          if (deptSub) deptSub.textContent = `القسم المصدر: ${d.sourceDepartment || 'FINANCE'}`;
 
-          const cq = document.getElementById('supplier-detail-contracted-qty');
-          if (cq) cq.textContent = this.formatWeight(d.totalContractedQuantity) + ' طن';
-          const dq = document.getElementById('supplier-detail-delivered-qty');
-          if (dq) dq.textContent = this.formatWeight(d.totalDeliveredQuantity) + ' طن';
-          const rq = document.getElementById('supplier-detail-remaining-qty');
-          if (rq) rq.textContent = this.formatWeight(d.totalRemainingQuantity) + ' طن';
+          const owedEl = document.getElementById('supplier-detail-owed-amt');
+          if (owedEl) owedEl.textContent = this.formatCurrency(d.totalAmountOwed);
+          const paidEl = document.getElementById('supplier-detail-paid-amt');
+          if (paidEl) paidEl.textContent = this.formatCurrency(d.totalAmountPaid);
+          const remEl = document.getElementById('supplier-detail-remaining-balance');
+          if (remEl) remEl.textContent = this.formatCurrency(d.remainingBalance);
+          const lastDateEl = document.getElementById('supplier-detail-last-payment-date');
+          if (lastDateEl) lastDateEl.textContent = d.lastPaymentDate ? this.formatDate(d.lastPaymentDate) : 'لا يوجد دفعات مسجلة';
 
-          const tv = document.getElementById('supplier-detail-total-val');
-          if (tv) tv.textContent = this.formatCurrency(d.totalFinancialValue);
-          const pa = document.getElementById('supplier-detail-paid-amt');
-          if (pa) pa.textContent = this.formatCurrency(d.totalPaidAmount);
-          const oa = document.getElementById('supplier-detail-outstanding-amt');
-          if (oa) oa.textContent = this.formatCurrency(d.totalOutstandingAmount);
+          // Metadata Card
+          const phoneEl = document.getElementById('supplier-detail-phone');
+          if (phoneEl) phoneEl.textContent = d.phoneNumber || '-';
+          const contactEl = document.getElementById('supplier-detail-contact');
+          if (contactEl) contactEl.textContent = d.contactPerson || '-';
+          const taxEl = document.getElementById('supplier-detail-tax');
+          if (taxEl) taxEl.textContent = d.taxNumber || '-';
+          const labRefEl = document.getElementById('supplier-detail-lab-ref');
+          if (labRefEl) labRefEl.textContent = d.relatedLaboratoryReferenceNumber || '-';
+          const impEl = document.getElementById('supplier-detail-import-num');
+          if (impEl) impEl.textContent = d.relatedWarehouseImportNumber || '-';
+          const regEl = document.getElementById('supplier-detail-reg-date');
+          if (regEl) regEl.textContent = this.formatDate(d.registrationDate);
 
+          // Transactions Table
+          const txTbody = document.getElementById('supplier-detail-tx-tbody');
+          const txBadge = document.getElementById('supplier-detail-tx-badge');
+          const txList = d.transactions || [];
+          if (txBadge) txBadge.textContent = `${txList.length} حركة`;
+          if (txTbody) {
+            if (txList.length === 0) {
+              txTbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:1.5rem; color:#94A3B8;">لا توجد معاملات مالية أو مدفوعات مسجلة لهذا المورد بعد. اضغط على "+ إضافة معاملة مالية" لتسجيل دفعة أو مستحق.</td></tr>';
+            } else {
+              txTbody.innerHTML = txList.map(t => {
+                const isPaid = t.transactionType === 'PAYMENT';
+                const isOwed = t.transactionType === 'AMOUNT_OWED';
+                const color = isPaid ? '#059669' : (isOwed ? '#DC2626' : '#D97706');
+                const badgeClass = isPaid ? 'badge-positive' : (isOwed ? 'badge-waste' : 'badge-neutral');
+                return `
+                  <tr>
+                    <td><strong dir="ltr">${this.formatDate(t.transactionDate)}</strong></td>
+                    <td><span class="finance-status-badge ${badgeClass}">${this.escapeHtml(t.transactionTypeArabic || t.transactionType)}</span></td>
+                    <td><strong dir="ltr" style="color: ${color}; font-size: 0.95rem;">${isPaid ? '-' : '+'}${this.formatCurrency(t.amount)}</strong></td>
+                    <td><span style="font-size: 0.85rem; color: #475569;">${this.escapeHtml(t.paymentMethod || '-')}</span></td>
+                    <td><span dir="ltr" style="font-family: monospace; font-size: 0.85rem;">${this.escapeHtml(t.referenceNumber || '-')}</span></td>
+                    <td>${this.escapeHtml(t.description || t.notes || '-')}</td>
+                    <td><span style="font-size: 0.85rem; color: #64748B;">${this.escapeHtml(t.createdBy || '-')}</span></td>
+                  </tr>
+                `;
+              }).join('');
+            }
+          }
+
+          // POs Table
           const posTbody = document.getElementById('supplier-detail-pos-tbody');
           if (posTbody) {
             const pos = d.purchaseOrders || [];
             if (pos.length === 0) {
-              posTbody.innerHTML = '<tr><td colspan="10" style="text-align:center; padding:1.5rem; color:#94A3B8;">لا توجد أوامر شراء مسجلة</td></tr>';
+              posTbody.innerHTML = '<tr><td colspan="10" style="text-align:center; padding:1.5rem; color:#94A3B8;">لا توجد أوامر شراء مرتبطة بهذا المورد (المورد يعمل ومسجل بشكل مستقل).</td></tr>';
             } else {
               posTbody.innerHTML = pos.map(p => `
                 <tr>
                   <td><strong dir="ltr" style="font-family: monospace; color: #D97706;">${this.escapeHtml(p.poNumber)}</strong></td>
-                  <td><strong dir="ltr">${this.formatWeight(p.expectedQuantity)} طن</strong></td>
+                  <td>${this.escapeHtml(p.materialName || 'مواد خام')}</td>
+                  <td><strong dir="ltr">${this.formatWeight(p.orderedQuantity)} طن</strong></td>
                   <td><strong dir="ltr">${this.formatCurrency(p.tonPrice)}</strong></td>
-                  <td><strong dir="ltr">${this.formatCurrency(p.expectedPrice)}</strong></td>
+                  <td><strong dir="ltr">${this.formatCurrency(p.totalValue)}</strong></td>
                   <td><strong dir="ltr" style="color: #059669;">${this.formatWeight(p.deliveredQuantity)} طن</strong></td>
-                  <td><strong dir="ltr">${this.formatWeight(p.remainingQuantity)} طن</strong></td>
-                  <td><strong dir="ltr" style="color: #DC2626;">${this.formatWeight(p.totalWasteQuantity)} طن</strong></td>
-                  <td><span class="finance-status-badge badge-neutral">${Number(p.performancePercentage || 0).toFixed(1)}%</span></td>
-                  <td><span class="finance-status-badge ${p.paymentStatus === 'مدفوع بالكامل' ? 'badge-positive' : (p.paymentStatus === 'مدفوع جزئياً' ? 'badge-neutral' : 'badge-waste')}">${this.escapeHtml(p.paymentStatus || 'غير مدفوع')}</span></td>
+                  <td><strong dir="ltr" style="color: #D97706;">${this.formatWeight(p.remainingQuantity)} طن</strong></td>
+                  <td><span class="finance-status-badge ${p.status === 'مكتمل' ? 'badge-positive' : 'badge-neutral'}">${this.escapeHtml(p.status || 'نشط')}</span></td>
+                  <td><span dir="ltr">${this.formatDate(p.orderDate)}</span></td>
                   <td>
                     <button type="button" class="finance-btn-table-action" onclick="window.FinanceManagementApp.navigateTo('/finance/purchase-orders/' + encodeURIComponent('${this.escapeHtml(p.poNumber)}'))">
                       <span>عرض</span>
@@ -2115,30 +2275,232 @@
               `).join('');
             }
           }
-
-          const delTbody = document.getElementById('supplier-detail-deliveries-tbody');
-          if (delTbody) {
-            const dels = d.recentDeliveries || [];
-            if (dels.length === 0) {
-              delTbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:1.5rem; color:#94A3B8;">لا توجد حركات نقل مسجلة لهذا المورد</td></tr>';
-            } else {
-              delTbody.innerHTML = dels.map(t => `
-                <tr>
-                  <td><span dir="ltr" style="font-family: monospace; font-weight: 700;">#${t.transactionNumber}</span></td>
-                  <td><strong dir="ltr">${this.formatDate(t.transactionDate)}</strong></td>
-                  <td><strong dir="ltr">${this.escapeHtml(t.carNumber || '-')}</strong></td>
-                  <td>${this.escapeHtml(t.driverName || '-')}</td>
-                  <td>${this.escapeHtml(t.materialType || '-')}</td>
-                  <td><strong dir="ltr">${this.formatWeight(t.netWeight)} طن</strong></td>
-                  <td><strong dir="ltr" style="color: #DC2626;">${this.formatWeight(t.wasteQuantity)} طن</strong></td>
-                  <td><span class="finance-status-badge badge-neutral">${this.escapeHtml(t.receivingStatus || 'مستلم')}</span></td>
-                </tr>
-              `).join('');
-            }
-          }
         }
       } catch (err) {
         console.error('Failed to load supplier detail:', err);
+      }
+    }
+
+    async syncSuppliers() {
+      try {
+        const syncBtn = document.getElementById('fin-supplier-btn-sync');
+        if (syncBtn) {
+          syncBtn.disabled = true;
+          syncBtn.innerHTML = '<span>جاري المزامنة...</span>';
+        }
+        const res = await window.ChatApi.syncFinanceSuppliers();
+        if (syncBtn) {
+          syncBtn.disabled = false;
+          syncBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg><span>مزامنة الموردين من الأقسام</span>';
+        }
+        if (res && res.success) {
+          alert(res.message || 'تمت مزامنة وتوحيد الموردين من المعمل والمستودع بنجاح!');
+          await this.loadSuppliersData();
+        } else {
+          alert(res?.message || 'تعذر إتمام المزامنة.');
+        }
+      } catch (err) {
+        console.error('Failed to sync suppliers:', err);
+        alert('حدث خطأ أثناء مزامنة الموردين.');
+      }
+    }
+
+    openAddSupplierModal() {
+      const modal = document.getElementById('finance-supplier-modal-backdrop');
+      const title = document.getElementById('fin-supplier-modal-title');
+      const idInp = document.getElementById('supplier-form-id');
+      const nameInp = document.getElementById('supplier-form-name');
+      const codeInp = document.getElementById('supplier-form-code');
+      const matInp = document.getElementById('supplier-form-material');
+      const deptInp = document.getElementById('supplier-form-dept');
+      const phoneInp = document.getElementById('supplier-form-phone');
+      const taxInp = document.getElementById('supplier-form-tax');
+      const contactInp = document.getElementById('supplier-form-contact');
+      const labRefInp = document.getElementById('supplier-form-lab-ref');
+      const impInp = document.getElementById('supplier-form-import-num');
+      const addrInp = document.getElementById('supplier-form-address');
+      const notesInp = document.getElementById('supplier-form-notes');
+
+      if (title) title.textContent = 'إضافة مورد مستقل جديد — الحسابات المالية';
+      if (idInp) idInp.value = '';
+      if (nameInp) nameInp.value = '';
+      if (codeInp) {
+        const rnd = Math.floor(1000 + Math.random() * 9000);
+        codeInp.value = `SUP-${rnd}`;
+      }
+      if (matInp) matInp.value = '';
+      if (deptInp) deptInp.value = 'FINANCE';
+      if (phoneInp) phoneInp.value = '';
+      if (taxInp) taxInp.value = '';
+      if (contactInp) contactInp.value = '';
+      if (labRefInp) labRefInp.value = '';
+      if (impInp) impInp.value = '';
+      if (addrInp) addrInp.value = '';
+      if (notesInp) notesInp.value = '';
+
+      if (modal) modal.style.display = 'flex';
+    }
+
+    async openEditSupplierModal(id) {
+      if (!id) return;
+      try {
+        const res = await window.ChatApi.getFinanceSupplierDetails(id);
+        if (res && res.success && res.data) {
+          const d = res.data;
+          const modal = document.getElementById('finance-supplier-modal-backdrop');
+          const title = document.getElementById('fin-supplier-modal-title');
+          if (title) title.textContent = `تعديل بيانات المورد: ${d.name}`;
+
+          const idInp = document.getElementById('supplier-form-id');
+          if (idInp) idInp.value = d.id;
+          const nameInp = document.getElementById('supplier-form-name');
+          if (nameInp) nameInp.value = d.name || '';
+          const codeInp = document.getElementById('supplier-form-code');
+          if (codeInp) codeInp.value = d.supplierCode || '';
+          const matInp = document.getElementById('supplier-form-material');
+          if (matInp) matInp.value = d.primaryMaterialName || '';
+          const typeInp = document.getElementById('supplier-form-type');
+          if (typeInp && d.primaryMaterialType) typeInp.value = d.primaryMaterialType;
+          const deptInp = document.getElementById('supplier-form-dept');
+          if (deptInp && d.sourceDepartment) deptInp.value = d.sourceDepartment;
+          const phoneInp = document.getElementById('supplier-form-phone');
+          if (phoneInp) phoneInp.value = d.phoneNumber || '';
+          const taxInp = document.getElementById('supplier-form-tax');
+          if (taxInp) taxInp.value = d.taxNumber || '';
+          const contactInp = document.getElementById('supplier-form-contact');
+          if (contactInp) contactInp.value = d.contactPerson || '';
+          const labRefInp = document.getElementById('supplier-form-lab-ref');
+          if (labRefInp) labRefInp.value = d.relatedLaboratoryReferenceNumber || '';
+          const impInp = document.getElementById('supplier-form-import-num');
+          if (impInp) impInp.value = d.relatedWarehouseImportNumber || '';
+          const addrInp = document.getElementById('supplier-form-address');
+          if (addrInp) addrInp.value = d.address || '';
+          const notesInp = document.getElementById('supplier-form-notes');
+          if (notesInp) notesInp.value = d.notes || '';
+
+          if (modal) modal.style.display = 'flex';
+        }
+      } catch (err) {
+        console.error('Failed to load supplier for editing:', err);
+      }
+    }
+
+    closeSupplierModal() {
+      const modal = document.getElementById('finance-supplier-modal-backdrop');
+      if (modal) modal.style.display = 'none';
+    }
+
+    async submitSupplierForm(e) {
+      e.preventDefault();
+      const id = document.getElementById('supplier-form-id')?.value;
+      const payload = {
+        name: document.getElementById('supplier-form-name')?.value?.trim(),
+        supplierCode: document.getElementById('supplier-form-code')?.value?.trim(),
+        primaryMaterialName: document.getElementById('supplier-form-material')?.value?.trim(),
+        primaryMaterialType: document.getElementById('supplier-form-type')?.value,
+        sourceDepartment: document.getElementById('supplier-form-dept')?.value || 'FINANCE',
+        phoneNumber: document.getElementById('supplier-form-phone')?.value?.trim(),
+        taxNumber: document.getElementById('supplier-form-tax')?.value?.trim(),
+        contactPerson: document.getElementById('supplier-form-contact')?.value?.trim(),
+        relatedLaboratoryReferenceNumber: document.getElementById('supplier-form-lab-ref')?.value?.trim(),
+        relatedWarehouseImportNumber: document.getElementById('supplier-form-import-num')?.value?.trim(),
+        address: document.getElementById('supplier-form-address')?.value?.trim(),
+        notes: document.getElementById('supplier-form-notes')?.value?.trim()
+      };
+
+      if (!payload.name) {
+        alert('اسم المورد مطلوب.');
+        return;
+      }
+
+      try {
+        let res;
+        if (id) {
+          res = await window.ChatApi.updateFinanceSupplier(id, payload);
+        } else {
+          res = await window.ChatApi.createFinanceSupplier(payload);
+        }
+
+        if (res && res.success) {
+          alert(id ? 'تم تعديل بيانات المورد بنجاح!' : 'تم إضافة المورد الجديد بنجاح!');
+          this.closeSupplierModal();
+          await this.loadSuppliersData();
+          if (id && this.currentView === 'supplier-detail') {
+            await this.loadSupplierDetail(id);
+          }
+        } else {
+          alert(res?.message || 'تعذر حفظ بيانات المورد.');
+        }
+      } catch (err) {
+        console.error('Failed to save supplier:', err);
+        alert('حدث خطأ أثناء حفظ بيانات المورد.');
+      }
+    }
+
+    openAddSupplierTransactionModal(id, name) {
+      if (!id) return;
+      const modal = document.getElementById('finance-supplier-tx-modal-backdrop');
+      const supIdInp = document.getElementById('supplier-tx-sup-id');
+      const supNameDisp = document.getElementById('supplier-tx-sup-name-disp');
+      const dateInp = document.getElementById('supplier-tx-date');
+      const amountInp = document.getElementById('supplier-tx-amount');
+      const refInp = document.getElementById('supplier-tx-ref');
+      const descInp = document.getElementById('supplier-tx-desc');
+
+      if (supIdInp) supIdInp.value = id;
+      if (supNameDisp) supNameDisp.textContent = name || `المورد #${id}`;
+      if (dateInp) dateInp.value = new Date().toISOString().slice(0, 10);
+      if (amountInp) amountInp.value = '';
+      if (refInp) refInp.value = '';
+      if (descInp) descInp.value = '';
+
+      if (modal) modal.style.display = 'flex';
+    }
+
+    closeSupplierTransactionModal() {
+      const modal = document.getElementById('finance-supplier-tx-modal-backdrop');
+      if (modal) modal.style.display = 'none';
+    }
+
+    async submitSupplierTransaction(e) {
+      e.preventDefault();
+      const supId = document.getElementById('supplier-tx-sup-id')?.value;
+      if (!supId) return;
+
+      const amount = parseFloat(document.getElementById('supplier-tx-amount')?.value);
+      if (isNaN(amount) || amount <= 0) {
+        alert('يرجى إدخال مبلغ صحيح أكبر من الصفر.');
+        return;
+      }
+
+      const payload = {
+        transactionType: document.getElementById('supplier-tx-type')?.value,
+        amount: amount,
+        transactionDate: document.getElementById('supplier-tx-date')?.value || new Date().toISOString(),
+        paymentMethod: document.getElementById('supplier-tx-method')?.value,
+        referenceNumber: document.getElementById('supplier-tx-ref')?.value?.trim(),
+        description: document.getElementById('supplier-tx-desc')?.value?.trim(),
+        notes: document.getElementById('supplier-tx-desc')?.value?.trim()
+      };
+
+      if (!payload.description) {
+        alert('البيان والوصف مطلوب.');
+        return;
+      }
+
+      try {
+        const res = await window.ChatApi.addFinanceSupplierTransaction(supId, payload);
+        if (res && res.success) {
+          alert('تم تسجيل المعاملة المالية وتحديث الرصيد بنجاح!');
+          this.closeSupplierTransactionModal();
+          await this.loadSupplierDetail(supId);
+          await this.loadSuppliersData();
+        } else {
+          alert(res?.message || 'تعذر تسجيل المعاملة المالية.');
+        }
+      } catch (err) {
+        console.error('Failed to add supplier transaction:', err);
+        alert('حدث خطأ أثناء حفظ المعاملة المالية.');
       }
     }
 
@@ -2181,10 +2543,14 @@
       const filtered = this.posRawList.filter(p => {
         const matchesTerm = !term ||
           (p.poNumber && p.poNumber.toLowerCase().includes(term)) ||
-          (p.supplier && p.supplier.toLowerCase().includes(term));
+          (p.supplier && p.supplier.toLowerCase().includes(term)) ||
+          (p.materialName && p.materialName.toLowerCase().includes(term)) ||
+          (p.material && p.material.toLowerCase().includes(term));
 
         let matchesStatus = true;
-        if (statusFilter === 'unpaid') matchesStatus = (p.paymentStatus === 'غير مدفوع' || !p.paymentStatus);
+        if (statusFilter === 'active') matchesStatus = (p.remainingQuantity > 0.001);
+        else if (statusFilter === 'completed') matchesStatus = (p.remainingQuantity <= 0.001);
+        else if (statusFilter === 'unpaid') matchesStatus = (p.paymentStatus === 'غير مدفوع' || !p.paymentStatus);
         else if (statusFilter === 'partial') matchesStatus = (p.paymentStatus === 'مدفوع جزئياً');
         else if (statusFilter === 'paid') matchesStatus = (p.paymentStatus === 'مدفوع بالكامل');
 
@@ -2206,29 +2572,241 @@
       }
       if (emptyEl) emptyEl.style.display = 'none';
 
-      tbody.innerHTML = items.map(p => `
-        <tr>
-          <td><strong dir="ltr" style="font-family: monospace; color: #D97706; font-size: 0.95rem;">${this.escapeHtml(p.poNumber)}</strong></td>
-          <td><strong>${this.escapeHtml(p.supplier || '-')}</strong></td>
-          <td>${this.escapeHtml(p.material || 'بودرة')}</td>
-          <td>${this.escapeHtml(p.destination || 'المصنع')}</td>
-          <td><strong dir="ltr">${this.formatWeight(p.quantity)} طن</strong></td>
-          <td><strong dir="ltr">${this.formatCurrency(p.tonPrice)}</strong></td>
-          <td><strong dir="ltr">${this.formatCurrency(p.totalValue)}</strong></td>
-          <td><strong dir="ltr" style="color: #059669;">${this.formatWeight(p.deliveredQuantity)} طن</strong></td>
-          <td><strong dir="ltr" style="color: #D97706;">${this.formatWeight(p.remainingQuantity)} طن</strong></td>
-          <td><strong dir="ltr" style="color: #DC2626;">${this.formatWeight(p.totalWasteQuantity)} طن</strong></td>
-          <td><span class="finance-status-badge badge-neutral">${Number(p.performancePercentage || 0).toFixed(1)}%</span></td>
-          <td><span class="finance-status-badge ${p.paymentStatus === 'مدفوع بالكامل' ? 'badge-positive' : (p.paymentStatus === 'مدفوع جزئياً' ? 'badge-neutral' : 'badge-waste')}">${this.escapeHtml(p.paymentStatus || 'غير مدفوع')}</span></td>
-          <td><span dir="ltr">${this.formatDate(p.orderDate)}</span></td>
-          <td>
-            <button type="button" class="finance-btn-table-action" onclick="window.FinanceManagementApp.navigateTo('/finance/purchase-orders/' + encodeURIComponent('${this.escapeHtml(p.poNumber)}'))">
-              <span>عرض التفاصيل</span>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-            </button>
-          </td>
-        </tr>
-      `).join('');
+      tbody.innerHTML = items.map(p => {
+        const isCompleted = p.remainingQuantity <= 0.001;
+        const statusArabic = isCompleted ? 'مكتمل' : 'نشط';
+        const statusBadgeClass = isCompleted ? 'badge-positive' : 'badge-neutral';
+        const unit = p.unit || 'طن';
+        const mat = p.materialName || p.material || 'مواد خام';
+
+        return `
+          <tr>
+            <td><strong dir="ltr" style="font-family: monospace; color: #D97706; font-size: 0.95rem;">${this.escapeHtml(p.poNumber)}</strong></td>
+            <td><strong>${this.escapeHtml(p.supplier || '-')}</strong></td>
+            <td>${this.escapeHtml(mat)}</td>
+            <td><strong dir="ltr">${this.formatWeight(p.quantity)} ${unit}</strong></td>
+            <td><strong dir="ltr" style="color: #059669;">${this.formatWeight(p.deliveredQuantity)} ${unit}</strong></td>
+            <td><strong dir="ltr" style="color: ${p.remainingQuantity > 0 ? '#D97706' : '#059669'};">${this.formatWeight(p.remainingQuantity)} ${unit}</strong></td>
+            <td>${this.escapeHtml(unit)}</td>
+            <td><strong dir="ltr">${this.formatCurrency(p.tonPrice)}</strong></td>
+            <td><strong dir="ltr" style="color: #0284C7; font-weight: 800;">${this.formatCurrency(p.totalValue)}</strong></td>
+            <td><span dir="ltr">${this.formatDate(p.orderDate)}</span></td>
+            <td><span class="finance-status-badge ${statusBadgeClass}">${this.escapeHtml(statusArabic)}</span></td>
+            <td><span class="finance-status-badge ${p.paymentStatus === 'مدفوع بالكامل' ? 'badge-positive' : (p.paymentStatus === 'مدفوع جزئياً' ? 'badge-neutral' : 'badge-waste')}">${this.escapeHtml(p.paymentStatus || 'غير مدفوع')}</span></td>
+            <td style="white-space: nowrap;">
+              <div style="display: flex; gap: 6px;">
+                <button type="button" class="finance-btn-table-action" onclick="window.FinanceManagementApp.navigateTo('/finance/purchase-orders/' + encodeURIComponent('${this.escapeHtml(p.poNumber)}'))">
+                  <span>عرض</span>
+                </button>
+                <button type="button" class="finance-btn-table-action" onclick="window.FinanceManagementApp.openEditPurchaseOrderModal(${p.id})" style="background: #E2E8F0; color: #1E293B;">
+                  <span>تعديل</span>
+                </button>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    async openAddPurchaseOrderModal() {
+      const modal = document.getElementById('finance-po-modal-backdrop');
+      const title = document.getElementById('fin-po-modal-title');
+      const idInp = document.getElementById('po-form-id');
+      const numInp = document.getElementById('po-form-number');
+      const supSelect = document.getElementById('po-form-supplier-select');
+      const matInp = document.getElementById('po-form-material');
+      const qtyInp = document.getElementById('po-form-quantity');
+      const unitInp = document.getElementById('po-form-unit');
+      const priceInp = document.getElementById('po-form-unit-price');
+      const totalInp = document.getElementById('po-form-total-value');
+      const dateInp = document.getElementById('po-form-order-date');
+      const delivDateInp = document.getElementById('po-form-delivery-date');
+      const destInp = document.getElementById('po-form-destination');
+      const notesInp = document.getElementById('po-form-notes');
+      const warnEl = document.getElementById('po-form-qty-warning');
+
+      if (title) title.textContent = 'إضافة أمر شراء جديد — إدارة المشتريات والتعاقدات';
+      if (idInp) idInp.value = '';
+      if (warnEl) warnEl.style.display = 'none';
+
+      // Auto-generate PO Number: PO-YYYY-XXXX
+      const year = new Date().getFullYear();
+      const rnd = Math.floor(1000 + Math.random() * 9000);
+      if (numInp) numInp.value = `PO-${year}-${rnd}`;
+
+      // Populate independent suppliers
+      if (supSelect) {
+        try {
+          const res = await window.ChatApi.getFinanceSuppliers();
+          if (res && res.success && Array.isArray(res.data)) {
+            supSelect.innerHTML = '<option value="">-- اختر المورد من القائمة --</option>' +
+              res.data.map(s => `<option value="${s.id}" data-material="${this.escapeHtml(s.primaryMaterialName || '')}">${this.escapeHtml(s.name)} (${s.supplierCode})</option>`).join('');
+          }
+        } catch (err) {
+          console.error('Failed to load suppliers in PO modal:', err);
+        }
+
+        supSelect.onchange = () => {
+          const opt = supSelect.options[supSelect.selectedIndex];
+          const mat = opt?.getAttribute('data-material');
+          if (mat && matInp && !matInp.value) matInp.value = mat;
+        };
+      }
+
+      if (matInp) matInp.value = 'مواد خام خرسانية';
+      if (qtyInp) qtyInp.value = '';
+      if (unitInp) unitInp.value = 'طن';
+      if (priceInp) priceInp.value = '';
+      if (totalInp) totalInp.value = '0.00 ج.م';
+      if (dateInp) dateInp.value = new Date().toISOString().slice(0, 10);
+      if (delivDateInp) delivDateInp.value = '';
+      if (destInp) destInp.value = 'Cairo Factory';
+      if (notesInp) notesInp.value = '';
+
+      if (modal) modal.style.display = 'flex';
+    }
+
+    async openEditPurchaseOrderModal(id) {
+      if (!id) return;
+      try {
+        const po = this.posRawList?.find(p => p.id === id);
+        if (!po) return;
+
+        const modal = document.getElementById('finance-po-modal-backdrop');
+        const title = document.getElementById('fin-po-modal-title');
+        const idInp = document.getElementById('po-form-id');
+        const numInp = document.getElementById('po-form-number');
+        const supSelect = document.getElementById('po-form-supplier-select');
+        const matInp = document.getElementById('po-form-material');
+        const qtyInp = document.getElementById('po-form-quantity');
+        const deliveredHidden = document.getElementById('po-form-delivered-qty');
+        const unitInp = document.getElementById('po-form-unit');
+        const priceInp = document.getElementById('po-form-unit-price');
+        const dateInp = document.getElementById('po-form-order-date');
+        const delivDateInp = document.getElementById('po-form-delivery-date');
+        const destInp = document.getElementById('po-form-destination');
+        const notesInp = document.getElementById('po-form-notes');
+        const warnEl = document.getElementById('po-form-qty-warning');
+
+        if (title) title.textContent = `تعديل أمر الشراء: ${po.poNumber}`;
+        if (idInp) idInp.value = po.id;
+        if (numInp) numInp.value = po.poNumber;
+        if (deliveredHidden) deliveredHidden.value = po.deliveredQuantity || 0;
+
+        if (supSelect) {
+          try {
+            const res = await window.ChatApi.getFinanceSuppliers();
+            if (res && res.success && Array.isArray(res.data)) {
+              supSelect.innerHTML = '<option value="">-- اختر المورد من القائمة --</option>' +
+                res.data.map(s => `<option value="${s.id}">${this.escapeHtml(s.name)} (${s.supplierCode})</option>`).join('');
+              if (po.supplierId) supSelect.value = po.supplierId;
+            }
+          } catch (err) {
+            console.error('Failed to load suppliers:', err);
+          }
+        }
+
+        if (matInp) matInp.value = po.materialName || po.material || '';
+        if (qtyInp) qtyInp.value = po.quantity;
+        if (unitInp) unitInp.value = po.unit || 'طن';
+        if (priceInp) priceInp.value = po.tonPrice;
+        if (dateInp) dateInp.value = po.orderDate ? po.orderDate.slice(0, 10) : '';
+        if (delivDateInp) delivDateInp.value = po.expectedDeliveryDate ? po.expectedDeliveryDate.slice(0, 10) : '';
+        if (destInp) destInp.value = po.destination || 'Cairo Factory';
+        if (notesInp) notesInp.value = po.notes || '';
+
+        this.calculatePoTotalValue();
+        if (warnEl) {
+          if (po.deliveredQuantity > 0) {
+            warnEl.style.display = 'block';
+            warnEl.textContent = `تم تسليم ${this.formatWeight(po.deliveredQuantity)} طن بالفعل من هذا الأمر. لا يمكن تقليل الكمية المتعاقدة عن ذلك.`;
+          } else {
+            warnEl.style.display = 'none';
+          }
+        }
+
+        if (modal) modal.style.display = 'flex';
+      } catch (err) {
+        console.error('Failed to open edit PO modal:', err);
+      }
+    }
+
+    closePurchaseOrderModal() {
+      const modal = document.getElementById('finance-po-modal-backdrop');
+      if (modal) modal.style.display = 'none';
+    }
+
+    calculatePoTotalValue() {
+      const qty = parseFloat(document.getElementById('po-form-quantity')?.value) || 0;
+      const price = parseFloat(document.getElementById('po-form-unit-price')?.value) || 0;
+      const total = Math.round(qty * price * 100) / 100;
+      const totalInp = document.getElementById('po-form-total-value');
+      if (totalInp) totalInp.value = `${this.formatCurrency(total)}`;
+    }
+
+    async submitPurchaseOrderForm(e) {
+      e.preventDefault();
+      const id = document.getElementById('po-form-id')?.value;
+      const supSelect = document.getElementById('po-form-supplier-select');
+      const supplierId = supSelect?.value ? parseInt(supSelect.value, 10) : null;
+      const supplierName = supSelect?.options[supSelect.selectedIndex]?.text?.split('(')[0]?.trim();
+
+      const quantity = parseFloat(document.getElementById('po-form-quantity')?.value);
+      const unitPrice = parseFloat(document.getElementById('po-form-unit-price')?.value);
+      const deliveredQty = parseFloat(document.getElementById('po-form-delivered-qty')?.value) || 0;
+
+      if (!supplierId) {
+        alert('يرجى اختيار المورد.');
+        return;
+      }
+      if (isNaN(quantity) || quantity <= 0) {
+        alert('يرجى إدخال كمية صحيحة أكبر من الصفر.');
+        return;
+      }
+      if (id && quantity < deliveredQty) {
+        alert(`لا يمكن تقليل كمية أمر الشراء عن الكمية المسلمة بالفعل (${this.formatWeight(deliveredQty)} طن).`);
+        return;
+      }
+      if (isNaN(unitPrice) || unitPrice <= 0) {
+        alert('يرجى إدخال سعر وحدة صحيح أكبر من الصفر.');
+        return;
+      }
+
+      const payload = {
+        poNumber: document.getElementById('po-form-number')?.value?.trim(),
+        supplierId: supplierId,
+        supplier: supplierName,
+        materialName: document.getElementById('po-form-material')?.value?.trim(),
+        quantity: quantity,
+        unit: document.getElementById('po-form-unit')?.value || 'طن',
+        unitPrice: unitPrice,
+        orderDate: document.getElementById('po-form-order-date')?.value || new Date().toISOString(),
+        expectedDeliveryDate: document.getElementById('po-form-delivery-date')?.value || null,
+        destination: document.getElementById('po-form-destination')?.value?.trim() || 'Cairo Factory',
+        notes: document.getElementById('po-form-notes')?.value?.trim()
+      };
+
+      try {
+        let res;
+        if (id) {
+          res = await window.ChatApi.updateFinancePurchaseOrder(id, payload);
+        } else {
+          res = await window.ChatApi.createFinancePurchaseOrder(payload);
+        }
+
+        if (res && res.success) {
+          alert(id ? 'تم تعديل أمر الشراء بنجاح!' : 'تم إضافة أمر الشراء بنجاح وحفظه في قاعدة البيانات!');
+          this.closePurchaseOrderModal();
+          await this.loadAllPurchaseOrdersData();
+          await this.loadPoDropdown();
+          await this.loadPurchaseOrdersHistory();
+        } else {
+          alert(res?.message || 'تعذر حفظ أمر الشراء.');
+        }
+      } catch (err) {
+        console.error('Failed to save purchase order:', err);
+        alert('حدث خطأ أثناء حفظ أمر الشراء.');
+      }
     }
 
     /* ------------------------------------------------------------------------
@@ -2728,6 +3306,1187 @@
         }
       } catch (err) {
         console.error('Failed to load employee detail:', err);
+      }
+    }
+
+    /* ------------------------------------------------------------------------
+       8. INVOICES MODULE LOGIC (/finance/invoices)
+       ------------------------------------------------------------------------ */
+    bindInvoicesEvents() {
+      // Hub Card Quick Action Pills
+      const hubNewInv = document.getElementById('hub-pill-new-invoice');
+      if (hubNewInv) {
+        hubNewInv.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.navigateTo('/finance/invoices');
+          this.openCreateInvoiceModal();
+        });
+      }
+
+      const hubViewInv = document.getElementById('hub-pill-view-invoices');
+      if (hubViewInv) {
+        hubViewInv.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.invoicesFilters.status = 'ALL';
+          this.navigateTo('/finance/invoices');
+        });
+      }
+
+      const hubIssuedInv = document.getElementById('hub-pill-issued-invoices');
+      if (hubIssuedInv) {
+        hubIssuedInv.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.invoicesFilters.status = 'ISSUED';
+          this.navigateTo('/finance/invoices');
+        });
+      }
+
+      const hubDraftInv = document.getElementById('hub-pill-draft-invoices');
+      if (hubDraftInv) {
+        hubDraftInv.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.invoicesFilters.status = 'DRAFT';
+          this.navigateTo('/finance/invoices');
+        });
+      }
+
+      const hubPrintedInv = document.getElementById('hub-pill-printed-invoices');
+      if (hubPrintedInv) {
+        hubPrintedInv.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.invoicesFilters.status = 'PRINTED';
+          this.navigateTo('/finance/invoices');
+        });
+      }
+
+      // Create New Invoice Button (In Invoices View Banner)
+      const btnNewInv = document.getElementById('fin-inv-btn-create-new');
+      if (btnNewInv) {
+        btnNewInv.addEventListener('click', () => {
+          this.openCreateInvoiceModal();
+        });
+      }
+
+      // Invoices Filters
+      const filterApplyBtn = document.getElementById('fin-inv-filter-apply-btn');
+      if (filterApplyBtn) {
+        filterApplyBtn.addEventListener('click', () => {
+          this.invoicesPage = 1;
+          this.loadInvoicesData();
+        });
+      }
+
+      const filterResetBtn = document.getElementById('fin-inv-filter-reset-btn');
+      if (filterResetBtn) {
+        filterResetBtn.addEventListener('click', () => {
+          const s = document.getElementById('fin-inv-search-input');
+          const st = document.getElementById('fin-inv-filter-status-select');
+          const prj = document.getElementById('fin-inv-filter-project-select');
+          const df = document.getElementById('fin-inv-filter-date-from');
+          const dt = document.getElementById('fin-inv-filter-date-to');
+          if (s) s.value = '';
+          if (st) st.value = 'ALL';
+          if (prj) prj.value = '';
+          if (df) df.value = '';
+          if (dt) dt.value = '';
+          this.invoicesFilters = { search: '', status: 'ALL', projectCodeId: '', fromDate: '', toDate: '' };
+          this.invoicesPage = 1;
+          this.loadInvoicesData();
+        });
+      }
+
+      let searchInvTimeout = null;
+      const searchInvInput = document.getElementById('fin-inv-search-input');
+      if (searchInvInput) {
+        searchInvInput.addEventListener('input', (e) => {
+          clearTimeout(searchInvTimeout);
+          searchInvTimeout = setTimeout(() => {
+            this.invoicesFilters.search = e.target.value.trim();
+            this.invoicesPage = 1;
+            this.loadInvoicesData();
+          }, 350);
+        });
+      }
+
+      const statusSelect = document.getElementById('fin-inv-filter-status-select');
+      if (statusSelect) {
+        statusSelect.addEventListener('change', (e) => {
+          this.invoicesFilters.status = e.target.value;
+          this.invoicesPage = 1;
+          this.loadInvoicesData();
+        });
+      }
+
+      const prjSelect = document.getElementById('fin-inv-filter-project-select');
+      if (prjSelect) {
+        prjSelect.addEventListener('change', (e) => {
+          this.invoicesFilters.projectCodeId = e.target.value;
+          this.invoicesPage = 1;
+          this.loadInvoicesData();
+        });
+      }
+
+      // Modal Close Buttons
+      const modalCloseBtn = document.getElementById('fin-invoice-modal-close-btn');
+      if (modalCloseBtn) modalCloseBtn.addEventListener('click', () => this.closeCreateInvoiceModal());
+
+      const viewCloseBtn = document.getElementById('fin-view-modal-close-btn');
+      if (viewCloseBtn) viewCloseBtn.addEventListener('click', () => this.closeViewInvoiceModal());
+
+      const viewBtnClose = document.getElementById('fin-view-btn-close');
+      if (viewBtnClose) viewBtnClose.addEventListener('click', () => this.closeViewInvoiceModal());
+
+      const viewBtnPrint = document.getElementById('fin-view-btn-print');
+      if (viewBtnPrint) {
+        viewBtnPrint.addEventListener('click', () => {
+          if (this.currentViewingInvoiceId) {
+            this.closeViewInvoiceModal();
+            this.printInvoice(this.currentViewingInvoiceId);
+          }
+        });
+      }
+
+      // Print Modal Buttons
+      const printDismissBtn = document.getElementById('fin-btn-dismiss-print');
+      if (printDismissBtn) printDismissBtn.addEventListener('click', () => this.closePrintModal());
+
+      const printExecBtn = document.getElementById('fin-btn-execute-print');
+      if (printExecBtn) printExecBtn.addEventListener('click', () => this.executePrintInvoice());
+
+      // Searchable Project Code Enum-Style Dropdown
+      const comboTrigger = document.getElementById('fin-project-combo-trigger');
+      if (comboTrigger) {
+        comboTrigger.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (comboTrigger.disabled) return;
+          this.toggleProjectCombo();
+        });
+      }
+
+      const comboSearch = document.getElementById('fin-project-combo-search');
+      if (comboSearch) {
+        comboSearch.addEventListener('click', (e) => e.stopPropagation());
+        comboSearch.addEventListener('input', (e) => this.renderProjectComboOptions(e.target.value));
+      }
+
+      document.addEventListener('click', (e) => {
+        const combo = document.getElementById('fin-project-combo');
+        if (combo && !combo.contains(e.target)) {
+          this.toggleProjectCombo(false);
+        }
+      });
+
+      // Apply uniform unit price across all auto-loaded project items
+      const applyUniformBtn = document.getElementById('fin-btn-apply-uniform-price');
+      if (applyUniformBtn) {
+        applyUniformBtn.addEventListener('click', () => {
+          const p = parseFloat(document.getElementById('fin-uniform-price-input')?.value);
+          if (!isNaN(p) && p > 0) {
+            document.querySelectorAll('#fin-invoice-items-tbody .fin-item-price-input').forEach(inp => {
+              inp.value = p.toFixed(2);
+            });
+            this.recalculateProjectInvoiceTotals();
+          } else {
+            alert('يرجى إدخال سعر موحد صحيح أكبر من الصفر.');
+          }
+        });
+      }
+
+      // Live calculations on financial inputs
+      ['fin-invoice-shipping-input', 'fin-invoice-tax-rate', 'fin-invoice-discount'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('input', () => this.recalculateProjectInvoiceTotals());
+      });
+
+      // Modal Footer Action Buttons
+      const invoiceDraftBtn = document.getElementById('fin-invoice-btn-draft');
+      if (invoiceDraftBtn) invoiceDraftBtn.addEventListener('click', () => this.saveProjectInvoice(false, false));
+
+      const invoiceIssueBtn = document.getElementById('fin-invoice-btn-issue');
+      if (invoiceIssueBtn) invoiceIssueBtn.addEventListener('click', () => this.saveProjectInvoice(true, false));
+
+      const invoiceSavePrintBtn = document.getElementById('fin-invoice-btn-save-print');
+      if (invoiceSavePrintBtn) invoiceSavePrintBtn.addEventListener('click', () => this.saveProjectInvoice(true, true));
+
+      const invoiceCancelBtn = document.getElementById('fin-invoice-btn-cancel');
+      if (invoiceCancelBtn) invoiceCancelBtn.addEventListener('click', () => this.closeCreateInvoiceModal());
+    }
+
+    async showInvoicesView() {
+      this.currentView = 'invoices';
+      this.hideAllSubViews();
+      if (this.invoicesView) this.invoicesView.style.display = 'block';
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+
+      // Update active nav state if needed
+      await this.loadInvoiceStatistics();
+      await this.loadInvoiceFilterProjectCodes();
+      await this.loadInvoicesData();
+    }
+
+    async loadInvoiceStatistics() {
+      try {
+        const res = await window.ChatApi.getInvoiceStatistics();
+        if (res && res.success && res.data) {
+          const s = res.data;
+          const totalEl = document.getElementById('fin-inv-stat-total');
+          const issuedEl = document.getElementById('fin-inv-stat-issued');
+          const draftsEl = document.getElementById('fin-inv-stat-drafts');
+          const printedEl = document.getElementById('fin-inv-stat-printed');
+          const amountEl = document.getElementById('fin-inv-stat-amount');
+          const hubBadge = document.getElementById('finance-hub-invoices-badge');
+
+          if (totalEl) totalEl.textContent = s.totalInvoices;
+          if (issuedEl) issuedEl.textContent = s.issuedInvoices;
+          if (draftsEl) draftsEl.textContent = s.draftInvoices;
+          if (printedEl) printedEl.textContent = s.printedInvoices;
+          if (amountEl) amountEl.textContent = `${this.formatCurrency(s.totalInvoicedAmount)}`;
+          if (hubBadge) hubBadge.textContent = `${s.totalInvoices} فاتورة`;
+        }
+      } catch (err) {
+        console.error('Failed to load invoice statistics:', err);
+      }
+    }
+
+    async loadInvoiceFilterProjectCodes() {
+      const select = document.getElementById('fin-inv-filter-project-select');
+      if (!select || select.options.length > 1) return;
+
+      try {
+        const res = await window.ChatApi.getInvoiceProjectCodes();
+        if (res && res.success && res.data) {
+          this.invCachedProjects = res.data;
+          select.innerHTML = '<option value="">جميع المشاريع</option>' +
+            res.data.map(p => `<option value="${p.id}">${this.escapeHtml(p.code)} - ${this.escapeHtml(p.projectName)}</option>`).join('');
+        }
+      } catch (err) {
+        console.error('Failed to load project codes:', err);
+      }
+    }
+
+    async loadInvoicesData() {
+      const loading = document.getElementById('fin-invoices-loading');
+      const empty = document.getElementById('fin-invoices-empty');
+      const tbody = document.getElementById('fin-invoices-tbody');
+      const countBadge = document.getElementById('fin-inv-table-count-badge');
+
+      if (loading) loading.style.display = 'block';
+      if (empty) empty.style.display = 'none';
+
+      try {
+        const res = await window.ChatApi.getInvoices({
+          search: this.invoicesFilters.search,
+          status: this.invoicesFilters.status,
+          projectCodeId: this.invoicesFilters.projectCodeId,
+          fromDate: document.getElementById('fin-inv-filter-date-from')?.value || '',
+          toDate: document.getElementById('fin-inv-filter-date-to')?.value || '',
+          page: this.invoicesPage,
+          pageSize: this.invoicesPageSize
+        });
+
+        if (loading) loading.style.display = 'none';
+
+        if (res && res.success && res.data) {
+          const invoices = res.data;
+          this.invoicesTotalCount = res.totalCount || invoices.length;
+          if (countBadge) countBadge.textContent = `${this.invoicesTotalCount} فاتورة`;
+
+          if (invoices.length === 0) {
+            if (tbody) tbody.innerHTML = '';
+            if (empty) empty.style.display = 'block';
+            return;
+          }
+
+          if (tbody) {
+            tbody.innerHTML = invoices.map(inv => {
+              const statusClass = inv.status === 'ISSUED' ? 'badge-positive' : (inv.status === 'DRAFT' ? 'badge-neutral' : 'badge-negative');
+              const printBadge = inv.isPrinted
+                ? '<span class="finance-status-badge badge-positive" style="background: #E0E7FF; color: #3730A3;">مطبوعة ✓</span>'
+                : '<span class="finance-status-badge badge-neutral" style="color: #94A3B8;">غير مطبوعة</span>';
+
+              const actionsHtml = `
+                <div style="display: flex; gap: 6px; align-items: center;">
+                  <button type="button" class="finance-btn-table-action" onclick="window.FinanceManagementApp.viewInvoice(${inv.id})" title="عرض التفاصيل">
+                    <span>عرض</span>
+                  </button>
+                  <button type="button" class="finance-btn-table-action" onclick="window.FinanceManagementApp.printInvoice(${inv.id})" style="background: #E0F2FE; color: #0369A1;" title="طباعة">
+                    <span>طباعة</span>
+                  </button>
+                  ${inv.status === 'DRAFT' ? `
+                    <button type="button" class="finance-btn-table-action" onclick="window.FinanceManagementApp.editInvoice(${inv.id})" style="background: #FEF3C7; color: #92400E;" title="تعديل المسودة">
+                      <span>تعديل</span>
+                    </button>
+                    <button type="button" class="finance-btn-table-action" onclick="window.FinanceManagementApp.issueDraftInvoice(${inv.id})" style="background: #D1FAE5; color: #065F46;" title="اعتماد وإصدار">
+                      <span>إصدار</span>
+                    </button>
+                  ` : ''}
+                  ${inv.status !== 'CANCELLED' ? `
+                    <button type="button" class="finance-btn-table-action" onclick="window.FinanceManagementApp.cancelInvoice(${inv.id})" style="background: #FEE2E2; color: #991B1B;" title="إلغاء الفاتورة">
+                      <span>إلغاء</span>
+                    </button>
+                  ` : ''}
+                </div>
+              `;
+
+              return `
+                <tr>
+                  <td><strong dir="ltr" style="font-family: monospace; color: #0284C7;">${this.escapeHtml(inv.invoiceNumber)}</strong></td>
+                  <td>${this.escapeHtml(inv.invoiceDateFormatted)}</td>
+                  <td>
+                    <span style="font-weight: 700; color: #1E3A8A; background: #DBEAFE; padding: 2px 8px; border-radius: 6px; font-size: 0.8rem;">${this.escapeHtml(inv.projectCodeValue || '-')}</span>
+                    <div style="font-size: 0.75rem; color: #64748B;">${this.escapeHtml(inv.projectName || '')}</div>
+                  </td>
+                  <td>
+                    <div style="font-weight: 700;">${this.escapeHtml(inv.entityDisplay)}</div>
+                  </td>
+                  <td><strong>${inv.poNumber ? (inv.invoicedQuantity ? `${this.formatWeight(inv.invoicedQuantity)} طن` : 'أمر شراء') : `${inv.transactionCount} شحنات`}</strong></td>
+                  <td dir="ltr">${this.formatCurrency(inv.subtotal)}${inv.shippingPrice > 0 ? `<br><span style="font-size: 0.75rem; color: #059669; font-weight: 600;">+ شحن: ${this.formatCurrency(inv.shippingPrice)}</span>` : ''}</td>
+                  <td dir="ltr" style="font-size: 0.8rem; color: #64748B;">
+                    ضريبة (${inv.taxRate}%): ${this.formatCurrency(inv.taxAmount)}
+                    ${inv.discountAmount > 0 ? `<br>خصم: -${this.formatCurrency(inv.discountAmount)}` : ''}
+                  </td>
+                  <td><strong dir="ltr" style="color: #0284C7; font-size: 0.95rem;">${this.formatCurrency(inv.totalAmount)}</strong></td>
+                  <td><span class="finance-status-badge ${statusClass}">${this.escapeHtml(inv.statusArabic)}</span></td>
+                  <td>${printBadge}</td>
+                  <td>${this.escapeHtml(inv.createdBy || '-')}</td>
+                  <td>${actionsHtml}</td>
+                </tr>
+              `;
+            }).join('');
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load invoices data:', err);
+        if (loading) loading.style.display = 'none';
+      }
+    }
+
+    setInvoiceActionButtonsVisible(visible) {
+      const displayVal = visible ? 'inline-flex' : 'none';
+      ['fin-invoice-btn-draft', 'fin-invoice-btn-issue', 'fin-invoice-btn-save-print'].forEach(id => {
+        const btn = document.getElementById(id);
+        if (btn) btn.style.display = displayVal;
+      });
+    }
+
+    resetProjectInvoiceModalState() {
+      this.invEditingInvoiceId = null;
+      this.invSelectedProjectId = null;
+      this.invSelectedProjectObj = null;
+      this.invSelectedCompanyId = null;
+      this.invProjectItems = [];
+
+      const form = document.getElementById('fin-project-invoice-form');
+      if (form) form.reset();
+
+      const editIdEl = document.getElementById('fin-invoice-edit-id');
+      const projIdEl = document.getElementById('fin-invoice-project-id');
+      const compIdEl = document.getElementById('fin-invoice-company-id');
+      if (editIdEl) editIdEl.value = '';
+      if (projIdEl) projIdEl.value = '';
+      if (compIdEl) compIdEl.value = '';
+
+      const titleEl = document.getElementById('fin-modal-title-text');
+      if (titleEl) titleEl.textContent = 'إنشاء فاتورة مشروع جديدة — منظومة الفواتير';
+
+      const triggerBtn = document.getElementById('fin-project-combo-trigger');
+      const comboLabel = document.getElementById('fin-project-combo-label');
+      const comboSearch = document.getElementById('fin-project-combo-search');
+      if (triggerBtn) {
+        triggerBtn.disabled = false;
+        triggerBtn.style.background = '#FFFFFF';
+        triggerBtn.style.cursor = 'pointer';
+      }
+      if (comboLabel) {
+        comboLabel.textContent = '-- اختر كود المشروع أو ابحث بالكود / الاسم --';
+        comboLabel.style.color = '#64748B';
+      }
+      if (comboSearch) comboSearch.value = '';
+
+      this.toggleProjectCombo(false);
+
+      const loadingEl = document.getElementById('fin-invoice-project-loading');
+      const emptyEl = document.getElementById('fin-invoice-empty-state');
+      const bodyEl = document.getElementById('fin-invoice-project-form-body');
+      const tbodyEl = document.getElementById('fin-invoice-items-tbody');
+
+      if (loadingEl) loadingEl.style.display = 'none';
+      if (emptyEl) emptyEl.style.display = 'none';
+      if (bodyEl) bodyEl.style.display = 'none';
+      if (tbodyEl) tbodyEl.innerHTML = '';
+
+      this.setInvoiceActionButtonsVisible(false);
+    }
+
+    async openCreateInvoiceModal() {
+      this.resetProjectInvoiceModalState();
+
+      const modalBackdrop = document.getElementById('finance-invoice-modal-backdrop');
+      if (modalBackdrop) modalBackdrop.style.display = 'flex';
+
+      const listEl = document.getElementById('fin-project-combo-list');
+      if (listEl) {
+        listEl.innerHTML = '<div style="padding: 14px; text-align: center; color: #64748B; font-size: 0.85rem;">جاري تحميل أكواد المشاريع...</div>';
+      }
+
+      try {
+        const res = await window.ChatApi.getInvoiceProjectCodes();
+        if (res && res.success && Array.isArray(res.data)) {
+          this.invCachedProjects = res.data;
+        } else {
+          this.invCachedProjects = [];
+        }
+        this.renderProjectComboOptions('');
+      } catch (err) {
+        console.error('Failed to load project codes for invoice modal:', err);
+        this.invCachedProjects = [];
+        if (listEl) {
+          listEl.innerHTML = '<div style="padding: 14px; text-align: center; color: #DC2626; font-size: 0.85rem;">تعذر تحميل أكواد المشاريع من الخادم.</div>';
+        }
+      }
+    }
+
+    async editInvoice(id) {
+      this.resetProjectInvoiceModalState();
+      this.invEditingInvoiceId = id;
+
+      const modalBackdrop = document.getElementById('finance-invoice-modal-backdrop');
+      const loadingEl = document.getElementById('fin-invoice-project-loading');
+      if (modalBackdrop) modalBackdrop.style.display = 'flex';
+      if (loadingEl) loadingEl.style.display = 'block';
+
+      try {
+        const res = await window.ChatApi.getInvoiceById(id);
+        if (loadingEl) loadingEl.style.display = 'none';
+
+        if (!res || !res.success || !res.data) {
+          alert(res?.message || 'تعذر تحميل بيانات الفاتورة للتعديل.');
+          this.closeCreateInvoiceModal();
+          return;
+        }
+
+        const inv = res.data;
+        if (inv.status !== 'DRAFT') {
+          alert('لا يمكن تعديل إلا الفواتير التي في حالة مسودة.');
+          this.closeCreateInvoiceModal();
+          return;
+        }
+
+        const titleEl = document.getElementById('fin-modal-title-text');
+        if (titleEl) titleEl.textContent = `تعديل مسودة الفاتورة: ${inv.invoiceNumber}`;
+
+        const editIdEl = document.getElementById('fin-invoice-edit-id');
+        const projIdEl = document.getElementById('fin-invoice-project-id');
+        const compIdEl = document.getElementById('fin-invoice-company-id');
+        if (editIdEl) editIdEl.value = String(inv.id);
+        if (projIdEl) projIdEl.value = inv.projectCodeId ? String(inv.projectCodeId) : '';
+        if (compIdEl) compIdEl.value = inv.companyId ? String(inv.companyId) : '';
+
+        this.invSelectedProjectId = inv.projectCodeId || null;
+        this.invSelectedCompanyId = inv.companyId || null;
+
+        const triggerBtn = document.getElementById('fin-project-combo-trigger');
+        const comboLabel = document.getElementById('fin-project-combo-label');
+        if (triggerBtn) {
+          triggerBtn.disabled = true;
+          triggerBtn.style.background = '#F1F5F9';
+          triggerBtn.style.cursor = 'not-allowed';
+        }
+        if (comboLabel) {
+          comboLabel.textContent = `${inv.projectCodeValue || '-'} — ${inv.projectName || 'مشروع'}`;
+          comboLabel.style.color = '#0F172A';
+        }
+
+        const codeEl = document.getElementById('fin-disp-proj-code');
+        const nameEl = document.getElementById('fin-disp-proj-name');
+        const clientEl = document.getElementById('fin-disp-proj-client');
+        const summaryEl = document.getElementById('fin-disp-proj-summary');
+
+        if (codeEl) codeEl.textContent = inv.projectCodeValue || '-';
+        if (nameEl) nameEl.textContent = inv.projectName || '-';
+        if (clientEl) clientEl.textContent = inv.companyName || '-';
+
+        const compNameInp = document.getElementById('fin-company-name-input');
+        const compPhoneInp = document.getElementById('fin-company-phone-input');
+        const compTaxInp = document.getElementById('fin-company-tax-input');
+        const compAddrInp = document.getElementById('fin-company-address-input');
+        if (compNameInp) compNameInp.value = inv.companyName || '';
+        if (compPhoneInp) compPhoneInp.value = inv.companyPhone || '';
+        if (compTaxInp) compTaxInp.value = inv.companyTaxNumber || '';
+        if (compAddrInp) compAddrInp.value = inv.companyAddress || '';
+
+        const shippingInp = document.getElementById('fin-invoice-shipping-input');
+        const taxInp = document.getElementById('fin-invoice-tax-rate');
+        const discInp = document.getElementById('fin-invoice-discount');
+        const notesInp = document.getElementById('fin-invoice-notes-input');
+        if (shippingInp) shippingInp.value = (inv.shippingPrice ?? 0).toFixed(2);
+        if (taxInp) taxInp.value = inv.taxRate ?? 14;
+        if (discInp) discInp.value = (inv.discountAmount ?? 0).toFixed(2);
+        if (notesInp) notesInp.value = inv.notes || '';
+
+        this.invProjectItems = (inv.items || []).map(it => ({
+          transportationId: it.transportationId,
+          transactionNumber: it.transportationTransactionNumber,
+          warehouseExportNumber: it.warehouseExportNumber || '-',
+          productName: it.productName || 'مواد',
+          transactionDateFormatted: it.transactionDateFormatted || '-',
+          remainingInvoicableQuantity: it.quantity,
+          unit: it.unit || 'طن',
+          unitPrice: it.unitPrice
+        }));
+
+        const totalQty = this.invProjectItems.reduce((acc, x) => acc + (parseFloat(x.remainingInvoicableQuantity) || 0), 0);
+        if (summaryEl) {
+          summaryEl.textContent = `${this.invProjectItems.length} بنود — ${this.formatWeight(totalQty)} طن`;
+        }
+
+        this.renderProjectInvoiceItems();
+        const bodyEl = document.getElementById('fin-invoice-project-form-body');
+        if (bodyEl) bodyEl.style.display = 'flex';
+        this.setInvoiceActionButtonsVisible(true);
+      } catch (err) {
+        console.error('Failed to open invoice for edit:', err);
+        if (loadingEl) loadingEl.style.display = 'none';
+        alert('حدث خطأ أثناء تحميل بيانات المسودة.');
+        this.closeCreateInvoiceModal();
+      }
+    }
+
+    closeCreateInvoiceModal() {
+      const modalBackdrop = document.getElementById('finance-invoice-modal-backdrop');
+      if (modalBackdrop) modalBackdrop.style.display = 'none';
+      this.toggleProjectCombo(false);
+    }
+
+    toggleProjectCombo(forceOpen) {
+      const panel = document.getElementById('fin-project-combo-panel');
+      if (!panel) return;
+      const shouldOpen = typeof forceOpen === 'boolean' ? forceOpen : (panel.style.display === 'none' || !panel.style.display);
+      panel.style.display = shouldOpen ? 'block' : 'none';
+      if (shouldOpen) {
+        const searchEl = document.getElementById('fin-project-combo-search');
+        if (searchEl) {
+          searchEl.focus();
+          this.renderProjectComboOptions(searchEl.value || '');
+        }
+      }
+    }
+
+    renderProjectComboOptions(searchQuery) {
+      const listEl = document.getElementById('fin-project-combo-list');
+      if (!listEl) return;
+
+      const q = (searchQuery || '').trim().toLowerCase();
+      const projects = (this.invCachedProjects || []).filter(p => {
+        if (!q) return true;
+        return (p.code || '').toLowerCase().includes(q)
+          || (p.projectName || '').toLowerCase().includes(q)
+          || (p.clientName || '').toLowerCase().includes(q);
+      });
+
+      if (projects.length === 0) {
+        listEl.innerHTML = '<div style="padding: 12px; text-align: center; color: #64748B; font-size: 0.85rem;">لا توجد أكواد مشاريع مطابقة لنتيجة البحث.</div>';
+        return;
+      }
+
+      listEl.innerHTML = projects.map(p => {
+        const isSelected = this.invSelectedProjectId === p.id;
+        return `
+          <button type="button" class="fin-project-combo-option" data-id="${p.id}" style="width: 100%; text-align: right; background: ${isSelected ? '#EFF6FF' : 'transparent'}; border: none; border-bottom: 1px solid #F1F5F9; padding: 9px 12px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 10px; border-radius: 6px;">
+            <div>
+              <span dir="ltr" style="font-family: monospace; font-weight: 800; color: #0284C7; background: #E0F2FE; padding: 2px 8px; border-radius: 5px; font-size: 0.85rem;">${this.escapeHtml(p.code)}</span>
+              <span style="font-weight: 700; color: #0F172A; margin-right: 6px;">${this.escapeHtml(p.projectName || '')}</span>
+            </div>
+            <span style="font-size: 0.78rem; color: #64748B;">${this.escapeHtml(p.clientName || '')}</span>
+          </button>
+        `;
+      }).join('');
+
+      listEl.querySelectorAll('.fin-project-combo-option').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const pid = parseInt(btn.getAttribute('data-id'), 10);
+          if (pid) {
+            this.selectProjectCodeForInvoice(pid);
+          }
+        });
+      });
+    }
+
+    async selectProjectCodeForInvoice(projectCodeId) {
+      const prj = (this.invCachedProjects || []).find(p => p.id === projectCodeId);
+      this.invSelectedProjectId = projectCodeId;
+      this.invSelectedProjectObj = prj || null;
+      this.toggleProjectCombo(false);
+
+      const projIdEl = document.getElementById('fin-invoice-project-id');
+      const comboLabel = document.getElementById('fin-project-combo-label');
+      if (projIdEl) projIdEl.value = String(projectCodeId);
+      if (comboLabel && prj) {
+        comboLabel.textContent = `${prj.code} — ${prj.projectName}`;
+        comboLabel.style.color = '#0F172A';
+      }
+
+      const loadingEl = document.getElementById('fin-invoice-project-loading');
+      const emptyEl = document.getElementById('fin-invoice-empty-state');
+      const emptyMsgEl = document.getElementById('fin-invoice-empty-message');
+      const bodyEl = document.getElementById('fin-invoice-project-form-body');
+
+      if (loadingEl) loadingEl.style.display = 'block';
+      if (emptyEl) emptyEl.style.display = 'none';
+      if (bodyEl) bodyEl.style.display = 'none';
+      this.setInvoiceActionButtonsVisible(false);
+
+      try {
+        const res = await window.ChatApi.getProjectInvoiceData(projectCodeId);
+        if (loadingEl) loadingEl.style.display = 'none';
+
+        if (!res || !res.success || !res.data) {
+          if (emptyMsgEl) emptyMsgEl.textContent = res?.message || 'تعذر استرجاع بيانات المشروع من قاعدة البيانات.';
+          if (emptyEl) emptyEl.style.display = 'block';
+          return;
+        }
+
+        const data = res.data;
+        const items = Array.isArray(data.eligibleTransportations) ? data.eligibleTransportations : [];
+
+        if (!data.hasEligibleRecords || items.length === 0) {
+          if (emptyMsgEl) {
+            emptyMsgEl.textContent = data.message || `لا توجد معاملات نقل مؤهلة أو متبقية للفوترة لكود المشروع (${data.code}) حالياً.`;
+          }
+          if (emptyEl) emptyEl.style.display = 'block';
+          return;
+        }
+
+        this.invSelectedCompanyId = data.companyId || null;
+        const compIdEl = document.getElementById('fin-invoice-company-id');
+        if (compIdEl) compIdEl.value = data.companyId ? String(data.companyId) : '';
+
+        const codeEl = document.getElementById('fin-disp-proj-code');
+        const nameEl = document.getElementById('fin-disp-proj-name');
+        const clientEl = document.getElementById('fin-disp-proj-client');
+        const summaryEl = document.getElementById('fin-disp-proj-summary');
+
+        const totalQty = items.reduce((sum, x) => sum + (parseFloat(x.remainingInvoicableQuantity) || 0), 0);
+        if (codeEl) codeEl.textContent = data.code || '-';
+        if (nameEl) nameEl.textContent = data.projectName || '-';
+        if (clientEl) clientEl.textContent = data.clientName || data.companyName || '-';
+        if (summaryEl) summaryEl.textContent = `${items.length} شحنات — ${this.formatWeight(totalQty)} طن`;
+
+        const compNameInp = document.getElementById('fin-company-name-input');
+        const compPhoneInp = document.getElementById('fin-company-phone-input');
+        const compTaxInp = document.getElementById('fin-company-tax-input');
+        const compAddrInp = document.getElementById('fin-company-address-input');
+        if (compNameInp) compNameInp.value = data.companyName || data.clientName || '';
+        if (compPhoneInp) compPhoneInp.value = data.companyPhone || '';
+        if (compTaxInp) compTaxInp.value = '';
+        if (compAddrInp) compAddrInp.value = data.companyAddress || '';
+
+        const shippingInp = document.getElementById('fin-invoice-shipping-input');
+        const taxInp = document.getElementById('fin-invoice-tax-rate');
+        const discInp = document.getElementById('fin-invoice-discount');
+        const notesInp = document.getElementById('fin-invoice-notes-input');
+        const uniformInp = document.getElementById('fin-uniform-price-input');
+        if (shippingInp) shippingInp.value = '0.00';
+        if (taxInp) taxInp.value = '14';
+        if (discInp) discInp.value = '0';
+        if (notesInp) notesInp.value = '';
+        if (uniformInp) uniformInp.value = '';
+
+        this.invProjectItems = items.map(it => ({ ...it, unitPrice: 0 }));
+        this.renderProjectInvoiceItems();
+
+        if (bodyEl) bodyEl.style.display = 'flex';
+        this.setInvoiceActionButtonsVisible(true);
+      } catch (err) {
+        console.error('Failed to retrieve project invoice data:', err);
+        if (loadingEl) loadingEl.style.display = 'none';
+        if (emptyMsgEl) emptyMsgEl.textContent = 'حدث خطأ أثناء استرجاع بيانات المشروع من الخادم.';
+        if (emptyEl) emptyEl.style.display = 'block';
+      }
+    }
+
+    renderProjectInvoiceItems() {
+      const tbody = document.getElementById('fin-invoice-items-tbody');
+      if (!tbody) return;
+
+      const items = this.invProjectItems || [];
+      tbody.innerHTML = items.map(it => {
+        const priceVal = it.unitPrice > 0 ? Number(it.unitPrice).toFixed(2) : '';
+        return `
+          <tr data-trans-id="${it.transportationId}" data-qty="${it.remainingInvoicableQuantity}" data-product="${this.escapeHtml(it.productName || '')}">
+            <td><strong dir="ltr" style="font-family: monospace; color: #0284C7;">${it.transactionNumber ? '#' + it.transactionNumber : '-'}</strong></td>
+            <td><strong style="color: #059669;">${this.escapeHtml(it.warehouseExportNumber || '-')}</strong></td>
+            <td><strong>${this.escapeHtml(it.productName || 'مواد')}</strong></td>
+            <td>${this.escapeHtml(it.transactionDateFormatted || '-')}</td>
+            <td><strong dir="ltr">${this.formatWeight(it.remainingInvoicableQuantity)} ${this.escapeHtml(it.unit || 'طن')}</strong></td>
+            <td>
+              <input type="number" class="finance-input fin-item-price-input" data-trans-id="${it.transportationId}" value="${priceVal}" min="0.01" step="0.01" placeholder="أدخل السعر..." style="width: 135px; font-weight: 700; text-align: left;" />
+            </td>
+            <td><strong dir="ltr" class="fin-row-line-total" style="color: #0284C7;">0.00 ج.م</strong></td>
+          </tr>
+        `;
+      }).join('');
+
+      tbody.querySelectorAll('.fin-item-price-input').forEach(inp => {
+        inp.addEventListener('input', () => this.recalculateProjectInvoiceTotals());
+      });
+
+      this.recalculateProjectInvoiceTotals();
+    }
+
+    recalculateProjectInvoiceTotals() {
+      const rows = document.querySelectorAll('#fin-invoice-items-tbody tr');
+      let subtotal = 0;
+
+      rows.forEach(r => {
+        const qty = parseFloat(r.getAttribute('data-qty')) || 0;
+        const priceInp = r.querySelector('.fin-item-price-input');
+        const price = parseFloat(priceInp?.value) || 0;
+        const lineTotal = Math.round(qty * price * 1000) / 1000;
+        subtotal += lineTotal;
+
+        const totalCell = r.querySelector('.fin-row-line-total');
+        if (totalCell) totalCell.textContent = `${this.formatCurrency(lineTotal)}`;
+      });
+
+      const shipping = Math.max(0, parseFloat(document.getElementById('fin-invoice-shipping-input')?.value) || 0);
+      const taxRate = Math.max(0, parseFloat(document.getElementById('fin-invoice-tax-rate')?.value) || 0);
+      const discount = Math.max(0, parseFloat(document.getElementById('fin-invoice-discount')?.value) || 0);
+
+      const taxAmount = Math.round(subtotal * (taxRate / 100) * 1000) / 1000;
+      const totalAmount = Math.max(0, subtotal + shipping + taxAmount - discount);
+
+      const subtotalEl = document.getElementById('fin-invoice-subtotal-disp');
+      const taxEl = document.getElementById('fin-invoice-tax-disp');
+      const totalEl = document.getElementById('fin-invoice-total-disp');
+
+      if (subtotalEl) subtotalEl.textContent = `${this.formatCurrency(subtotal)}`;
+      if (taxEl) taxEl.textContent = `${this.formatCurrency(taxAmount)}`;
+      if (totalEl) totalEl.textContent = `${this.formatCurrency(totalAmount)}`;
+    }
+
+    async saveProjectInvoice(isIssued, openPrintAfter) {
+      if (!this.invSelectedProjectId) {
+        alert('يرجى اختيار كود المشروع أولاً.');
+        return;
+      }
+
+      const rows = document.querySelectorAll('#fin-invoice-items-tbody tr');
+      if (!rows || rows.length === 0) {
+        alert('لا توجد بنود مؤهلة للفوترة لهذا المشروع.');
+        return;
+      }
+
+      const itemsPayload = [];
+      let hasInvalidPrice = false;
+
+      rows.forEach(r => {
+        const transId = parseInt(r.getAttribute('data-trans-id'), 10);
+        const qty = parseFloat(r.getAttribute('data-qty')) || 0;
+        const productName = r.getAttribute('data-product') || '';
+        const price = parseFloat(r.querySelector('.fin-item-price-input')?.value);
+
+        if (isNaN(price) || price <= 0) {
+          hasInvalidPrice = true;
+        }
+
+        itemsPayload.push({
+          transportationId: isNaN(transId) ? null : transId,
+          productName: productName,
+          quantity: qty,
+          unitPrice: isNaN(price) ? 0 : price
+        });
+      });
+
+      if (hasInvalidPrice) {
+        alert('يرجى إدخال سعر وحدة صحيح (أكبر من الصفر) لجميع البنود.');
+        return;
+      }
+
+      const companyName = document.getElementById('fin-company-name-input')?.value?.trim() || '';
+      if (!companyName) {
+        alert('يرجى إدخال اسم الشركة / العميل.');
+        return;
+      }
+
+      const payload = {
+        id: this.invEditingInvoiceId || 0,
+        projectCodeId: this.invSelectedProjectId,
+        relatedEntityType: 'COMPANY',
+        companyId: this.invSelectedCompanyId || null,
+        companyName: companyName,
+        companyPhone: document.getElementById('fin-company-phone-input')?.value?.trim() || null,
+        companyTaxNumber: document.getElementById('fin-company-tax-input')?.value?.trim() || null,
+        companyAddress: document.getElementById('fin-company-address-input')?.value?.trim() || null,
+        shippingPrice: Math.max(0, parseFloat(document.getElementById('fin-invoice-shipping-input')?.value) || 0),
+        taxRate: Math.max(0, parseFloat(document.getElementById('fin-invoice-tax-rate')?.value) || 0),
+        discountAmount: Math.max(0, parseFloat(document.getElementById('fin-invoice-discount')?.value) || 0),
+        status: isIssued ? 'ISSUED' : 'DRAFT',
+        notes: document.getElementById('fin-invoice-notes-input')?.value?.trim() || null,
+        items: itemsPayload
+      };
+
+      try {
+        const res = this.invEditingInvoiceId
+          ? await window.ChatApi.updateInvoice(this.invEditingInvoiceId, payload)
+          : await window.ChatApi.createInvoice(payload);
+
+        if (res && res.success) {
+          const msg = this.invEditingInvoiceId
+            ? (isIssued ? 'تم تحديث المسودة وإصدار الفاتورة بنجاح!' : 'تم تحديث مسودة الفاتورة بنجاح!')
+            : (isIssued ? 'تم إنشاء وإصدار الفاتورة بنجاح!' : 'تم حفظ مسودة الفاتورة بنجاح!');
+          alert(msg);
+
+          this.closeCreateInvoiceModal();
+          await this.loadInvoiceStatistics();
+          await this.loadInvoicesData();
+
+          const savedId = res.data?.id || this.invEditingInvoiceId;
+          if ((openPrintAfter || isIssued) && savedId) {
+            this.printInvoice(savedId);
+          }
+        } else {
+          alert(res?.message || 'تعذر حفظ الفاتورة.');
+        }
+      } catch (err) {
+        console.error('Failed to save project invoice:', err);
+        alert('حدث خطأ أثناء الاتصال بالخادم لحفظ الفاتورة.');
+      }
+    }
+
+    async viewInvoice(id) {
+      this.currentViewingInvoiceId = id;
+      const modalBackdrop = document.getElementById('finance-view-invoice-modal-backdrop');
+      const content = document.getElementById('fin-view-modal-content');
+      const numEl = document.getElementById('fin-view-inv-number');
+      const statusBadge = document.getElementById('fin-view-modal-status-badge');
+
+      if (modalBackdrop) modalBackdrop.style.display = 'flex';
+      if (content) content.innerHTML = '<div style="padding: 2rem; text-align: center;"><div class="spinner"></div></div>';
+
+      try {
+        const res = await window.ChatApi.getInvoiceById(id);
+        if (res && res.success && res.data) {
+          const inv = res.data;
+          if (numEl) numEl.textContent = inv.invoiceNumber;
+          if (statusBadge) {
+            const badgeClass = inv.status === 'ISSUED' ? 'badge-positive' : (inv.status === 'DRAFT' ? 'badge-neutral' : 'badge-negative');
+            statusBadge.innerHTML = `<span class="finance-status-badge ${badgeClass}" style="font-size: 0.9rem; padding: 6px 16px;">${this.escapeHtml(inv.statusArabic)}</span>`;
+          }
+
+          if (content) {
+            content.innerHTML = `
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; background: #F8FAFC; padding: 1rem; border-radius: 10px; margin-bottom: 1.25rem; border: 1px solid #E2E8F0;">
+                <div>
+                  <span style="font-size: 0.8rem; color: #64748B;">تاريخ الإصدار:</span>
+                  <div><strong dir="ltr">${this.escapeHtml(inv.invoiceDateFormatted)}</strong></div>
+                </div>
+                <div>
+                  <span style="font-size: 0.8rem; color: #64748B;">كود المشروع:</span>
+                  <div><strong style="color: #1E3A8A;">${this.escapeHtml(inv.projectCodeValue || '-')}</strong> ${inv.projectName ? `- ${this.escapeHtml(inv.projectName)}` : ''}</div>
+                </div>
+                <div>
+                  <span style="font-size: 0.8rem; color: #64748B;">الجهة / المورد:</span>
+                  <div><strong>${this.escapeHtml(inv.poNumber ? `أمر شراء: ${inv.poNumber} (${inv.supplierName || inv.companyName || 'مورد'})` : (inv.companyName || '-'))}</strong></div>
+                </div>
+                <div>
+                  <span style="font-size: 0.8rem; color: #64748B;">المسؤول:</span>
+                  <div>${this.escapeHtml(inv.createdBy || '-')}</div>
+                </div>
+              </div>
+
+              ${inv.priceChangedBy ? `
+                <div style="background: #FFFBEB; border: 1px solid #FDE68A; border-radius: 8px; padding: 10px 14px; margin-bottom: 1.25rem; font-size: 0.85rem; color: #92400E;">
+                  <strong>تعديل سعر الوحدة:</strong> تم تعديل سعر الوحدة بهذه الفاتورة عن سعر أمر الشراء الأصلي بواسطة: <strong>${this.escapeHtml(inv.priceChangedBy)}</strong> ${inv.priceChangedAt ? `بتاريخ ${new Date(inv.priceChangedAt).toLocaleDateString('ar-EG')}` : ''}
+                </div>
+              ` : ''}
+
+              <h4 style="margin: 0 0 0.75rem 0; color: #0F172A;">بنود الفاتورة والتسعير المعتمد:</h4>
+              <div class="finance-table-wrapper" style="overflow-x: auto;">
+                <table class="finance-table">
+                  <thead>
+                    <tr>
+                      <th>معاملة النقل / المرجع</th>
+                      <th>إذن الصرف</th>
+                      <th>الصنف / المادة</th>
+                      <th>التشغيلة / المرجع</th>
+                      <th>الكمية</th>
+                      <th>سعر الوحدة</th>
+                      <th>إجمالي البند</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${(inv.items && inv.items.length > 0) ? inv.items.map(it => `
+                      <tr>
+                        <td><strong dir="ltr" style="font-family: monospace; color: #0284C7;">${it.transportationTransactionNumber ? '#' + it.transportationTransactionNumber : (inv.poNumber ? `أمر شراء ${inv.poNumber}` : '-')}</strong></td>
+                        <td><strong style="color: #059669;">${this.escapeHtml(it.warehouseExportNumber || '-')}</strong></td>
+                        <td>${this.escapeHtml(it.productName || inv.materialName || 'مواد')}</td>
+                        <td><span style="font-size: 0.8rem; color: #64748B;">${this.escapeHtml(it.batchNumber || it.referenceNumber || (inv.poNumber ? inv.poNumber : '-'))}</span></td>
+                        <td><strong dir="ltr">${this.formatWeight(it.quantity)} ${this.escapeHtml(it.unit || 'طن')}</strong></td>
+                        <td dir="ltr">${this.formatCurrency(it.unitPrice)}</td>
+                        <td><strong dir="ltr" style="color: #0284C7;">${this.formatCurrency(it.lineTotal)}</strong></td>
+                      </tr>
+                    `).join('') : `
+                      <tr>
+                        <td><strong dir="ltr" style="font-family: monospace; color: #0284C7;">${inv.poNumber ? `أمر شراء ${inv.poNumber}` : '-'}</strong></td>
+                        <td>-</td>
+                        <td>${this.escapeHtml(inv.materialName || 'مواد')}</td>
+                        <td>${this.escapeHtml(inv.poNumber || '-')}</td>
+                        <td><strong dir="ltr">${this.formatWeight(inv.invoicedQuantity || 0)} طن</strong></td>
+                        <td dir="ltr">${this.formatCurrency(inv.invoiceUnitPrice || 0)}</td>
+                        <td><strong dir="ltr" style="color: #0284C7;">${this.formatCurrency(inv.subtotal)}</strong></td>
+                      </tr>
+                    `}
+                  </tbody>
+                </table>
+              </div>
+
+              <div style="margin-top: 1.5rem; display: flex; justify-content: flex-end;">
+                <div style="width: 100%; max-width: 400px; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px; padding: 1rem;">
+                  <div style="display: flex; justify-content: space-between; padding: 4px 0;">
+                    <span>المجموع الفرعي:</span>
+                    <strong dir="ltr">${this.formatCurrency(inv.subtotal)}</strong>
+                  </div>
+                  ${inv.shippingPrice > 0 ? `
+                    <div style="display: flex; justify-content: space-between; padding: 4px 0;">
+                      <span>تكلفة الشحن (Shipping Price):</span>
+                      <strong dir="ltr">${this.formatCurrency(inv.shippingPrice)}</strong>
+                    </div>
+                  ` : ''}
+                  <div style="display: flex; justify-content: space-between; padding: 4px 0;">
+                    <span>ضريبة القيمة المضافة (${inv.taxRate}%):</span>
+                    <strong dir="ltr">${this.formatCurrency(inv.taxAmount)}</strong>
+                  </div>
+                  ${inv.discountAmount > 0 ? `
+                    <div style="display: flex; justify-content: space-between; padding: 4px 0; color: #DC2626;">
+                      <span>قيمة الخصم:</span>
+                      <strong dir="ltr">-${this.formatCurrency(inv.discountAmount)}</strong>
+                    </div>
+                  ` : ''}
+                  <div style="display: flex; justify-content: space-between; padding: 8px 0 0 0; border-top: 2px solid #0F172A; font-size: 1.15rem; font-weight: 800; color: #0284C7;">
+                    <span>الإجمالي النهائي:</span>
+                    <strong dir="ltr">${this.formatCurrency(inv.totalAmount)}</strong>
+                  </div>
+                </div>
+              </div>
+
+              ${inv.notes ? `
+                <div style="margin-top: 1rem; background: #FFFBEB; border: 1px solid #FDE68A; padding: 0.75rem 1rem; border-radius: 8px; font-size: 0.85rem;">
+                  <strong>ملاحظات:</strong> ${this.escapeHtml(inv.notes)}
+                </div>
+              ` : ''}
+            `;
+          }
+        }
+      } catch (err) {
+        console.error('Failed to view invoice:', err);
+      }
+    }
+
+    closeViewInvoiceModal() {
+      const modalBackdrop = document.getElementById('finance-view-invoice-modal-backdrop');
+      if (modalBackdrop) modalBackdrop.style.display = 'none';
+    }
+
+    async printInvoice(id) {
+      this.currentPrintingInvoiceId = id;
+      const modalBackdrop = document.getElementById('finance-print-invoice-modal-backdrop');
+      const container = document.getElementById('invoice-printable-container');
+
+      if (modalBackdrop) modalBackdrop.style.display = 'flex';
+      if (container) container.innerHTML = '<div style="padding: 3rem; text-align: center;"><div class="spinner"></div><p style="margin-top: 1rem;">جاري إعداد قالب الطباعة الرسمي...</p></div>';
+
+      try {
+        const res = await window.ChatApi.getInvoiceById(id);
+        if (res && res.success && res.data) {
+          const inv = res.data;
+          if (container) {
+            container.innerHTML = `
+              <!-- Print Header -->
+              <div class="inv-print-header">
+                <div class="inv-print-logo-area">
+                  <div class="inv-print-brand">فيس ستون للحلول الخرسانية المتكاملة</div>
+                  <div class="inv-print-brand-sub">FaceStone for Full Concrete Solutions S.A.E</div>
+                  <div style="font-size: 0.8rem; color: #64748B; margin-top: 4px;">السجل التجاري: 184920 | البطاقة الضريبية: 492-381-902</div>
+                </div>
+                <div class="inv-print-meta">
+                  <div style="font-size: 1.1rem; font-weight: 800; color: #0F172A;">فاتورة توريد رسمية (INVOICE)</div>
+                  <div class="inv-print-number" dir="ltr">${this.escapeHtml(inv.invoiceNumber)}</div>
+                  <div style="font-size: 0.85rem; color: #475569; margin-top: 4px;">التاريخ: <strong dir="ltr">${this.escapeHtml(inv.invoiceDateFormatted)}</strong></div>
+                </div>
+              </div>
+
+              <!-- Customer & Project Info Grid -->
+              <div class="inv-print-info-grid">
+                <div class="inv-print-info-block">
+                  <h5>بيانات المورد / العميل / الجهة الطالبة:</h5>
+                  <p><strong>${this.escapeHtml(inv.supplierName || inv.companyName || 'عميل فيس ستون')}</strong></p>
+                  ${inv.poNumber ? `<div style="font-size: 0.9rem; color: #0284C7; font-weight: 700; margin-top: 4px;">مرجع أمر الشراء: ${this.escapeHtml(inv.poNumber)}</div>` : ''}
+                  ${inv.companyAddress ? `<div style="font-size: 0.85rem; color: #475569;">${this.escapeHtml(inv.companyAddress)}</div>` : ''}
+                  ${inv.companyTaxNumber ? `<div style="font-size: 0.8rem; color: #64748B;">البطاقة الضريبية: ${this.escapeHtml(inv.companyTaxNumber)}</div>` : ''}
+                  ${inv.companyPhone ? `<div style="font-size: 0.8rem; color: #64748B;">الهاتف: ${this.escapeHtml(inv.companyPhone)}</div>` : ''}
+                </div>
+                <div class="inv-print-info-block">
+                  <h5>بيانات التوريد والمشروع:</h5>
+                  ${inv.projectCodeValue ? `<p>كود المشروع: <span dir="ltr"><strong>${this.escapeHtml(inv.projectCodeValue)}</strong></span></p>` : ''}
+                  ${inv.projectName ? `<div style="font-size: 0.85rem; color: #475569;">${this.escapeHtml(inv.projectName)}</div>` : ''}
+                  ${inv.materialName ? `<div style="font-size: 0.85rem; color: #0F172A; margin-top: 4px;">بيان المادة: <strong>${this.escapeHtml(inv.materialName)}</strong></div>` : ''}
+                  ${inv.orderedQuantity ? `<div style="font-size: 0.85rem; color: #64748B;">الكمية المتعاقد عليها بأمر الشراء: ${this.formatWeight(inv.orderedQuantity)} طن</div>` : ''}
+                  ${inv.priceChangedBy ? `<div style="font-size: 0.8rem; color: #B45309; margin-top: 4px;">تم اعتماد سعر خاص للفاتورة بواسطة: ${this.escapeHtml(inv.priceChangedBy)}</div>` : ''}
+                </div>
+              </div>
+
+              <!-- Itemized Table -->
+              <table class="inv-print-table">
+                <thead>
+                  <tr>
+                    <th style="width: 35px; text-align: center;">م</th>
+                    <th>رقم شحنة النقل / أمر الشراء</th>
+                    <th>إذن صرف المستودع</th>
+                    <th>بيان الصنف والمادة</th>
+                    <th>التشغيلة / المرجع</th>
+                    <th style="text-align: center;">الكمية</th>
+                    <th style="text-align: center;">الوحدة</th>
+                    <th style="text-align: left;">سعر الوحدة</th>
+                    <th style="text-align: left;">إجمالي البند</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${(inv.items && inv.items.length > 0) ? inv.items.map((it, idx) => `
+                    <tr>
+                      <td style="text-align: center; font-weight: 700;">${idx + 1}</td>
+                      <td><strong dir="ltr" style="font-family: monospace;">${it.transportationTransactionNumber ? '#' + it.transportationTransactionNumber : (inv.poNumber ? inv.poNumber : '-')}</strong></td>
+                      <td><strong>${this.escapeHtml(it.warehouseExportNumber || '-')}</strong></td>
+                      <td><strong>${this.escapeHtml(it.productName || inv.materialName || 'مواد')}</strong></td>
+                      <td><span style="font-size: 0.8rem; color: #64748B;">${this.escapeHtml(it.batchNumber || it.referenceNumber || (inv.poNumber ? inv.poNumber : '-'))}</span></td>
+                      <td style="text-align: center;"><strong dir="ltr">${this.formatWeight(it.quantity)}</strong></td>
+                      <td style="text-align: center;">${this.escapeHtml(it.unit || 'طن')}</td>
+                      <td style="text-align: left;" dir="ltr">${this.formatCurrency(it.unitPrice)}</td>
+                      <td style="text-align: left;"><strong dir="ltr">${this.formatCurrency(it.lineTotal)}</strong></td>
+                    </tr>
+                  `).join('') : `
+                    <tr>
+                      <td style="text-align: center; font-weight: 700;">1</td>
+                      <td><strong dir="ltr" style="font-family: monospace;">${inv.poNumber || '-'}</strong></td>
+                      <td>-</td>
+                      <td><strong>${this.escapeHtml(inv.materialName || 'مواد خرسانية')}</strong></td>
+                      <td><span style="font-size: 0.8rem; color: #64748B;">${inv.poNumber || '-'}</span></td>
+                      <td style="text-align: center;"><strong dir="ltr">${this.formatWeight(inv.invoicedQuantity || 0)}</strong></td>
+                      <td style="text-align: center;">طن</td>
+                      <td style="text-align: left;" dir="ltr">${this.formatCurrency(inv.invoiceUnitPrice || 0)}</td>
+                      <td style="text-align: left;"><strong dir="ltr">${this.formatCurrency(inv.subtotal)}</strong></td>
+                    </tr>
+                  `}
+                </tbody>
+              </table>
+
+              <!-- Totals Box -->
+              <div class="inv-print-totals-box">
+                <table class="inv-print-totals-table">
+                  <tr>
+                    <td style="color: #64748B;">المجموع الفرعي (Subtotal):</td>
+                    <td style="text-align: left;" dir="ltr"><strong>${this.formatCurrency(inv.subtotal)}</strong></td>
+                  </tr>
+                  ${inv.shippingPrice > 0 ? `
+                    <tr>
+                      <td style="color: #64748B;">تكلفة الشحن (Shipping Price):</td>
+                      <td style="text-align: left;" dir="ltr"><strong>${this.formatCurrency(inv.shippingPrice)}</strong></td>
+                    </tr>
+                  ` : ''}
+                  <tr>
+                    <td style="color: #64748B;">ضريبة القيمة المضافة (${inv.taxRate}%):</td>
+                    <td style="text-align: left;" dir="ltr"><strong>${this.formatCurrency(inv.taxAmount)}</strong></td>
+                  </tr>
+                  ${inv.discountAmount > 0 ? `
+                    <tr>
+                      <td style="color: #DC2626;">الخصم الممنوح:</td>
+                      <td style="text-align: left; color: #DC2626;" dir="ltr"><strong>-${this.formatCurrency(inv.discountAmount)}</strong></td>
+                    </tr>
+                  ` : ''}
+                  <tr class="total-row">
+                    <td>الإجمالي المستحق:</td>
+                    <td style="text-align: left;" dir="ltr">${this.formatCurrency(inv.totalAmount)}</td>
+                  </tr>
+                </table>
+              </div>
+
+              ${inv.notes ? `
+                <div style="border-top: 1px dashed #CBD5E1; padding-top: 8px; font-size: 0.85rem; color: #475569;">
+                  <strong>ملاحظات:</strong> ${this.escapeHtml(inv.notes)}
+                </div>
+              ` : ''}
+
+              <!-- Official Signatures -->
+              <div class="inv-print-signatures">
+                <div>
+                  <div class="inv-print-sig-title">إعداد ومراجعة الحسابات</div>
+                  <div class="inv-print-sig-line">${this.escapeHtml(inv.createdBy || 'المدير المالي')}</div>
+                </div>
+                <div>
+                  <div class="inv-print-sig-title">اعتماد الإدارة العامة</div>
+                  <div class="inv-print-sig-line">الرئيس التنفيذي / المدير العام</div>
+                </div>
+                <div>
+                  <div class="inv-print-sig-title">توقيع واستلام العميل</div>
+                  <div class="inv-print-sig-line">الاسم والتوقيع والخاتم</div>
+                </div>
+              </div>
+            `;
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load invoice for printing:', err);
+      }
+    }
+
+    async executePrintInvoice() {
+      if (this.currentPrintingInvoiceId) {
+        try {
+          await window.ChatApi.markInvoicePrinted(this.currentPrintingInvoiceId);
+          await this.loadInvoiceStatistics();
+          await this.loadInvoicesData();
+        } catch (err) {
+          console.error('Failed to mark invoice as printed:', err);
+        }
+      }
+      window.print();
+    }
+
+    closePrintModal() {
+      const modalBackdrop = document.getElementById('finance-print-invoice-modal-backdrop');
+      if (modalBackdrop) modalBackdrop.style.display = 'none';
+    }
+
+    async issueDraftInvoice(id) {
+      if (!confirm('هل أنت متأكد من رغبتك في اعتماد وإصدار هذه الفاتورة رسمياً؟ لن يمكن تعديلها بعد الاعتماد.')) return;
+      try {
+        const res = await window.ChatApi.issueDraftInvoice(id);
+        if (res && res.success) {
+          alert('تم اعتماد وإصدار الفاتورة بنجاح!');
+          await this.loadInvoiceStatistics();
+          await this.loadInvoicesData();
+        } else {
+          alert(res?.message || 'تعذر اعتماد الفاتورة.');
+        }
+      } catch (err) {
+        console.error('Failed to issue draft invoice:', err);
+      }
+    }
+
+    async cancelInvoice(id) {
+      if (!confirm('تحذير: هل أنت متأكد من رغبتك في إلغاء هذه الفاتورة؟ سيتم تحرير كميات معاملات النقل المرتبطة بها لتصبح متاحة للفوترة مجدداً.')) return;
+      try {
+        const res = await window.ChatApi.cancelInvoice(id);
+        if (res && res.success) {
+          alert('تم إلغاء الفاتورة بنجاح وتحرير كميات النقل.');
+          await this.loadInvoiceStatistics();
+          await this.loadInvoicesData();
+        } else {
+          alert(res?.message || 'تعذر إلغاء الفاتورة.');
+        }
+      } catch (err) {
+        console.error('Failed to cancel invoice:', err);
       }
     }
   }

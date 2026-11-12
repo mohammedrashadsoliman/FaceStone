@@ -1,3 +1,19 @@
+﻿/* HIDE CONTROL & MONITORING DEPARTMENT FROM INTERFACE */
+#card-dept-control,
+.dept-card-control,
+#control-monitoring-page-root,
+[data-dept="control-monitoring"] {
+  display: none !important;
+}
+
+/* HIDE CONTROL & MONITORING DEPARTMENT FROM INTERFACE */
+#card-dept-control,
+.dept-card-control,
+#control-monitoring-page-root,
+[data-dept="control-monitoring"] {
+  display: none !important;
+}
+
 /* ==========================================================================
    FACESTONE CONTROL & MONITORING DEPARTMENT STYLING
    قسم التحكم والمراقبة

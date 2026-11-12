@@ -7,33 +7,114 @@ using FaceStone.Web.Data;
 using FaceStone.Web.Hubs;
 using FaceStone.Web.Services;
 // FaceStone Web Application Entry Point
-if (args.Contains("--diagnose-model"))
+if (args.Contains("--test-storage-queries"))
 {
     var options = new DbContextOptionsBuilder<FaceStoneDbContext>()
-        .UseSqlServer("Server=.\\SQLEXPRESS;Database=FaceStone;Trusted_Connection=True;TrustServerCertificate=True;")
+        .UseSqlServer("Server=Server=db79422.databaseasp.net; Database=db79422; User Id=db79422; Password=Cr7-8=zEDx6@; Encrypt=False; MultipleActiveResultSets=True;")
         .Options;
     using var db = new FaceStoneDbContext(options);
-    var entityTypes = db.Model.GetEntityTypes().ToList();
-    Console.WriteLine("=== EF Core Model Diagnostic ===");
-    Console.WriteLine($"Total Entity Types: {entityTypes.Count}");
-    var tables = entityTypes.Select(e => new {
-        EntityName = e.ClrType.Name,
-        TableName = e.GetTableName(),
-        Schema = e.GetSchema() ?? "dbo"
-    }).OrderBy(t => t.TableName).ToList();
-    Console.WriteLine($"Total Distinct Tables: {tables.Select(t => t.TableName).Distinct().Count()}");
-    foreach (var t in tables)
+
+    Console.WriteLine("=== Testing GET /api/storage/operations query ===");
+    try
     {
-        Console.WriteLine($"Entity: {t.EntityName} -> Table: [{t.Schema}].[{t.TableName}]");
+        var query = db.StorageOperations
+            .AsNoTracking()
+            .Include(o => o.Items)
+            .OrderByDescending(o => o.TransactionDate)
+            .ThenByDescending(o => o.Id)
+            .Take(50);
+        var ops = await query.ToListAsync();
+        Console.WriteLine($"SUCCESS: Retrieved {ops.Count} operations.");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"FAILED /api/storage/operations: {ex.Message}");
+        if (ex.InnerException != null)
+        {
+            Console.WriteLine($"Inner: {ex.InnerException.Message}");
+        }
+    }
+
+    Console.WriteLine("\n=== Testing GET /api/storage/compliant-references query ===");
+    try
+    {
+        var reports = await db.LaboratoryRawMaterialReports
+            .AsNoTracking()
+            .Include(r => r.RawMaterial)
+            .Where(r => r.ApprovalStatus == "APPROVED" &&
+                        r.ComplyStatus == "COMPLY" &&
+                        r.InspectionDecision != "REJECTED" &&
+                        r.AcceptedQuantity > 0)
+            .OrderByDescending(r => r.ProductionReferenceNumber)
+            .Take(150)
+            .ToListAsync();
+        Console.WriteLine($"Retrieved {reports.Count} lab reports.");
+
+        var reportIds = reports.Select(r => r.Id).ToList();
+        var allocatedGrouped = await db.WarehouseBatches
+            .AsNoTracking()
+            .Where(b => reportIds.Contains(b.LaboratoryReportId) && b.Status != "REJECTED")
+            .GroupBy(b => b.LaboratoryReportId)
+            .Select(g => new { LabId = g.Key, Allocated = g.Sum(x => x.InitialQuantity) })
+            .ToDictionaryAsync(x => x.LabId, x => x.Allocated);
+        Console.WriteLine($"SUCCESS: Allocated grouped count: {allocatedGrouped.Count}");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"FAILED /api/storage/compliant-references: {ex.Message}");
+        if (ex.InnerException != null)
+        {
+            Console.WriteLine($"Inner: {ex.InnerException.Message}");
+        }
     }
     return;
 }
 
-var builder = WebApplication.CreateBuilder(args);
+// 1. Force Development environment when running locally on developer workstation
+if (string.Equals(Environment.MachineName, "DESKTOP-OVKNQTJ", StringComparison.OrdinalIgnoreCase) ||
+    string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")))
+{
+    Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Development");
+}
+
+// Determine the absolute project root directory containing wwwroot
+var currentDir = Directory.GetCurrentDirectory();
+var projectRoot = currentDir;
+
+if (!Directory.Exists(Path.Combine(projectRoot, "wwwroot")))
+{
+    var baseDir = AppContext.BaseDirectory;
+    var candidate = Path.GetFullPath(Path.Combine(baseDir, "..", "..", ".."));
+    if (Directory.Exists(Path.Combine(candidate, "wwwroot")))
+    {
+        projectRoot = candidate;
+    }
+}
+
+var webRootPath = Path.Combine(projectRoot, "wwwroot");
+
+var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+{
+    Args = args,
+    ContentRootPath = projectRoot,
+    WebRootPath = webRootPath,
+    EnvironmentName = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Development"
+});
+
+// Configure default local listening URL (prevents fallback to port 5000)
+builder.WebHost.UseUrls("http://localhost:5124");
 
 // 1. Add Database Context with SQL Server (Active with resilient Azure SQL retry policy)
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") 
-    ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
+const string localSqlExpress = "Server=DESKTOP-OVKNQTJ\\SQLEXPRESS; Database=FaceStone; Trusted_Connection=True; TrustServerCertificate=True; MultipleActiveResultSets=True;";
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") ?? localSqlExpress;
+
+// CRITICAL SAFEGUARD: Local development must NEVER connect to remote db69901.databaseasp.net
+if (string.Equals(Environment.MachineName, "DESKTOP-OVKNQTJ", StringComparison.OrdinalIgnoreCase) ||
+    connectionString.Contains("databaseasp.net", StringComparison.OrdinalIgnoreCase) ||
+    builder.Environment.IsDevelopment())
+{
+    connectionString = localSqlExpress;
+}
 
 builder.Services.AddDbContext<FaceStoneDbContext>(options =>
     options.UseSqlServer(connectionString));
@@ -262,6 +343,7 @@ builder.Services.AddCors(options =>
 // 7. Dependency Injection Services
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddSingleton<IProductionShiftService, ProductionShiftService>();
+builder.Services.AddScoped<IWarehouseInventoryService, WarehouseInventoryService>();
 
 var app = builder.Build();
 
@@ -279,6 +361,11 @@ if (app.Environment.IsDevelopment() || true)
 
 // Ensure database schema is ready and seeded with initial demo accounts
 var startupLogger = app.Services.GetRequiredService<ILogger<Program>>();
+startupLogger.LogInformation("[FaceStone] Hosting Environment: {Env}", app.Environment.EnvironmentName);
+startupLogger.LogInformation("[FaceStone] ContentRootPath: {ContentRoot}", app.Environment.ContentRootPath);
+startupLogger.LogInformation("[FaceStone] WebRootPath: {WebRoot} (Exists: {Exists})", 
+    app.Environment.WebRootPath, 
+    Directory.Exists(app.Environment.WebRootPath));
 await DbInitializer.InitializeAsync(app.Services, startupLogger);
 
 // Ensure chat uploads directory exists on host
@@ -362,6 +449,35 @@ app.MapFallbackToFile("index.html", new StaticFileOptions
         ctx.Context.Response.Headers["Expires"] = "-1";
         ctx.Context.Response.Headers.Remove("ETag");
         ctx.Context.Response.Headers.Remove("Last-Modified");
+    }
+});
+
+// Automatically open the default browser when running locally
+app.Lifetime.ApplicationStarted.Register(() =>
+{
+    var url = "http://localhost:5124";
+    var logger = app.Services.GetRequiredService<ILogger<Program>>();
+    logger.LogInformation("==================================================================");
+    logger.LogInformation("[FaceStone] Web Application successfully started at: {Url}", url);
+    logger.LogInformation("[FaceStone] Database: Local SQL Server (DESKTOP-OVKNQTJ\\SQLEXPRESS -> FaceStone)");
+    logger.LogInformation("[FaceStone] Hosting Environment: {Env}", app.Environment.EnvironmentName);
+    logger.LogInformation("==================================================================");
+
+    if (app.Environment.IsDevelopment() || string.Equals(Environment.MachineName, "DESKTOP-OVKNQTJ", StringComparison.OrdinalIgnoreCase))
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = url,
+                UseShellExecute = true
+            });
+            logger.LogInformation("[FaceStone] Browser launched automatically to {Url}", url);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning("[FaceStone] Auto-launch browser notice: {Message}. Please open {Url} manually.", ex.Message, url);
+        }
     }
 });
 

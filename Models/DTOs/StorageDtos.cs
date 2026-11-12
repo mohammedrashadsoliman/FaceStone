@@ -351,6 +351,8 @@ public class StorageClientDestinationDto
     public int Id { get; set; }
     public int StorageClientId { get; set; }
     public string DestinationName { get; set; } = string.Empty;
+    /// <summary>Alias for DestinationName — used by frontend JS as d.name</summary>
+    public string Name => DestinationName;
     public bool IsActive { get; set; }
 }
 
@@ -378,11 +380,32 @@ public class StorageOperationLineInputDto
 {
     public int? RawMaterialId { get; set; }
     public string? NewMaterialName { get; set; }
+    public int? WarehouseBatchId { get; set; }
+    public string? BatchNumber { get; set; }
+    public string? SampleCode { get; set; }
+    public int? ProductionReferenceNumber { get; set; }
+    public int? ProductionOrderId { get; set; }
+    public string? ProductionOrderNumber { get; set; }
+    public int? ProductionProcessId { get; set; }
+    public string? ProcessNumber { get; set; }
+    public string? ManufactureNumber { get; set; }
+    public decimal TransportedQuantity { get; set; }
+    public decimal RemainingTransportationQuantity { get; set; }
 
     [Range(0.0001, 10000000.0, ErrorMessage = "الكمية يجب أن تكون أكبر من الصفر.")]
     public decimal Quantity { get; set; }
 
     public string? TrackingNumber { get; set; }
+    public string? Notes { get; set; }
+}
+
+public class BatchDivisionInputDto
+{
+    public string? BatchNumber { get; set; }
+
+    [Range(0.0001, 10000000.0, ErrorMessage = "كمية الدفعة يجب أن تكون أكبر من الصفر.")]
+    public decimal Quantity { get; set; }
+
     public string? Notes { get; set; }
 }
 
@@ -429,10 +452,33 @@ public class CreateStorageImportRequestDto
     /// الرقم المرجعي التتبعي للإنتاج المشترك الصادر من قسم المعمل
     /// </summary>
     public int? ProductionReferenceNumber { get; set; }
+    public int? ProductionOrderId { get; set; }
+    public string? ProductionOrderNumber { get; set; }
+    public int? ProductionProcessId { get; set; }
+    public string? ProcessNumber { get; set; }
+    public string? ManufactureNumber { get; set; }
+    public decimal TransportedQuantity { get; set; }
+    public decimal RemainingTransportationQuantity { get; set; }
+
+    /// <summary>
+    /// Foreign key to originating LaboratoryRawMaterialReport
+    /// </summary>
+    public int? LaboratoryReportId { get; set; }
+
+    /// <summary>
+    /// Sample Code from Laboratory (رقم العينة, e.g. SMP-0001)
+    /// </summary>
+    public string? SampleCode { get; set; }
+
+    /// <summary>
+    /// عدد الدفعات المقسمة (Number of Batches)
+    /// </summary>
+    public int NumberOfBatches { get; set; } = 1;
+
+    public string? BatchesJson { get; set; }
+    public List<BatchDivisionInputDto> Batches { get; set; } = new();
 
     public string? ItemsJson { get; set; }
-    [Required(ErrorMessage = "يجب تحديد صنف واحد على الأقل.")]
-    [MinLength(1, ErrorMessage = "يجب تحديد صنف واحد على الأقل.")]
     public List<StorageOperationLineInputDto> Items { get; set; } = new();
 
     // Attachments (Optional for submission, saved if provided)
@@ -448,6 +494,11 @@ public class CreateStorageImportRequestDto
 
 public class CreateStorageExportRequestDto
 {
+    /// <summary>
+    /// نوع الصرف: RAW_MATERIAL (مواد خام) | FINISHED_PRODUCT (منتج نهائي)
+    /// </summary>
+    public string ExportType { get; set; } = "RAW_MATERIAL";
+
     [Required(ErrorMessage = "مكان التخزين مطلوب.")]
     public int StorageLocationId { get; set; }
 
@@ -461,6 +512,22 @@ public class CreateStorageExportRequestDto
 
     public DateTime? TransactionDate { get; set; }
     public string? Notes { get; set; }
+
+    /// <summary>
+    /// طريقة الاختيار: BY_REFERENCE (برقم العينة) | BY_BATCH (بأرقام الدفعات)
+    /// </summary>
+    public string SelectionMode { get; set; } = "BY_REFERENCE";
+
+    public int? LaboratoryReportId { get; set; }
+    public int? ProductionReferenceNumber { get; set; }
+    public int? ProductionOrderId { get; set; }
+    public string? ProductionOrderNumber { get; set; }
+    public int? ProductionProcessId { get; set; }
+    public string? ProcessNumber { get; set; }
+    public string? ManufactureNumber { get; set; }
+    public decimal TransportedQuantity { get; set; }
+    public decimal RemainingTransportationQuantity { get; set; }
+    public string? SampleCode { get; set; }
 
     /// <summary>
     /// نوع وتصنيف الخامة: MECHANICAL (خامات ميكانيكية) | CHEMICAL (خامات كيميائية)
@@ -479,8 +546,8 @@ public class CreateStorageExportRequestDto
     public int? TransportationId { get; set; }
 
     public string? ItemsJson { get; set; }
-    [Required(ErrorMessage = "يجب تحديد صنف واحد على الأقل.")]
-    [MinLength(1, ErrorMessage = "يجب تحديد صنف واحد على الأقل.")]
+    [Required(ErrorMessage = "يجب تحديد صنف أو دفعة واحدة على الأقل.")]
+    [MinLength(1, ErrorMessage = "يجب تحديد صنف أو دفعة واحدة على الأقل.")]
     public List<StorageOperationLineInputDto> Items { get; set; } = new();
 
     // Attachments (Optional for submission, saved if provided)
@@ -500,14 +567,35 @@ public class CreateStorageTransferRequestDto
     public string? Notes { get; set; }
 
     /// <summary>
+    /// طريقة الاختيار: BY_REFERENCE (برقم العينة) | BY_BATCH (بأرقام الدفعات)
+    /// </summary>
+    public string SelectionMode { get; set; } = "BY_REFERENCE";
+
+    public int? LaboratoryReportId { get; set; }
+    public string? SampleCode { get; set; }
+
+    /// <summary>
     /// الرقم المرجعي التتبعي للإنتاج المشترك الصادر من قسم المعمل
     /// </summary>
     public int? ProductionReferenceNumber { get; set; }
+    public int? ProductionOrderId { get; set; }
+    public string? ProductionOrderNumber { get; set; }
+    public int? ProductionProcessId { get; set; }
+    public string? ProcessNumber { get; set; }
+    public string? ManufactureNumber { get; set; }
+    public decimal TransportedQuantity { get; set; }
+    public decimal RemainingTransportationQuantity { get; set; }
 
     public string? ItemsJson { get; set; }
-    [Required(ErrorMessage = "يجب تحديد مادة واحدة على الأقل.")]
-    [MinLength(1, ErrorMessage = "يجب تحديد مادة واحدة على الأقل.")]
+    [Required(ErrorMessage = "يجب تحديد مادة أو دفعة واحدة على الأقل.")]
+    [MinLength(1, ErrorMessage = "يجب تحديد مادة أو دفعة واحدة على الأقل.")]
     public List<StorageOperationLineInputDto> Items { get; set; } = new();
+
+    /// <summary>
+    /// وجهة التحويل: PRODUCTION (خطوط الإنتاج والتصنيع) | WAREHOUSE (مستودع آخر)
+    /// </summary>
+    public string DestinationType { get; set; } = "PRODUCTION";
+    public int? DestinationStorageLocationId { get; set; }
 
     // 2 Required Attachments for Transfer
     public IFormFile? DocumentAttachment { get; set; }
@@ -522,10 +610,125 @@ public class StorageOperationItemDto
     public int Id { get; set; }
     public int StorageOperationId { get; set; }
     public int RawMaterialId { get; set; }
+    public int? WarehouseBatchId { get; set; }
+    public string? BatchNumber { get; set; }
+    public string? SampleCode { get; set; }
+    public int? ProductionReferenceNumber { get; set; }
+    public int? ProductionOrderId { get; set; }
+    public string? ProductionOrderNumber { get; set; }
+    public int? ProductionProcessId { get; set; }
+    public string? ProcessNumber { get; set; }
+    public string? ManufactureNumber { get; set; }
+    public decimal TransportedQuantity { get; set; }
+    public decimal RemainingTransportationQuantity { get; set; }
     public string MaterialName { get; set; } = string.Empty;
     public decimal Quantity { get; set; }
     public string TrackingNumber { get; set; } = string.Empty;
     public string? Notes { get; set; }
+}
+
+public class WarehouseBatchDto
+{
+    public int Id { get; set; }
+    public int LaboratoryReportId { get; set; }
+    public int ProductionReferenceNumber { get; set; }
+    public string SampleCode { get; set; } = string.Empty;
+    public string BatchNumber { get; set; } = string.Empty;
+    public int RawMaterialId { get; set; }
+    public string MaterialName { get; set; } = string.Empty;
+    public string MaterialClassification { get; set; } = "MECHANICAL";
+    public string MaterialClassificationAr => MaterialClassification == "CHEMICAL" ? "كيميائية" : "ميكانيكية";
+    public string? SupplierName { get; set; }
+    public int StorageLocationId { get; set; }
+    public string StorageLocationName { get; set; } = string.Empty;
+    public decimal InitialQuantity { get; set; }
+    public decimal CurrentQuantity { get; set; }
+    public int? StorageOperationId { get; set; }
+    public int? StorageOperationTransactionNumber { get; set; }
+    public DateTime ImportDate { get; set; }
+    public string Status { get; set; } = "PENDING";
+    public string StatusAr => Status switch
+    {
+        "APPROVED" => "معتمد بالمخزن",
+        "CONSUMED" => "تم الصرف بالكامل",
+        "REJECTED" => "مرفوض",
+        _ => "قيد المراجعة"
+    };
+    public bool IsActive { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public string? CreatedBy { get; set; }
+    public string? Notes { get; set; }
+}
+
+public class WarehouseCompliantReferenceDto
+{
+    public int LaboratoryReportId { get; set; }
+    public int ReportId => LaboratoryReportId;
+    public int ProductionReferenceNumber { get; set; }
+    public int SampleNumber { get; set; }
+    public string SampleCode { get; set; } = string.Empty;
+    public string MaterialName { get; set; } = string.Empty;
+    public string MaterialClassification { get; set; } = "MECHANICAL";
+    public string MaterialClassificationAr => MaterialClassification == "CHEMICAL" ? "كيميائية" : "ميكانيكية";
+    public string? SupplierName { get; set; }
+    public decimal ReceivedQuantity { get; set; }
+    public decimal AcceptedQuantity { get; set; }
+    public decimal ApprovedQuantity => AcceptedQuantity;
+    public decimal AlreadyAllocatedQuantity { get; set; }
+    public decimal RemainingAvailableQuantity { get; set; }
+    public string ComplyStatus { get; set; } = "COMPLY";
+    public string InspectionDecision { get; set; } = "ACCEPTED";
+    public string ApprovalStatus { get; set; } = "APPROVED";
+    public DateTime AnalysisDateTime { get; set; }
+    public DateTime? SampleReceivedDate { get; set; }
+    public int? RawMaterialId { get; set; }
+    public string? AttachmentPath { get; set; }
+    public string? AttachmentFileName { get; set; }
+    public string? Notes { get; set; }
+}
+
+public class LocationBatchAvailabilityDto
+{
+    public int BatchId { get; set; }
+    public int Id => BatchId;
+    public string BatchNumber { get; set; } = string.Empty;
+    public string SampleCode { get; set; } = string.Empty;
+    public int ProductionReferenceNumber { get; set; }
+    public int LaboratoryReportId { get; set; }
+    public int ReportId => LaboratoryReportId;
+    public int RawMaterialId { get; set; }
+    public string MaterialName { get; set; } = string.Empty;
+    public string MaterialClassification { get; set; } = "MECHANICAL";
+    public string MaterialClassificationAr => MaterialClassification == "CHEMICAL" ? "كيميائية" : "ميكانيكية";
+    public string? SupplierName { get; set; }
+    public int StorageLocationId { get; set; }
+    public string StorageLocationName { get; set; } = string.Empty;
+    public decimal InitialQuantity { get; set; }
+    public decimal AvailableQuantity { get; set; }
+    public decimal CurrentQuantity => AvailableQuantity;
+    public DateTime ImportDate { get; set; }
+}
+
+public class WarehouseInventoryItemDto
+{
+    public int BatchId { get; set; }
+    public int Id => BatchId;
+    public string BatchNumber { get; set; } = string.Empty;
+    public string SampleCode { get; set; } = string.Empty;
+    public int ProductionReferenceNumber { get; set; }
+    public int LaboratoryReportId { get; set; }
+    public int RawMaterialId { get; set; }
+    public string MaterialName { get; set; } = string.Empty;
+    public string MaterialClassification { get; set; } = "MECHANICAL";
+    public string MaterialClassificationAr => MaterialClassification == "CHEMICAL" ? "كيميائية" : "ميكانيكية";
+    public string? SupplierName { get; set; }
+    public int StorageLocationId { get; set; }
+    public string StorageLocationName { get; set; } = string.Empty;
+    public decimal InitialQuantity { get; set; }
+    public decimal AvailableQuantity { get; set; }
+    public decimal CurrentQuantity => AvailableQuantity;
+    public DateTime ImportDate { get; set; }
+    public string Status { get; set; } = "APPROVED";
 }
 
 public class StorageOperationDto
@@ -540,12 +743,32 @@ public class StorageOperationDto
     /// الرقم المرجعي التتبعي للإنتاج المشترك الصادر من قسم المعمل
     /// </summary>
     public int? ProductionReferenceNumber { get; set; }
+    public int? ProductionOrderId { get; set; }
+    public string? ProductionOrderNumber { get; set; }
+    public int? ProductionProcessId { get; set; }
+    public string? ProcessNumber { get; set; }
+    public string? ManufactureNumber { get; set; }
+    public string? ExportType { get; set; }
+    public decimal TransportedQuantity { get; set; }
+    public decimal RemainingTransportationQuantity { get; set; }
+
+    /// <summary>
+    /// Sample Code from Laboratory (رقم العينة, e.g. SMP-0001)
+    /// </summary>
+    public string? SampleCode { get; set; }
+
+    /// <summary>
+    /// Selection mode: BY_REFERENCE | BY_BATCH
+    /// </summary>
+    public string? SelectionMode { get; set; }
 
     public int StorageLocationId { get; set; }
     public string StorageLocationName { get; set; } = string.Empty;
 
     public string? MaterialType { get; set; }
     public string? MaterialTypeAr => MaterialProcessType.ToArabic(MaterialType);
+
+    public List<WarehouseBatchDto> Batches { get; set; } = new();
 
     // Import
     public string? Source { get; set; }
@@ -684,6 +907,27 @@ public class RejectStorageOperationDto
 {
     [Required(ErrorMessage = "سبب الرفض مطلوب.")]
     public string Reason { get; set; } = string.Empty;
+}
+
+public class AvailableFinishedProductDto
+{
+    public int WarehouseBatchId { get; set; }
+    public string BatchNumber { get; set; } = string.Empty;
+    public string ManufactureNumber { get; set; } = string.Empty;
+    public string ProductName { get; set; } = string.Empty;
+    public int StorageLocationId { get; set; }
+    public string StorageLocationName { get; set; } = string.Empty;
+    public decimal AvailableQuantity { get; set; }
+    public decimal InitialQuantity { get; set; }
+    public string Unit { get; set; } = "طن";
+    public int? ProductionOrderId { get; set; }
+    public string? ProductionOrderNumber { get; set; }
+    public int? ProductionProcessId { get; set; }
+    public string? ProcessNumber { get; set; }
+    public DateTime? ProductionDate { get; set; }
+    public string? WeighbridgeAttachmentPath { get; set; }
+    public string? WeighbridgeFileName { get; set; }
+    public int RawMaterialId { get; set; }
 }
 
 

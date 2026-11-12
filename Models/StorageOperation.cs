@@ -37,6 +37,28 @@ public class StorageOperation
     /// </summary>
     public string? MaterialType { get; set; }
 
+    /// <summary>
+    /// نوع الصرف: RAW_MATERIAL (مواد خام) | FINISHED_PRODUCT (منتج نهائي)
+    /// </summary>
+    public string? ExportType { get; set; }
+
+    /// <summary>
+    /// أمر الإنتاج المرتبط (عند صرف منتج نهائي)
+    /// </summary>
+    public int? ProductionOrderId { get; set; }
+    public ProductionOrder? ProductionOrder { get; set; }
+
+    /// <summary>
+    /// عملية الإنتاج المرتبطة
+    /// </summary>
+    public int? ProductionProcessId { get; set; }
+    public ProductionProcess? ProductionProcess { get; set; }
+
+    /// <summary>
+    /// رقم التصنيع للمنتج النهائي
+    /// </summary>
+    public string? ManufactureNumber { get; set; }
+
     // =========================================================================
     // INTERNAL & EXTERNAL WEIGHING (الميزان الداخلي ومقارنة الأوزان)
     // =========================================================================
@@ -105,6 +127,16 @@ public class StorageOperation
     /// الرقم المرجعي التتبعي للإنتاج المشترك الصادر من قسم المعمل
     /// </summary>
     public int? ProductionReferenceNumber { get; set; }
+
+    /// <summary>
+    /// Sample Code / Reference Number from Laboratory (رقم العينة, e.g. SMP-0001)
+    /// </summary>
+    public string? SampleCode { get; set; }
+
+    /// <summary>
+    /// Selection Mode for Export/Transfer: BY_REFERENCE (برقم العينة) | BY_BATCH (بأرقام الدفعات)
+    /// </summary>
+    public string? SelectionMode { get; set; }
 
     // =========================================================================
     // IMPORT SPECIFICS (المورد / المصدر)
@@ -199,6 +231,11 @@ public class StorageOperation
     /// بنود الأصناف والكميات المرتبطة بالعملية
     /// </summary>
     public ICollection<StorageOperationItem> Items { get; set; } = new List<StorageOperationItem>();
+
+    /// <summary>
+    /// الدفعات المخزنية التي تم إنشاؤها في إذن الإضافة
+    /// </summary>
+    public ICollection<WarehouseBatch> CreatedBatches { get; set; } = new List<WarehouseBatch>();
 
     /// <summary>
     /// حركات دفتر الأستاذ المخزني المرتبطة

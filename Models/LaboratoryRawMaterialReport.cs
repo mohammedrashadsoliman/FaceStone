@@ -17,9 +17,19 @@ public class LaboratoryRawMaterialReport
     public int ProductionReferenceNumber { get; set; }
 
     /// <summary>
-    /// رقم العينة — يبدأ من 1 لكل مستخدم مصرح له بالمعمل ويتصاعد تسلسلياً بشكل مستقل لكل مستخدم
+    /// رقم العينة — يبدأ من 1 ويتصاعد تسلسلياً وفريد على مستوى النظام والمعمل
     /// </summary>
     public int SampleNumber { get; set; }
+
+    /// <summary>
+    /// كود ورقم العينة الرسمي المشترك (مثال: SMP-0001) المرجع المركزي الموحد
+    /// </summary>
+    public string? SampleCode { get; set; }
+
+    /// <summary>
+    /// تصنيف المادة: MECHANICAL (ميكانيكية) | CHEMICAL (كيميائية)
+    /// </summary>
+    public string MaterialClassification { get; set; } = "MECHANICAL";
 
     /// <summary>
     /// مسمى العينة (مثال: سيليكا باودر Micro Silica Powder)
@@ -112,6 +122,19 @@ public class LaboratoryRawMaterialReport
     public decimal ReceivedQuantity { get; set; }
 
     /// <summary>
+    /// إجمالي وزن المواد التي تم اختبارها (طن)
+    /// </summary>
+    public decimal TestedMaterialWeight { get; set; }
+
+    /// <summary>
+    /// مستند تأكيد الكمية المستلمة (مسار الملف)
+    /// </summary>
+    public string? QuantityConfirmationPath { get; set; }
+    public string? QuantityConfirmationFileName { get; set; }
+    public string? QuantityConfirmationFileType { get; set; }
+    public long QuantityConfirmationFileSize { get; set; }
+
+    /// <summary>
     /// الكمية المقبولة (بالطن) - >= 0 وتتاح للمستودعات بعد الاعتماد
     /// </summary>
     public decimal AcceptedQuantity { get; set; }
@@ -122,9 +145,37 @@ public class LaboratoryRawMaterialReport
     public decimal RejectedQuantity { get; set; }
 
     /// <summary>
+    /// وحدة القياس (طن / كجم)
+    /// </summary>
+    public string Unit { get; set; } = "طن";
+
+    /// <summary>
     /// نتائج الفحوصات والتحاليل المعملية (JSON مخزن للقيم الرقمية والوحدات)
     /// </summary>
     public string? AnalysisResultsJson { get; set; }
+
+    /// <summary>
+    /// حالة فحص المعمل الفيزيائي: PENDING | APPROVED | REJECTED
+    /// </summary>
+    public string? PhysicalInspectionStatus { get; set; }
+    public string? PhysicalInspectedBy { get; set; }
+    public DateTime? PhysicalInspectedAt { get; set; }
+    public string? PhysicalNotes { get; set; }
+
+    /// <summary>
+    /// حالة فحص المعمل الكيميائي: PENDING | COMPLIANT | NON_COMPLIANT | REJECTED
+    /// </summary>
+    public string? ChemicalInspectionStatus { get; set; }
+    public string? ChemicalInspectedBy { get; set; }
+    public DateTime? ChemicalInspectedAt { get; set; }
+    public string? ChemicalNotes { get; set; }
+    public string? ChemicalResultsJson { get; set; }
+
+    /// <summary>
+    /// الحالة الإجمالية للبوابة المعملية المزدوجة:
+    /// PENDING_PHYSICAL | PENDING_CHEMICAL | COMPLIANT_APPROVED | NON_COMPLIANT | REJECTED
+    /// </summary>
+    public string? OverallStatus { get; set; }
 
     /// <summary>
     /// قرار الفحص المعملي:
@@ -179,4 +230,9 @@ public class LaboratoryRawMaterialReport
     /// شهادات مطابقة المنتج النهائي المرتبطة
     /// </summary>
     public ICollection<LaboratoryFinalConformityCertificate> FinalCertificates { get; set; } = new List<LaboratoryFinalConformityCertificate>();
+
+    /// <summary>
+    /// الدفعات المخزنية المقسمة من هذا التقرير والمرجع المعملي
+    /// </summary>
+    public ICollection<WarehouseBatch> Batches { get; set; } = new List<WarehouseBatch>();
 }

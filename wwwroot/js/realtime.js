@@ -184,6 +184,18 @@ class RealTimeChatService {
         window.dispatchEvent(new CustomEvent('facestone:data-changed', { detail: data }));
       });
 
+      this.hubConnection.on('OnProductionOrderChanged', (data) => {
+        console.log('[RealTime] Production order changed via SignalR:', data);
+        window.dispatchEvent(new CustomEvent('facestone:production-order-changed', { detail: data }));
+        window.dispatchEvent(new CustomEvent('facestone:data-changed', { detail: { department: 'laboratory', ...data } }));
+      });
+
+      this.hubConnection.on('OnWarehouseInventoryChanged', (data) => {
+        console.log('[RealTime] Warehouse inventory changed via SignalR:', data);
+        window.dispatchEvent(new CustomEvent('facestone:warehouse-inventory-changed', { detail: data }));
+        window.dispatchEvent(new CustomEvent('facestone:data-changed', { detail: { department: 'storage', ...data } }));
+      });
+
       // Lifecycle hooks
       this.hubConnection.onreconnecting(() => {
         if (ChatApi.isHandlingSessionExpiry || !ChatApi.getToken()) {

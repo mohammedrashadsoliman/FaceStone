@@ -510,6 +510,20 @@ public class FinanceController : ControllerBase
                 .GroupBy(s => s.PONumber, StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(g => g.Key, g => g.Sum(x => x.Waste), StringComparer.OrdinalIgnoreCase);
 
+            // Delivered quantities directly from finalized (ISSUED) invoices
+            var issuedInvoices1 = await _context.Invoices
+                .AsNoTracking()
+                .Where(i => i.Status == "ISSUED" && i.PurchaseOrderId.HasValue)
+                .Select(i => new {
+                    PoId = i.PurchaseOrderId!.Value,
+                    InvoicedQty = i.InvoicedQuantity ?? (i.Items.Any() ? i.Items.Sum(it => it.Quantity) : 0m)
+                })
+                .ToListAsync();
+
+            var poInvoicedMap = issuedInvoices1
+                .GroupBy(x => x.PoId)
+                .ToDictionary(g => g.Key, g => g.Sum(x => x.InvoicedQty));
+
             var results = new List<FinancePoSummaryDto>();
             foreach (var p in pos)
             {
@@ -530,10 +544,11 @@ public class FinanceController : ControllerBase
                 var totalWaste = Math.Round(transWaste + storageWaste, 3);
                 var totalWastePrice = Math.Round(totalWaste * tonPrice, 2);
 
-                var deliveredQty = Math.Round(Math.Max(0m, expectedQty - totalWaste), 3);
+                // Delivered quantity strictly calculated from finalized/approved invoices
+                var deliveredQty = poInvoicedMap.TryGetValue(p.Id, out var invQty) ? invQty : p.DeliveredQuantity;
                 var deliveredPrice = Math.Round(deliveredQty * tonPrice, 2);
 
-                var remainingQty = Math.Round(p.RemainingQuantity, 3);
+                var remainingQty = Math.Round(Math.Max(0m, expectedQty - deliveredQty), 3);
                 var remainingPrice = Math.Round(remainingQty * tonPrice, 2);
 
                 var perfPct = expectedQty > 0
@@ -548,22 +563,28 @@ public class FinanceController : ControllerBase
                     .Sum(pay => pay.Amount);
                 var outstanding = Math.Round(Math.Max(0m, deliveredPrice - poPaymentsSum), 2);
 
-                var poStatus = remainingQty <= 0 ? "مكتمل" : (transCount > 0 ? "قيد التوريد" : "معلق");
+                var poStatus = remainingQty <= 0 ? "مكتمل" : (deliveredQty > 0 ? "قيد التوريد" : "معلق");
                 var paymentStatus = !string.IsNullOrWhiteSpace(p.PaymentStatus) ? p.PaymentStatus : "غير مدفوع";
 
                 results.Add(new FinancePoSummaryDto
                 {
+                    Id = p.Id,
                     PoNumber = p.PONumber,
+                    SupplierId = p.SupplierId,
                     Supplier = p.Supplier,
+                    MaterialName = !string.IsNullOrWhiteSpace(p.MaterialName) ? p.MaterialName : "مواد خرسانية / ركام",
+                    Unit = !string.IsNullOrWhiteSpace(p.Unit) ? p.Unit : "طن",
                     Destination = p.Destination,
                     TonPrice = tonPrice,
                     OrderDate = p.OrderDate,
+                    ExpectedDeliveryDate = p.ExpectedDeliveryDate,
                     ExpectedQuantity = expectedQty,
                     ExpectedPrice = expectedPrice,
                     DeliveredQuantity = deliveredQty,
                     DeliveredPrice = deliveredPrice,
                     RemainingQuantity = remainingQty,
                     RemainingPrice = remainingPrice,
+                    Notes = p.Notes,
                     TransportationTransactionsCount = transCount,
                     TransportationWasteQuantity = transWaste,
                     TransportationWastePrice = transWastePrice,
@@ -610,15 +631,28 @@ public class FinanceController : ControllerBase
         }
 
         var poNum = poNumber.Trim();
-        var po = await _context.PurchaseOrders
-            .AsNoTracking()
-            .Include(p => p.Payments)
-            .FirstOrDefaultAsync(p => p.PONumber == poNum);
+        PurchaseOrder? po = null;
+        if (int.TryParse(poNum, out var parsedId))
+        {
+            po = await _context.PurchaseOrders
+                .AsNoTracking()
+                .Include(p => p.Payments)
+                .FirstOrDefaultAsync(p => p.Id == parsedId || p.PONumber == poNum);
+        }
+        else
+        {
+            po = await _context.PurchaseOrders
+                .AsNoTracking()
+                .Include(p => p.Payments)
+                .FirstOrDefaultAsync(p => p.PONumber == poNum);
+        }
 
         if (po == null)
         {
             return NotFound(ApiResponse.Fail($"لم يتم العثور على أمر الشراء '{poNum}'."));
         }
+
+        poNum = po.PONumber;
 
         var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? "Unknown";
         var isFinanceDirector = AppRoles.IsFinanceDirector(userRole);
@@ -671,10 +705,17 @@ public class FinanceController : ControllerBase
         var totalWaste = Math.Round(transWaste + storageWaste, 3);
         var totalWastePrice = Math.Round(totalWaste * tonPrice, 2);
 
-        var deliveredQty = Math.Round(Math.Max(0m, expectedQty - totalWaste), 3);
+        var deliveredInvoicesList = await _context.Invoices
+            .AsNoTracking()
+            .Where(i => i.PurchaseOrderId == po.Id && i.Status == "ISSUED")
+            .Select(i => i.InvoicedQuantity ?? (i.Items.Any() ? i.Items.Sum(it => it.Quantity) : 0m))
+            .ToListAsync();
+        var deliveredFromInvoices = deliveredInvoicesList.Sum();
+
+        var deliveredQty = deliveredFromInvoices > 0 ? Math.Round(deliveredFromInvoices, 3) : Math.Round(po.DeliveredQuantity, 3);
         var deliveredPrice = Math.Round(deliveredQty * tonPrice, 2);
 
-        var remainingQty = Math.Round(po.RemainingQuantity, 3);
+        var remainingQty = Math.Round(Math.Max(0m, po.Quantity - deliveredQty), 3);
         var remainingPrice = Math.Round(remainingQty * tonPrice, 2);
 
         var perfPct = expectedQty > 0
@@ -687,7 +728,7 @@ public class FinanceController : ControllerBase
         var paidSum = Math.Round(po.Payments.Sum(p => p.Amount), 2);
         var outstanding = Math.Round(Math.Max(0m, deliveredPrice - paidSum), 2);
 
-        var status = remainingQty <= 0 ? "مكتمل" : (transCount > 0 ? "قيد التوريد" : "معلق");
+        var status = remainingQty <= 0 ? "مكتمل" : (deliveredQty > 0 ? "قيد التوريد" : "معلق");
         var paymentStatus = !string.IsNullOrWhiteSpace(po.PaymentStatus) ? po.PaymentStatus : "غير مدفوع";
 
         // Map transportation items
@@ -823,9 +864,13 @@ public class FinanceController : ControllerBase
         {
             Id = po.Id,
             PoNumber = po.PONumber,
+            SupplierId = po.SupplierId,
             Supplier = po.Supplier,
+            MaterialName = !string.IsNullOrWhiteSpace(po.MaterialName) ? po.MaterialName : "مواد خرسانية / ركام",
+            Unit = !string.IsNullOrWhiteSpace(po.Unit) ? po.Unit : "طن",
             Destination = po.Destination,
             OrderDate = po.OrderDate,
+            ExpectedDeliveryDate = po.ExpectedDeliveryDate,
             Quantity = po.Quantity,
             TonPrice = tonPrice,
             TotalValue = expectedPrice,
@@ -861,6 +906,172 @@ public class FinanceController : ControllerBase
         };
 
         return Ok(ApiResponse<PurchaseOrderDetailDto>.Ok(detailDto));
+    }
+
+    /// <summary>
+    /// Creates a new Purchase Order linked to an independent Supplier.
+    /// </summary>
+    [HttpPost("purchase-orders")]
+    [ProducesResponseType(typeof(ApiResponse<FinancePoSummaryDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> CreatePurchaseOrder([FromBody] CreatePurchaseOrderDto dto)
+    {
+        var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+        if (!AppRoles.HasFinanceAccess(role))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponse.Fail("غير مصرح لك بإضافة أوامر الشراء."));
+        }
+
+        if (!ModelState.IsValid)
+        {
+            var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
+            return BadRequest(ApiResponse.Fail("بيانات أمر الشراء غير مكتملة.", errors));
+        }
+
+        var supplier = await _context.Suppliers.FirstOrDefaultAsync(s => s.Id == dto.SupplierId);
+        if (supplier == null)
+        {
+            return BadRequest(ApiResponse.Fail("المورد المحدد غير موجود في سجل الموردين."));
+        }
+
+        var year = DateTime.UtcNow.Year;
+        string poNumber = dto.PONumber?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(poNumber))
+        {
+            var prefix = $"PO-{year}-";
+            var existing = await _context.PurchaseOrders
+                .Where(p => p.PONumber.StartsWith(prefix))
+                .Select(p => p.PONumber)
+                .ToListAsync();
+            int nextSeq = 1;
+            if (existing.Count > 0)
+            {
+                var seqs = existing.Select(n => int.TryParse(n.Replace(prefix, ""), out var s) ? s : 0).ToList();
+                nextSeq = seqs.Max() + 1;
+            }
+            poNumber = $"{prefix}{nextSeq:D4}";
+        }
+        else
+        {
+            if (await _context.PurchaseOrders.AnyAsync(p => p.PONumber == poNumber))
+            {
+                return BadRequest(ApiResponse.Fail($"رقم أمر الشراء '{poNumber}' مسجل بالفعل مسبقاً."));
+            }
+        }
+
+        var qty = Math.Round(dto.Quantity, 3);
+        var unitPrice = Math.Round(dto.UnitPrice, 2);
+        var totalVal = Math.Round(qty * unitPrice, 2);
+
+        var po = new PurchaseOrder
+        {
+            PONumber = poNumber,
+            SupplierId = supplier.Id,
+            Supplier = supplier.Name,
+            MaterialName = dto.MaterialName.Trim(),
+            Quantity = qty,
+            RemainingQuantity = qty,
+            DeliveredQuantity = 0m,
+            Unit = !string.IsNullOrWhiteSpace(dto.Unit) ? dto.Unit.Trim() : "طن",
+            PricePerTon = unitPrice,
+            TonPrice = unitPrice,
+            TotalValue = totalVal,
+            OrderDate = dto.OrderDate ?? DateTime.UtcNow,
+            ExpectedDeliveryDate = dto.ExpectedDeliveryDate,
+            Destination = !string.IsNullOrWhiteSpace(dto.Destination) ? dto.Destination.Trim() : "مصنع FaceStone",
+            PaymentStatus = "غير مدفوع",
+            Notes = dto.Notes?.Trim(),
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        _context.PurchaseOrders.Add(po);
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Purchase Order {PONumber} created for supplier {SupplierName}.", po.PONumber, supplier.Name);
+
+        return Ok(ApiResponse<FinancePoSummaryDto>.Ok(new FinancePoSummaryDto
+        {
+            Id = po.Id,
+            PoNumber = po.PONumber,
+            SupplierId = po.SupplierId,
+            Supplier = po.Supplier,
+            MaterialName = po.MaterialName,
+            Unit = po.Unit,
+            Destination = po.Destination,
+            TonPrice = po.TonPrice,
+            OrderDate = po.OrderDate,
+            ExpectedDeliveryDate = po.ExpectedDeliveryDate,
+            ExpectedQuantity = po.Quantity,
+            ExpectedPrice = po.TotalValue,
+            DeliveredQuantity = 0m,
+            DeliveredPrice = 0m,
+            RemainingQuantity = po.RemainingQuantity,
+            RemainingPrice = po.TotalValue,
+            Status = "قيد التوريد",
+            PaymentStatus = po.PaymentStatus,
+            Notes = po.Notes
+        }, "تم إنشاء أمر الشراء بنجاح."));
+    }
+
+    /// <summary>
+    /// Updates an existing Purchase Order with validation against delivered quantities.
+    /// </summary>
+    [HttpPut("purchase-orders/{id:int}")]
+    public async Task<IActionResult> UpdatePurchaseOrder(int id, [FromBody] UpdatePurchaseOrderDto dto)
+    {
+        var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+        if (!AppRoles.HasFinanceAccess(role))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponse.Fail("غير مصرح لك بتعديل أوامر الشراء."));
+        }
+
+        var po = await _context.PurchaseOrders.FirstOrDefaultAsync(p => p.Id == id);
+        if (po == null)
+        {
+            return NotFound(ApiResponse.Fail("أمر الشراء غير موجود."));
+        }
+
+        var supplier = await _context.Suppliers.FirstOrDefaultAsync(s => s.Id == dto.SupplierId);
+        if (supplier == null)
+        {
+            return BadRequest(ApiResponse.Fail("المورد المحدد غير موجود."));
+        }
+
+        // Calculate actual delivered quantity from finalized invoices
+        var deliveredList = await _context.Invoices
+            .AsNoTracking()
+            .Where(i => i.PurchaseOrderId == po.Id && i.Status == "ISSUED")
+            .Select(i => i.InvoicedQuantity ?? (i.Items.Any() ? i.Items.Sum(it => it.Quantity) : 0m))
+            .ToListAsync();
+        var delivered = deliveredList.Sum();
+
+        if (dto.Quantity < delivered)
+        {
+            return BadRequest(ApiResponse.Fail($"لا يمكن تعديل الكمية المتعاقد عليها ({dto.Quantity:N3} طن) لتكون أقل من الكمية التي تم فوترتها وتسليمها بالفعل ({delivered:N3} طن)."));
+        }
+
+        var oldQty = po.Quantity;
+
+        po.SupplierId = supplier.Id;
+        po.Supplier = supplier.Name;
+        po.MaterialName = dto.MaterialName.Trim();
+        po.Quantity = Math.Round(dto.Quantity, 3);
+        po.Unit = !string.IsNullOrWhiteSpace(dto.Unit) ? dto.Unit.Trim() : "طن";
+        po.TonPrice = Math.Round(dto.UnitPrice, 2);
+        po.PricePerTon = po.TonPrice;
+        po.TotalValue = Math.Round(po.Quantity * po.TonPrice, 2);
+        po.DeliveredQuantity = delivered;
+        po.RemainingQuantity = Math.Max(0m, po.Quantity - delivered);
+        if (dto.OrderDate.HasValue) po.OrderDate = dto.OrderDate.Value;
+        po.ExpectedDeliveryDate = dto.ExpectedDeliveryDate;
+        if (!string.IsNullOrWhiteSpace(dto.Destination)) po.Destination = dto.Destination.Trim();
+        po.Notes = dto.Notes?.Trim();
+        po.UpdatedAt = DateTime.UtcNow;
+
+        await _context.SaveChangesAsync();
+        _logger.LogInformation("Purchase Order {PONumber} updated. Quantity changed from {OldQty} to {NewQty}.", po.PONumber, oldQty, po.Quantity);
+
+        return Ok(ApiResponse.Ok("تم تعديل أمر الشراء بنجاح."));
     }
 
     /// <summary>
@@ -1309,7 +1520,7 @@ public class FinanceController : ControllerBase
                 else
                 {
                     // PO exists in Transportation but wasn't in PO table yet
-                    var supplier = !string.IsNullOrWhiteSpace(latestTrans.Source) ? latestTrans.Source.Trim() : "Ø§Ù„Ù…ÙˆØ±Ø¯ Ø§Ù„Ø±Ø¦ÙŠØ³ÙŠ Ù„Ù„Ø®Ø±Ø³Ø§Ù†Ø©";
+                    var supplier = !string.IsNullOrWhiteSpace(latestTrans.Source) ? latestTrans.Source.Trim() : "المورد الرئيسي للخرسانة";
                     var orderDate = firstTrans.TransactionDate;
                     var estimatedTonPrice = 1450.00m;
                     var estimatedPoQty = Math.Max(transSupplied * 1.2m, 100.0m);
@@ -1379,7 +1590,7 @@ public class FinanceController : ControllerBase
             foreach (var group in storageByPo)
             {
                 var poNum = group.Key;
-                var incomingSum = group.Where(s => s.ServiceType.Equals("Ø¥Ø¶Ø§ÙØ©", StringComparison.OrdinalIgnoreCase)).Sum(s => s.IncomingQuantity);
+                var incomingSum = group.Where(s => s.ServiceType.Equals("إضافة", StringComparison.OrdinalIgnoreCase)).Sum(s => s.IncomingQuantity);
 
                 if (poMap.TryGetValue(poNum, out var record))
                 {
@@ -1400,40 +1611,40 @@ public class FinanceController : ControllerBase
                 r.TonPrice = Math.Round(r.TonPrice, 2);
                 r.SuppliedQuantity = Math.Round(r.SuppliedQuantity, 3);
 
-                // 5. Ù‚ÙŠÙ…Ø© Ø£Ù…Ø± Ø§Ù„Ø´Ø±Ø§Ø¡ = ÙƒÙ…ÙŠØ© Ø£Ù…Ø± Ø§Ù„Ø´Ø±Ø§Ø¡ Ã— Ø³Ø¹Ø± Ø§Ù„Ø·Ù†
+                // 5. قيمة أمر الشراء = كمية أمر الشراء × سعر الطن
                 r.PoValue = Math.Round(r.PoQuantity * r.TonPrice, 2);
 
-                // 8. Ù‚ÙŠÙ…Ø© Ø§Ù„ÙƒÙ…ÙŠØ© Ø§Ù„ØªÙŠ ØªÙ… ØªÙˆØ±ÙŠØ¯Ù‡Ø§ = Ø§Ù„ÙƒÙ…ÙŠØ© Ø§Ù„ØªÙŠ ØªÙ… ØªÙˆØ±ÙŠØ¯Ù‡Ø§ Ã— Ø³Ø¹Ø± Ø§Ù„Ø·Ù†
+                // 8. قيمة الكمية التي تم توريدها = الكمية التي تم توريدها × سعر الطن
                 r.SuppliedValue = Math.Round(r.SuppliedQuantity * r.TonPrice, 2);
 
-                // 9. Ø§Ù„ÙƒÙ…ÙŠØ© Ø§Ù„Ù…ØªØ¨Ù‚ÙŠØ© = ÙƒÙ…ÙŠØ© Ø£Ù…Ø± Ø§Ù„Ø´Ø±Ø§Ø¡ - Ø§Ù„ÙƒÙ…ÙŠØ© Ø§Ù„ØªÙŠ ØªÙ… ØªÙˆØ±ÙŠØ¯Ù‡Ø§
+                // 9. الكمية المتبقية = كمية أمر الشراء - الكمية التي تم توريدها
                 r.RemainingQuantity = Math.Round(Math.Max(0m, r.PoQuantity - r.SuppliedQuantity), 3);
 
-                // 10. Ø§Ù„Ù‚ÙŠÙ…Ø© Ø§Ù„Ù…ØªØ¨Ù‚ÙŠØ© = Ø§Ù„ÙƒÙ…ÙŠØ© Ø§Ù„Ù…ØªØ¨Ù‚ÙŠØ© Ã— Ø³Ø¹Ø± Ø§Ù„Ø·Ù†
+                // 10. القيمة المتبقية = الكمية المتبقية × سعر الطن
                 r.RemainingValue = Math.Round(r.RemainingQuantity * r.TonPrice, 2);
 
-                // 12 & 13. Ø§Ù„ÙƒÙ…ÙŠØ© Ø§Ù„Ù…Ø¹ØªÙ…Ø¯Ø© ÙˆØ§Ù„ØºÙŠØ± Ù…Ø¹ØªÙ…Ø¯Ø©
+                // 12 & 13. الكمية المعتمدة والغير معتمدة
                 r.ApprovedQuantity = Math.Round(r.ApprovedQuantity, 3);
                 r.UnapprovedQuantity = Math.Round(Math.Max(0m, r.SuppliedQuantity - r.ApprovedQuantity), 3);
 
-                // 14. Ø§Ù„Ù…Ø¨Ù„Øº Ø§Ù„Ù…Ø¯ÙÙˆØ¹
+                // 14. المبلغ المدفوع
                 r.PaidAmount = Math.Round(r.PaidAmount, 2);
 
-                // 15. Ø§Ù„Ù…Ø¨Ù„Øº Ø§Ù„Ù…Ø³ØªØ­Ù‚ = Ù‚ÙŠÙ…Ø© Ø§Ù„ÙƒÙ…ÙŠØ© Ø§Ù„ØªÙŠ ØªÙ… ØªÙˆØ±ÙŠØ¯Ù‡Ø§ - Ø§Ù„Ù…Ø¨Ù„Øº Ø§Ù„Ù…Ø¯ÙÙˆØ¹
+                // 15. المبلغ المستحق = قيمة الكمية التي تم توريدها - المبلغ المدفوع
                 r.OutstandingAmount = Math.Round(Math.Max(0m, r.SuppliedValue - r.PaidAmount), 2);
 
-                // 16. Ø­Ø§Ù„Ø© Ø§Ù„Ø³Ø¯Ø§Ø¯
+                // 16. حالة السداد
                 if (r.PaidAmount <= 0)
                 {
-                    r.PaymentStatus = "ØºÙŠØ± Ù…Ø¯ÙÙˆØ¹";
+                    r.PaymentStatus = "غير مدفوع";
                 }
                 else if (r.PaidAmount > 0 && r.PaidAmount < r.SuppliedValue)
                 {
-                    r.PaymentStatus = "Ù…Ø¯ÙÙˆØ¹ Ø¬Ø²Ø¦ÙŠØ§Ù‹";
+                    r.PaymentStatus = "مدفوع جزئياً";
                 }
                 else
                 {
-                    r.PaymentStatus = "Ù…Ø¯ÙÙˆØ¹ Ø¨Ø§Ù„ÙƒØ§Ù…Ù„";
+                    r.PaymentStatus = "مدفوع بالكامل";
                 }
             }
 
@@ -1456,7 +1667,7 @@ public class FinanceController : ControllerBase
             var filterOptions = new FinanceFilterOptionsDto
             {
                 Suppliers = allRecords.Select(r => r.Supplier).Where(s => !string.IsNullOrWhiteSpace(s)).Distinct().OrderBy(s => s).ToList(),
-                PaymentStatuses = new List<string> { "ØºÙŠØ± Ù…Ø¯ÙÙˆØ¹", "Ù…Ø¯ÙÙˆØ¹ Ø¬Ø²Ø¦ÙŠØ§Ù‹", "Ù…Ø¯ÙÙˆØ¹ Ø¨Ø§Ù„ÙƒØ§Ù…Ù„" },
+                PaymentStatuses = new List<string> { "غير مدفوع", "مدفوع جزئياً", "مدفوع بالكامل" },
                 InvoiceNumbers = allRecords.Select(r => r.InvoiceNumber).Where(i => !string.IsNullOrWhiteSpace(i)).Select(i => i!).Distinct().OrderBy(i => i).ToList()
             };
 
@@ -1535,7 +1746,7 @@ public class FinanceController : ControllerBase
         {
             _logger.LogError(ex, "Error retrieving Finance management data.");
             return StatusCode(StatusCodes.Status500InternalServerError,
-                ApiResponse.Fail("Ø­Ø¯Ø« Ø®Ø·Ø£ Ø£Ø«Ù†Ø§Ø¡ ØªØ­Ù…ÙŠÙ„ Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ù…Ø§Ù„ÙŠØ©. ÙŠØ±Ø¬Ù‰ Ø§Ù„Ù…Ø­Ø§ÙˆÙ„Ø© Ù„Ø§Ø­Ù‚Ø§Ù‹."));
+                ApiResponse.Fail("حدث خطأ أثناء تحميل البيانات المالية. يرجى المحاولة لاحقاً."));
         }
     }
 
@@ -1549,7 +1760,7 @@ public class FinanceController : ControllerBase
     {
         if (string.IsNullOrWhiteSpace(poNumber))
         {
-            return BadRequest(ApiResponse.Fail("Ø±Ù‚Ù… Ø£Ù…Ø± Ø§Ù„Ø´Ø±Ø§Ø¡ Ù…Ø·Ù„ÙˆØ¨."));
+            return BadRequest(ApiResponse.Fail("رقم أمر الشراء مطلوب."));
         }
 
         var targetPo = poNumber.Trim();
@@ -1588,12 +1799,12 @@ public class FinanceController : ControllerBase
     {
         if (string.IsNullOrWhiteSpace(dto.PoNumber))
         {
-            return BadRequest(ApiResponse.Fail("Ø±Ù‚Ù… Ø£Ù…Ø± Ø§Ù„Ø´Ø±Ø§Ø¡ Ù…Ø·Ù„ÙˆØ¨ Ù„ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ø¯ÙØ¹Ø©."));
+            return BadRequest(ApiResponse.Fail("رقم أمر الشراء مطلوب لتسجيل الدفعة."));
         }
 
         if (dto.Amount <= 0)
         {
-            return BadRequest(ApiResponse.Fail("Ù…Ø¨Ù„Øº Ø§Ù„Ø¯ÙØ¹Ø© ÙŠØ¬Ø¨ Ø£Ù† ÙŠÙƒÙˆÙ† Ø£ÙƒØ¨Ø± Ù…Ù† Ø§Ù„ØµÙØ±."));
+            return BadRequest(ApiResponse.Fail("مبلغ الدفعة يجب أن يكون أكبر من الصفر."));
         }
 
         var poNum = dto.PoNumber.Trim();
@@ -1635,7 +1846,7 @@ public class FinanceController : ControllerBase
             CreatedAt = payment.CreatedAt
         };
 
-        return Ok(ApiResponse<FinancePaymentDto>.Ok(resultDto, "ØªÙ… ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ø¯ÙØ¹Ø© Ø§Ù„Ù…Ø§Ù„ÙŠØ© Ø¨Ù†Ø¬Ø§Ø­."));
+        return Ok(ApiResponse<FinancePaymentDto>.Ok(resultDto, "تم تسجيل الدفعة المالية بنجاح."));
     }
 
     // ========================================================================
@@ -1820,63 +2031,51 @@ public class FinanceController : ControllerBase
     }
 
     // ========================================================================
-    // 2. الموردين — SUPPLIERS (/api/finance/suppliers)
+    // 2. الموردين — INDEPENDENT SUPPLIERS (/api/finance/suppliers)
     // ========================================================================
     [HttpGet("suppliers")]
-    [ProducesResponseType(typeof(ApiResponse<List<FinanceSupplierItemDto>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<List<SupplierSummaryDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetSuppliers()
     {
         try
         {
-            var pos = await _context.PurchaseOrders.AsNoTracking().ToListAsync();
-            var trans = await _context.Transportations.AsNoTracking()
-                .Where(t => t.ApprovalStatus == "APPROVED" || string.IsNullOrEmpty(t.ApprovalStatus))
-                .ToListAsync();
-            var payments = await _context.FinancePayments.AsNoTracking().ToListAsync();
-
-            var supplierGroups = pos.GroupBy(p => p.Supplier.Trim(), StringComparer.OrdinalIgnoreCase);
-            var result = new List<FinanceSupplierItemDto>();
-
-            foreach (var g in supplierGroups)
+            // Auto sync if empty
+            if (!await _context.Suppliers.AnyAsync())
             {
-                var sName = g.Key;
-                var sPos = g.ToList();
-                var sPoNumbers = sPos.Select(p => p.PONumber).ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-                var sTrans = trans.Where(t => sPoNumbers.Contains(t.PONumber)).ToList();
-                var sPayments = payments.Where(p => sPoNumbers.Contains(p.PONumber)).ToList();
-
-                var contractedQty = sPos.Sum(p => p.Quantity);
-                var deliveredQty = sTrans.Sum(t => t.NetWeight);
-                var remQty = sPos.Sum(p => p.RemainingQuantity);
-                var totalVal = sPos.Sum(p => p.TotalValue > 0 ? p.TotalValue : (p.Quantity * (p.TonPrice > 0 ? p.TonPrice : p.PricePerTon)));
-                var paidAmt = sPayments.Sum(p => p.Amount);
-                var outstandingAmt = Math.Max(0, totalVal - paidAmt);
-
-                var materials = sTrans.Select(t => t.MaterialType).Where(m => !string.IsNullOrWhiteSpace(m)).Distinct().ToList();
-                if (!materials.Any()) materials.Add("مواد خرسانية / ركام");
-
-                var activeCount = sPos.Count(p => p.RemainingQuantity > 0);
-                var completedCount = sPos.Count(p => p.RemainingQuantity <= 0);
-
-                result.Add(new FinanceSupplierItemDto
-                {
-                    SupplierName = sName,
-                    Materials = string.Join(", ", materials),
-                    PurchaseOrdersCount = sPos.Count,
-                    TotalContractedQuantity = contractedQty,
-                    TotalDeliveredQuantity = deliveredQty,
-                    TotalRemainingQuantity = remQty,
-                    TotalFinancialValue = totalVal,
-                    TotalPaidAmount = paidAmt,
-                    TotalOutstandingAmount = outstandingAmt,
-                    ActivePoCount = activeCount,
-                    CompletedPoCount = completedCount
-                });
+                await DbInitializer.SynchronizeSuppliersAndPOsAsync(_context, _logger);
             }
 
-            result = result.OrderByDescending(s => s.TotalContractedQuantity).ToList();
-            return Ok(ApiResponse<List<FinanceSupplierItemDto>>.Ok(result));
+            var suppliers = await _context.Suppliers
+                .AsNoTracking()
+                .OrderBy(s => s.SupplierCode)
+                .Select(s => new SupplierSummaryDto
+                {
+                    Id = s.Id,
+                    SupplierCode = s.SupplierCode,
+                    Name = s.Name,
+                    PhoneNumber = s.PhoneNumber,
+                    Email = s.Email,
+                    Address = s.Address,
+                    TaxNumber = s.TaxNumber,
+                    CommercialRegister = s.CommercialRegister,
+                    ContactPerson = s.ContactPerson,
+                    PrimaryMaterialName = s.PrimaryMaterialName,
+                    PrimaryMaterialType = s.PrimaryMaterialType,
+                    SourceDepartment = s.SourceDepartment,
+                    RelatedLaboratoryReferenceNumber = s.RelatedLaboratoryReferenceNumber,
+                    RelatedWarehouseImportNumber = s.RelatedWarehouseImportNumber,
+                    RegistrationDate = s.RegistrationDate,
+                    TotalAmountOwed = s.TotalAmountOwed,
+                    TotalAmountPaid = s.TotalAmountPaid,
+                    RemainingBalance = s.RemainingBalance,
+                    LastPaymentDate = s.LastPaymentDate,
+                    TransactionsCount = s.FinancialTransactions.Count,
+                    PurchaseOrdersCount = s.PurchaseOrders.Count,
+                    IsActive = s.IsActive
+                })
+                .ToListAsync();
+
+            return Ok(ApiResponse<List<SupplierSummaryDto>>.Ok(suppliers));
         }
         catch (Exception ex)
         {
@@ -1886,114 +2085,327 @@ public class FinanceController : ControllerBase
     }
 
     [HttpGet("suppliers/{id}")]
-    [ProducesResponseType(typeof(ApiResponse<FinanceSupplierDetailDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<SupplierDetailDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetSupplierDetail(string id)
     {
         try
         {
-            var sName = Uri.UnescapeDataString(id).Trim();
-            var pos = await _context.PurchaseOrders.AsNoTracking()
-                .Where(p => p.Supplier.ToLower() == sName.ToLower())
-                .ToListAsync();
+            var raw = Uri.UnescapeDataString(id).Trim();
+            Supplier? s = null;
 
-            if (!pos.Any())
+            if (int.TryParse(raw, out var parsedId))
             {
-                pos = await _context.PurchaseOrders.AsNoTracking()
-                    .Where(p => p.Supplier.Contains(sName))
-                    .ToListAsync();
+                s = await _context.Suppliers
+                    .AsNoTracking()
+                    .Include(x => x.FinancialTransactions)
+                    .Include(x => x.PurchaseOrders)
+                    .FirstOrDefaultAsync(x => x.Id == parsedId);
             }
 
-            if (!pos.Any())
+            if (s == null)
             {
-                return NotFound(ApiResponse.Fail($"المورد '{sName}' غير موجود في قاعدة البيانات."));
+                s = await _context.Suppliers
+                    .AsNoTracking()
+                    .Include(x => x.FinancialTransactions)
+                    .Include(x => x.PurchaseOrders)
+                    .FirstOrDefaultAsync(x => x.Name.ToLower() == raw.ToLower() || x.SupplierCode == raw);
             }
 
-            var actualSupplierName = pos.First().Supplier;
-            var poNumbers = pos.Select(p => p.PONumber).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            if (s == null)
+            {
+                return NotFound(ApiResponse.Fail($"المورد '{raw}' غير موجود في قاعدة البيانات."));
+            }
 
-            var trans = await _context.Transportations.AsNoTracking()
-                .Where(t => poNumbers.Contains(t.PONumber))
+            var txDtos = s.FinancialTransactions
                 .OrderByDescending(t => t.TransactionDate)
-                .ToListAsync();
-
-            var payments = await _context.FinancePayments.AsNoTracking()
-                .Where(p => poNumbers.Contains(p.PONumber))
-                .ToListAsync();
-
-            var contractedQty = pos.Sum(p => p.Quantity);
-            var deliveredQty = trans.Sum(t => t.NetWeight);
-            var remQty = pos.Sum(p => p.RemainingQuantity);
-            var totalVal = pos.Sum(p => p.TotalValue > 0 ? p.TotalValue : (p.Quantity * (p.TonPrice > 0 ? p.TonPrice : p.PricePerTon)));
-            var paidAmt = payments.Sum(p => p.Amount);
-            var outstandingAmt = Math.Max(0, totalVal - paidAmt);
-
-            var materials = trans.Select(t => t.MaterialType).Where(m => !string.IsNullOrWhiteSpace(m)).Distinct().ToList();
-            if (!materials.Any()) materials.Add("مواد خرسانية / ركام");
-
-            var poDtos = pos.Select(p => {
-                var pTrans = trans.Where(t => t.PONumber.Equals(p.PONumber, StringComparison.OrdinalIgnoreCase)).ToList();
-                var pDelivered = pTrans.Sum(t => t.NetWeight);
-                var pWaste = pTrans.Sum(t => t.WasteQuantity);
-                var pPerf = p.Quantity > 0 ? Math.Round((pDelivered / p.Quantity) * 100, 2) : 0m;
-                var pPrice = p.TonPrice > 0 ? p.TonPrice : p.PricePerTon;
-                return new FinancePoSummaryDto
+                .Select(t => new SupplierFinancialTransactionDto
                 {
-                    PoNumber = p.PONumber,
-                    Supplier = p.Supplier,
-                    OrderDate = p.OrderDate,
-                    ExpectedQuantity = p.Quantity,
-                    TonPrice = pPrice,
-                    ExpectedPrice = p.TotalValue > 0 ? p.TotalValue : p.Quantity * pPrice,
-                    DeliveredQuantity = pDelivered,
-                    DeliveredPrice = Math.Round(pDelivered * pPrice, 2),
+                    Id = t.Id,
+                    SupplierId = t.SupplierId,
+                    TransactionType = t.TransactionType,
+                    TransactionTypeArabic = t.TransactionType switch
+                    {
+                        "AMOUNT_OWED" => "مستحق للمورد",
+                        "PAYMENT" => "دفعة مسددة",
+                        "ADJUSTMENT" => "تسوية مالية",
+                        "CHARGE" => "خصم / رسوم إضافية",
+                        _ => t.TransactionType
+                    },
+                    Amount = t.Amount,
+                    TransactionDate = t.TransactionDate,
+                    Description = t.Description,
+                    ReferenceNumber = t.ReferenceNumber,
+                    PaymentMethod = t.PaymentMethod,
+                    Notes = t.Notes,
+                    InvoiceId = t.InvoiceId,
+                    CreatedBy = t.CreatedBy,
+                    CreatedAt = t.CreatedAt
+                })
+                .ToList();
+
+            var poDtos = s.PurchaseOrders
+                .OrderByDescending(p => p.OrderDate)
+                .Select(p => new SupplierPoItemDto
+                {
+                    Id = p.Id,
+                    PONumber = p.PONumber,
+                    MaterialName = p.MaterialName,
+                    OrderedQuantity = p.Quantity,
+                    DeliveredQuantity = p.DeliveredQuantity,
                     RemainingQuantity = p.RemainingQuantity,
-                    RemainingPrice = Math.Round(p.RemainingQuantity * pPrice, 2),
-                    TransportationTransactionsCount = pTrans.Count,
-                    TransportationWasteQuantity = pWaste,
-                    StorageWasteQuantity = 0,
-                    TotalWasteQuantity = pWaste,
-                    TotalWastePrice = Math.Round(pWaste * pPrice, 2),
-                    PerformancePercentage = pPerf,
-                    Status = p.RemainingQuantity <= 0 ? "مكتمل" : (pTrans.Count > 0 ? "قيد التوريد" : "معلق"),
-                    PaymentStatus = p.PaymentStatus
-                };
-            }).ToList();
+                    TonPrice = p.TonPrice,
+                    TotalValue = p.TotalValue,
+                    OrderDate = p.OrderDate,
+                    Status = p.RemainingQuantity <= 0 ? "مكتمل" : "قيد التوريد"
+                })
+                .ToList();
 
-            var recentDeliveries = trans.Take(20).Select(t => new PoTransportationItemDto
+            var detail = new SupplierDetailDto
             {
-                TransactionNumber = t.TransactionNumber,
-                TransactionDate = t.TransactionDate,
-                CarNumber = t.CarNumber,
-                DriverName = t.DriverName,
-                Source = t.Source,
-                Destination = t.Destination,
-                MaterialType = t.MaterialType,
-                NetWeight = t.NetWeight,
-                WasteQuantity = t.WasteQuantity,
-                ReceivingStatus = t.ReceivingStatus ?? "مستلم"
-            }).ToList();
+                Id = s.Id,
+                SupplierCode = s.SupplierCode,
+                Name = s.Name,
+                PhoneNumber = s.PhoneNumber,
+                Email = s.Email,
+                Address = s.Address,
+                TaxNumber = s.TaxNumber,
+                CommercialRegister = s.CommercialRegister,
+                ContactPerson = s.ContactPerson,
+                Notes = s.Notes,
+                PrimaryMaterialName = s.PrimaryMaterialName,
+                PrimaryMaterialType = s.PrimaryMaterialType,
+                SourceDepartment = s.SourceDepartment,
+                RelatedLaboratoryReferenceNumber = s.RelatedLaboratoryReferenceNumber,
+                RelatedWarehouseImportNumber = s.RelatedWarehouseImportNumber,
+                RegistrationDate = s.RegistrationDate,
+                TotalAmountOwed = s.TotalAmountOwed,
+                TotalAmountPaid = s.TotalAmountPaid,
+                RemainingBalance = s.RemainingBalance,
+                LastPaymentDate = s.LastPaymentDate,
+                IsActive = s.IsActive,
+                Transactions = txDtos,
+                PurchaseOrders = poDtos
+            };
 
-            return Ok(ApiResponse<FinanceSupplierDetailDto>.Ok(new FinanceSupplierDetailDto
-            {
-                SupplierName = actualSupplierName,
-                Materials = string.Join(", ", materials),
-                PurchaseOrdersCount = pos.Count,
-                TotalContractedQuantity = contractedQty,
-                TotalDeliveredQuantity = deliveredQty,
-                TotalRemainingQuantity = remQty,
-                TotalFinancialValue = totalVal,
-                TotalPaidAmount = paidAmt,
-                TotalOutstandingAmount = outstandingAmt,
-                PurchaseOrders = poDtos,
-                RecentDeliveries = recentDeliveries
-            }));
+            return Ok(ApiResponse<SupplierDetailDto>.Ok(detail));
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving supplier details for id: {Id}", id);
+            _logger.LogError(ex, "Error retrieving supplier details for id {Id}.", id);
             return StatusCode(StatusCodes.Status500InternalServerError, ApiResponse.Fail("حدث خطأ أثناء جلب تفاصيل المورد."));
         }
+    }
+
+    [HttpPost("suppliers")]
+    public async Task<IActionResult> CreateSupplier([FromBody] CreateSupplierDto dto)
+    {
+        var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+        if (!AppRoles.HasFinanceAccess(role))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponse.Fail("غير مصرح لك بإضافة موردين."));
+        }
+
+        if (!ModelState.IsValid)
+        {
+            var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
+            return BadRequest(ApiResponse.Fail("بيانات المورد غير مكتملة.", errors));
+        }
+
+        var trimmedName = dto.Name.Trim();
+        if (await _context.Suppliers.AnyAsync(s => s.Name.ToLower() == trimmedName.ToLower()))
+        {
+            return BadRequest(ApiResponse.Fail($"المورد '{trimmedName}' مسجل بالفعل في النظام."));
+        }
+
+        var existingCodes = await _context.Suppliers
+            .Where(s => s.SupplierCode.StartsWith("SUP-"))
+            .Select(s => s.SupplierCode)
+            .ToListAsync();
+        int nextSeq = 1;
+        if (existingCodes.Any())
+        {
+            var seqs = existingCodes.Select(c => int.TryParse(c.Replace("SUP-", ""), out var v) ? v : 0).ToList();
+            nextSeq = seqs.Max() + 1;
+        }
+
+        var currentUserName = User.FindFirst(ClaimTypes.Name)?.Value ?? "المدير المالي";
+
+        var supplier = new Supplier
+        {
+            SupplierCode = $"SUP-{nextSeq:D4}",
+            Name = trimmedName,
+            PhoneNumber = dto.PhoneNumber?.Trim(),
+            Email = dto.Email?.Trim(),
+            Address = dto.Address?.Trim(),
+            TaxNumber = dto.TaxNumber?.Trim(),
+            CommercialRegister = dto.CommercialRegister?.Trim(),
+            ContactPerson = dto.ContactPerson?.Trim(),
+            PrimaryMaterialName = dto.PrimaryMaterialName?.Trim() ?? "مواد خرسانية / ركام",
+            PrimaryMaterialType = dto.PrimaryMaterialType?.Trim() ?? "MECHANICAL",
+            SourceDepartment = "FINANCE",
+            Notes = dto.Notes?.Trim(),
+            RegistrationDate = DateTime.UtcNow,
+            TotalAmountOwed = 0m,
+            TotalAmountPaid = 0m,
+            RemainingBalance = 0m,
+            IsActive = true,
+            CreatedBy = currentUserName,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        _context.Suppliers.Add(supplier);
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Supplier {SupplierCode} - {SupplierName} created by {User}.", supplier.SupplierCode, supplier.Name, currentUserName);
+        return Ok(ApiResponse<SupplierSummaryDto>.Ok(new SupplierSummaryDto
+        {
+            Id = supplier.Id,
+            SupplierCode = supplier.SupplierCode,
+            Name = supplier.Name,
+            PhoneNumber = supplier.PhoneNumber,
+            Email = supplier.Email,
+            Address = supplier.Address,
+            PrimaryMaterialName = supplier.PrimaryMaterialName,
+            PrimaryMaterialType = supplier.PrimaryMaterialType,
+            SourceDepartment = supplier.SourceDepartment,
+            RegistrationDate = supplier.RegistrationDate,
+            TotalAmountOwed = 0m,
+            TotalAmountPaid = 0m,
+            RemainingBalance = 0m,
+            IsActive = true
+        }, "تم إنشاء المورد بنجاح."));
+    }
+
+    [HttpPut("suppliers/{id:int}")]
+    public async Task<IActionResult> UpdateSupplier(int id, [FromBody] UpdateSupplierDto dto)
+    {
+        var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+        if (!AppRoles.HasFinanceAccess(role))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponse.Fail("غير مصرح لك بتعديل بيانات الموردين."));
+        }
+
+        var supplier = await _context.Suppliers.FirstOrDefaultAsync(s => s.Id == id);
+        if (supplier == null) return NotFound(ApiResponse.Fail("المورد غير موجود."));
+
+        var trimmedName = dto.Name.Trim();
+        if (await _context.Suppliers.AnyAsync(s => s.Id != id && s.Name.ToLower() == trimmedName.ToLower()))
+        {
+            return BadRequest(ApiResponse.Fail($"اسم المورد '{trimmedName}' مستخدم بالفعل لمورد آخر."));
+        }
+
+        supplier.Name = trimmedName;
+        supplier.PhoneNumber = dto.PhoneNumber?.Trim();
+        supplier.Email = dto.Email?.Trim();
+        supplier.Address = dto.Address?.Trim();
+        supplier.TaxNumber = dto.TaxNumber?.Trim();
+        supplier.CommercialRegister = dto.CommercialRegister?.Trim();
+        supplier.ContactPerson = dto.ContactPerson?.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.PrimaryMaterialName)) supplier.PrimaryMaterialName = dto.PrimaryMaterialName.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.PrimaryMaterialType)) supplier.PrimaryMaterialType = dto.PrimaryMaterialType.Trim();
+        supplier.Notes = dto.Notes?.Trim();
+        supplier.IsActive = dto.IsActive;
+        supplier.UpdatedAt = DateTime.UtcNow;
+
+        await _context.SaveChangesAsync();
+        return Ok(ApiResponse.Ok("تم تحديث بيانات المورد بنجاح."));
+    }
+
+    [HttpPost("suppliers/{id:int}/transactions")]
+    public async Task<IActionResult> AddSupplierFinancialTransaction(int id, [FromBody] CreateSupplierTransactionDto dto)
+    {
+        var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+        if (!AppRoles.HasFinanceAccess(role))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponse.Fail("غير مصرح لك بإضافة معاملات مالية للموردين."));
+        }
+
+        var supplier = await _context.Suppliers.FirstOrDefaultAsync(s => s.Id == id);
+        if (supplier == null) return NotFound(ApiResponse.Fail("المورد غير موجود."));
+
+        if (!ModelState.IsValid)
+        {
+            var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
+            return BadRequest(ApiResponse.Fail("بيانات المعاملة المالية غير صحيحة.", errors));
+        }
+
+        var currentUserName = User.FindFirst(ClaimTypes.Name)?.Value ?? "المدير المالي";
+        var currentUserIdStr = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        Guid? currentUserId = Guid.TryParse(currentUserIdStr, out var gid) ? gid : null;
+
+        var amount = Math.Round(dto.Amount, 3);
+        var txType = dto.TransactionType.ToUpperInvariant();
+
+        var desc = !string.IsNullOrWhiteSpace(dto.Description)
+            ? dto.Description.Trim()
+            : (!string.IsNullOrWhiteSpace(dto.Notes) ? dto.Notes.Trim() : (txType == "PAYMENT" ? "سداد دفعة مالية" : "استحقاق مالي"));
+
+        var tx = new SupplierFinancialTransaction
+        {
+            SupplierId = supplier.Id,
+            TransactionType = txType,
+            Amount = amount,
+            TransactionDate = dto.TransactionDate ?? DateTime.UtcNow,
+            Description = desc,
+            ReferenceNumber = dto.ReferenceNumber?.Trim(),
+            PaymentMethod = dto.PaymentMethod?.Trim(),
+            Notes = dto.Notes?.Trim(),
+            InvoiceId = dto.InvoiceId,
+            CreatedBy = currentUserName,
+            CreatedByUserId = currentUserId,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        // Recalculate supplier balance
+        if (txType == "AMOUNT_OWED" || txType == "CHARGE")
+        {
+            supplier.TotalAmountOwed += amount;
+        }
+        else if (txType == "PAYMENT")
+        {
+            supplier.TotalAmountPaid += amount;
+            supplier.LastPaymentDate = tx.TransactionDate;
+        }
+        else if (txType == "ADJUSTMENT")
+        {
+            supplier.TotalAmountOwed += amount;
+        }
+
+        supplier.RemainingBalance = supplier.TotalAmountOwed - supplier.TotalAmountPaid;
+        supplier.UpdatedAt = DateTime.UtcNow;
+
+        _context.SupplierFinancialTransactions.Add(tx);
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Supplier {SupplierCode} transaction {TxType} {Amount} EGP added. New balance: {Balance} EGP.",
+            supplier.SupplierCode, txType, amount, supplier.RemainingBalance);
+
+        return Ok(ApiResponse<SupplierSummaryDto>.Ok(new SupplierSummaryDto
+        {
+            Id = supplier.Id,
+            SupplierCode = supplier.SupplierCode,
+            Name = supplier.Name,
+            TotalAmountOwed = supplier.TotalAmountOwed,
+            TotalAmountPaid = supplier.TotalAmountPaid,
+            RemainingBalance = supplier.RemainingBalance,
+            LastPaymentDate = supplier.LastPaymentDate,
+            IsActive = supplier.IsActive
+        }));
+    }
+
+    [HttpPost("suppliers/sync")]
+    public async Task<IActionResult> SyncSuppliers()
+    {
+        var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+        if (!AppRoles.HasFinanceAccess(role))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponse.Fail("غير مصرح لك."));
+        }
+
+        await DbInitializer.SynchronizeSuppliersAndPOsAsync(_context, _logger);
+        return Ok(ApiResponse.Ok("تمت مزامنة واستكشاف الموردين من أقسام المعمل والمستودعات وأوامر الشراء بنجاح."));
     }
 
     // ========================================================================
@@ -2464,5 +2876,1428 @@ public class FinanceController : ControllerBase
             _logger.LogError(ex, "Error retrieving employee financial detail for: {Id}", id);
             return StatusCode(StatusCodes.Status500InternalServerError, ApiResponse.Fail("حدث خطأ أثناء جلب تفاصيل الموظف المالية."));
         }
+    }
+
+    // =========================================================================
+    // INVOICES & BILLING MODULE (الفواتير)
+    // =========================================================================
+
+    /// <summary>
+    /// Get Invoices KPI Statistics for Hub Card and View Header.
+    /// </summary>
+    [HttpGet("invoices/statistics")]
+    [ProducesResponseType(typeof(ApiResponse<InvoiceStatisticsDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetInvoiceStatistics()
+    {
+        var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+        if (!AppRoles.HasFinanceAccess(role))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponse.Fail("غير مصرح لك بالوصول لبيانات الفواتير."));
+        }
+
+        try
+        {
+            var total = await _context.Invoices.CountAsync();
+            var drafts = await _context.Invoices.CountAsync(i => i.Status == "DRAFT");
+            var issued = await _context.Invoices.CountAsync(i => i.Status == "ISSUED");
+            var printed = await _context.Invoices.CountAsync(i => i.IsPrinted);
+            var totalAmount = await _context.Invoices
+                .Where(i => i.Status != "CANCELLED")
+                .SumAsync(i => (decimal?)i.TotalAmount) ?? 0m;
+
+            return Ok(ApiResponse<InvoiceStatisticsDto>.Ok(new InvoiceStatisticsDto
+            {
+                TotalInvoices = total,
+                DraftInvoices = drafts,
+                IssuedInvoices = issued,
+                PrintedInvoices = printed,
+                TotalInvoicedAmount = totalAmount
+            }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error loading invoice statistics.");
+            return StatusCode(StatusCodes.Status500InternalServerError, ApiResponse.Fail("حدث خطأ أثناء تحميل إحصائيات الفواتير."));
+        }
+    }
+
+    /// <summary>
+    /// Get paginated list of invoices with filtering.
+    /// </summary>
+    [HttpGet("invoices")]
+    public async Task<IActionResult> GetInvoices([FromQuery] InvoiceQueryParameters query)
+    {
+        var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+        if (!AppRoles.HasFinanceAccess(role))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponse.Fail("غير مصرح لك بالوصول لقائمة الفواتير."));
+        }
+
+        try
+        {
+            var q = _context.Invoices
+                .AsNoTracking()
+                .Include(i => i.Items)
+                .AsQueryable();
+
+            if (!string.IsNullOrWhiteSpace(query.Search))
+            {
+                var s = query.Search.Trim().ToLower();
+                q = q.Where(i => i.InvoiceNumber.ToLower().Contains(s) ||
+                                 i.CompanyName.ToLower().Contains(s) ||
+                                 (i.PONumber != null && i.PONumber.ToLower().Contains(s)) ||
+                                 i.ProjectCodeValue.ToLower().Contains(s) ||
+                                 i.ProjectName.ToLower().Contains(s));
+            }
+
+            if (!string.IsNullOrWhiteSpace(query.Status) && query.Status != "ALL")
+            {
+                if (query.Status.Equals("PRINTED", StringComparison.OrdinalIgnoreCase))
+                {
+                    q = q.Where(i => i.IsPrinted);
+                }
+                else
+                {
+                    var st = query.Status.ToUpper();
+                    q = q.Where(i => i.Status == st);
+                }
+            }
+
+            if (query.ProjectCodeId.HasValue && query.ProjectCodeId.Value > 0)
+            {
+                q = q.Where(i => i.ProjectCodeId == query.ProjectCodeId.Value);
+            }
+
+            if (!string.IsNullOrWhiteSpace(query.PONumber))
+            {
+                var poTrim = query.PONumber.Trim();
+                q = q.Where(i => i.PONumber == poTrim);
+            }
+
+            if (query.CompanyId.HasValue && query.CompanyId.Value > 0)
+            {
+                q = q.Where(i => i.CompanyId == query.CompanyId.Value);
+            }
+
+            if (query.FromDate.HasValue)
+            {
+                q = q.Where(i => i.InvoiceDate >= query.FromDate.Value);
+            }
+
+            if (query.ToDate.HasValue)
+            {
+                q = q.Where(i => i.InvoiceDate <= query.ToDate.Value);
+            }
+
+            var totalCount = await q.CountAsync();
+            var page = Math.Max(1, query.Page);
+            var pageSize = Math.Clamp(query.PageSize, 5, 100);
+
+            var items = await q
+                .OrderByDescending(i => i.CreatedAt)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .Select(i => new InvoiceSummaryDto
+                {
+                    Id = i.Id,
+                    InvoiceNumber = i.InvoiceNumber,
+                    InvoiceDate = i.InvoiceDate,
+                    ProjectCodeId = i.ProjectCodeId,
+                    ProjectCodeValue = i.ProjectCodeValue,
+                    ProjectName = i.ProjectName,
+                    RelatedEntityType = i.RelatedEntityType,
+                    PurchaseOrderId = i.PurchaseOrderId,
+                    PONumber = i.PONumber,
+                    SupplierId = i.SupplierId,
+                    SupplierName = i.SupplierName,
+                    MaterialName = i.MaterialName,
+                    CompanyName = i.CompanyName,
+                    TransactionCount = i.Items.Count,
+                    InvoicedQuantity = i.InvoicedQuantity ?? i.Items.Sum(it => it.Quantity),
+                    Subtotal = i.Subtotal,
+                    ShippingPrice = i.ShippingPrice,
+                    TaxRate = i.TaxRate,
+                    TaxAmount = i.TaxAmount,
+                    DiscountAmount = i.DiscountAmount,
+                    TotalAmount = i.TotalAmount,
+                    Status = i.Status,
+                    IsPrinted = i.IsPrinted,
+                    PrintedAt = i.PrintedAt,
+                    CreatedBy = i.CreatedBy,
+                    CreatedAt = i.CreatedAt
+                })
+                .ToListAsync();
+
+            return Ok(new
+            {
+                success = true,
+                message = "تم استرجاع قائمة الفواتير بنجاح.",
+                data = items,
+                totalCount,
+                page,
+                pageSize
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching invoices list.");
+            return StatusCode(StatusCodes.Status500InternalServerError, ApiResponse.Fail("حدث خطأ أثناء جلب قائمة الفواتير."));
+        }
+    }
+
+    /// <summary>
+    /// Get Project Codes list for Invoice creation/filter dropdown.
+    /// </summary>
+    [HttpGet("invoices/project-codes")]
+    [ProducesResponseType(typeof(ApiResponse<List<ProjectCodeDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetInvoiceProjectCodes()
+    {
+        var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+        if (!AppRoles.HasFinanceAccess(role))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponse.Fail("غير مصرح لك."));
+        }
+
+        var codes = await _context.ProjectCodes
+            .AsNoTracking()
+            .Where(p => p.IsActive)
+            .OrderBy(p => p.Code)
+            .Select(p => new ProjectCodeDto
+            {
+                Id = p.Id,
+                Code = p.Code,
+                ProjectName = p.ProjectName,
+                ClientName = p.ClientName,
+                Description = p.Description,
+                IsActive = p.IsActive
+            })
+            .ToListAsync();
+
+        return Ok(ApiResponse<List<ProjectCodeDto>>.Ok(codes));
+    }
+
+    /// <summary>
+    /// Get Companies (StorageClients) for Invoice association.
+    /// </summary>
+    [HttpGet("invoices/companies")]
+    public async Task<IActionResult> GetInvoiceCompanies()
+    {
+        var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+        if (!AppRoles.HasFinanceAccess(role))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponse.Fail("غير مصرح لك."));
+        }
+
+        var clients = await _context.StorageClients
+            .AsNoTracking()
+            .Where(c => c.IsActive)
+            .OrderBy(c => c.Name)
+            .Select(c => new
+            {
+                c.Id,
+                c.Name,
+                c.PhoneNumber
+            })
+            .ToListAsync();
+
+        return Ok(ApiResponse<object>.Ok(clients));
+    }
+
+    /// <summary>
+    /// Get Purchase Orders for Invoice association with live delivered and remaining quantities.
+    /// </summary>
+    [HttpGet("invoices/purchase-orders")]
+    [ProducesResponseType(typeof(ApiResponse<List<EligiblePurchaseOrderDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetInvoicePurchaseOrders()
+    {
+        var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+        if (!AppRoles.HasFinanceAccess(role))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponse.Fail("غير مصرح لك."));
+        }
+
+        var issuedInvoices2 = await _context.Invoices
+            .AsNoTracking()
+            .Where(i => i.Status == "ISSUED" && i.PurchaseOrderId.HasValue)
+            .Select(i => new {
+                PoId = i.PurchaseOrderId!.Value,
+                InvoicedQty = i.InvoicedQuantity ?? (i.Items.Any() ? i.Items.Sum(it => it.Quantity) : 0m)
+            })
+            .ToListAsync();
+
+        var activeInvoices = issuedInvoices2
+            .GroupBy(x => x.PoId)
+            .ToDictionary(g => g.Key, g => g.Sum(x => x.InvoicedQty));
+
+        var pos = await _context.PurchaseOrders
+            .AsNoTracking()
+            .OrderByDescending(p => p.OrderDate)
+            .ToListAsync();
+
+        var dtos = pos.Select(p =>
+        {
+            var prevInvoiced = activeInvoices.TryGetValue(p.Id, out var inv) ? inv : 0m;
+            var remaining = Math.Max(0m, p.Quantity - prevInvoiced);
+            var tonPrice = p.TonPrice > 0 ? p.TonPrice : (p.PricePerTon > 0 ? p.PricePerTon : 0m);
+            return new EligiblePurchaseOrderDto
+            {
+                Id = p.Id,
+                PONumber = p.PONumber,
+                SupplierId = p.SupplierId,
+                SupplierName = p.Supplier,
+                MaterialName = !string.IsNullOrWhiteSpace(p.MaterialName) ? p.MaterialName : "مواد خرسانية / ركام",
+                OrderedQuantity = p.Quantity,
+                PreviouslyInvoicedQuantity = prevInvoiced,
+                RemainingQuantity = remaining,
+                Unit = !string.IsNullOrWhiteSpace(p.Unit) ? p.Unit : "طن",
+                UnitPrice = tonPrice,
+                TotalValue = Math.Round(p.Quantity * tonPrice, 2),
+                OrderDate = p.OrderDate,
+                Destination = p.Destination
+            };
+        }).ToList();
+
+        return Ok(ApiResponse<List<EligiblePurchaseOrderDto>>.Ok(dtos));
+    }
+
+    /// <summary>
+    /// Shared helper to retrieve approved Transportation transactions belonging exclusively to a ProjectCode
+    /// that still have remaining un-invoiced net weight.
+    /// </summary>
+    private async Task<List<EligibleTransportationTransactionDto>> FetchEligibleTransportationsForProjectAsync(ProjectCode prj)
+    {
+        var normalizedCode = (prj.Code ?? string.Empty).Trim();
+        var transList = await _context.Transportations
+            .AsNoTracking()
+            .Where(t => (t.ProjectCodeId == prj.Id
+                         || (t.ProjectCodeId == null && t.ProjectCodeValue != null && t.ProjectCodeValue == normalizedCode))
+                        && t.ApprovalStatus != "REJECTED"
+                        && t.NetWeight > 0)
+            .OrderByDescending(t => t.TransactionDate)
+            .ToListAsync();
+
+        if (transList.Count == 0)
+        {
+            return new List<EligibleTransportationTransactionDto>();
+        }
+
+        var transIds = transList.Select(t => t.Id).ToList();
+
+        var invoicedMap = await _context.InvoiceItems
+            .AsNoTracking()
+            .Where(ii => ii.TransportationId.HasValue && transIds.Contains(ii.TransportationId.Value) && ii.Invoice.Status != "CANCELLED")
+            .GroupBy(ii => ii.TransportationId!.Value)
+            .Select(g => new { TransportationId = g.Key, InvoicedQty = g.Sum(x => x.Quantity) })
+            .ToDictionaryAsync(x => x.TransportationId, x => x.InvoicedQty);
+
+        var result = new List<EligibleTransportationTransactionDto>();
+
+        foreach (var t in transList)
+        {
+            var invoiced = invoicedMap.TryGetValue(t.Id, out var inv) ? inv : 0m;
+            var remaining = Math.Max(0m, t.NetWeight - invoiced);
+
+            if (remaining <= 0.0001m) continue;
+
+            result.Add(new EligibleTransportationTransactionDto
+            {
+                TransportationId = t.Id,
+                TransactionNumber = t.TransactionNumber,
+                WarehouseExportNumber = !string.IsNullOrWhiteSpace(t.ExportTransactionNumber)
+                    ? t.ExportTransactionNumber
+                    : (t.StorageOperationId.HasValue ? $"#{t.StorageOperationId.Value}" : "-"),
+                ProductName = !string.IsNullOrWhiteSpace(t.MaterialType) ? t.MaterialType : "منتج خرساني / مادة خام",
+                ReferenceNumber = t.ManufactureNumber ?? (t.StorageOperationId.HasValue ? $"EXP-{t.StorageOperationId}" : t.PONumber),
+                BatchNumber = t.BatchNumber ?? "-",
+                ProductionOrderNumber = t.ProductionOrderId.HasValue ? $"PO-{t.ProductionOrderId}" : null,
+                TotalTransportedQuantity = t.NetWeight,
+                PreviouslyInvoicedQuantity = invoiced,
+                RemainingInvoicableQuantity = remaining,
+                Unit = "طن",
+                TransactionDate = t.TransactionDate,
+                Destination = !string.IsNullOrWhiteSpace(t.Destination) ? t.Destination : (prj.ProjectName ?? "-"),
+                ProjectCodeId = prj.Id,
+                ProjectCodeValue = prj.Code,
+                ProjectName = prj.ProjectName ?? string.Empty,
+                CarNumber = t.CarNumber,
+                DriverName = t.DriverName
+            });
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Get all project details + eligible un-invoiced Transportation transactions for a Project Code.
+    /// Used by the Project-Code-only Invoice Creation workflow.
+    /// </summary>
+    [HttpGet("invoices/project-data")]
+    [ProducesResponseType(typeof(ApiResponse<ProjectInvoiceDataDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetProjectInvoiceData([FromQuery] int projectCodeId)
+    {
+        var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+        if (!AppRoles.HasFinanceAccess(role))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponse.Fail("غير مصرح لك بالوصول لبيانات فواتير المشاريع."));
+        }
+
+        if (projectCodeId <= 0)
+        {
+            return BadRequest(ApiResponse.Fail("يرجى اختيار كود المشروع أولاً."));
+        }
+
+        try
+        {
+            var prj = await _context.ProjectCodes
+                .AsNoTracking()
+                .Include(p => p.StorageClientDestination!)
+                    .ThenInclude(d => d.StorageClient)
+                .FirstOrDefaultAsync(p => p.Id == projectCodeId);
+
+            if (prj == null)
+            {
+                return NotFound(ApiResponse.Fail("كود المشروع المحدد غير موجود في قاعدة البيانات."));
+            }
+
+            var eligible = await FetchEligibleTransportationsForProjectAsync(prj);
+
+            var linkedClient = prj.StorageClientDestination?.StorageClient;
+            if (linkedClient == null && !string.IsNullOrWhiteSpace(prj.ClientName))
+            {
+                var clientNameTrimmed = prj.ClientName.Trim();
+                linkedClient = await _context.StorageClients
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(c => c.Name == clientNameTrimmed);
+            }
+
+            string resolvedClientName = !string.IsNullOrWhiteSpace(linkedClient?.Name)
+                ? linkedClient.Name
+                : (!string.IsNullOrWhiteSpace(prj.ClientName) ? prj.ClientName : "عميل فيس ستون");
+
+            string? resolvedAddress = !string.IsNullOrWhiteSpace(prj.StorageClientDestination?.DestinationName)
+                ? prj.StorageClientDestination.DestinationName
+                : eligible.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x.Destination))?.Destination;
+
+            var payload = new ProjectInvoiceDataDto
+            {
+                ProjectCodeId = prj.Id,
+                Code = prj.Code,
+                ProjectName = prj.ProjectName,
+                ClientName = resolvedClientName,
+                Description = prj.Description,
+                CompanyId = linkedClient?.Id,
+                CompanyName = resolvedClientName,
+                CompanyPhone = linkedClient?.PhoneNumber,
+                CompanyAddress = resolvedAddress,
+                HasEligibleRecords = eligible.Count > 0,
+                Message = eligible.Count > 0
+                    ? null
+                    : $"لا توجد معاملات نقل مؤهلة أو متبقية للفوترة تابعة لكود المشروع ({prj.Code}) حالياً.",
+                EligibleTransportations = eligible
+            };
+
+            return Ok(ApiResponse<ProjectInvoiceDataDto>.Ok(payload));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching project invoice data for ProjectCodeId={ProjectCodeId}", projectCodeId);
+            return StatusCode(StatusCodes.Status500InternalServerError, ApiResponse.Fail("حدث خطأ أثناء استرجاع بيانات المشروع للفوترة."));
+        }
+    }
+
+    /// <summary>
+    /// Retrieve eligible Transportation transactions for a specific Project Code.
+    /// Calculates previously invoiced quantities and remaining uninvoiced quantities.
+    /// Excludes fully invoiced transactions.
+    /// </summary>
+    [HttpGet("invoices/eligible-transportations")]
+    [ProducesResponseType(typeof(ApiResponse<List<EligibleTransportationTransactionDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetEligibleTransportations([FromQuery] int projectCodeId)
+    {
+        var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+        if (!AppRoles.HasFinanceAccess(role))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponse.Fail("غير مصرح لك بالوصول لمعاملات النقل."));
+        }
+
+        if (projectCodeId <= 0)
+        {
+            return BadRequest(ApiResponse.Fail("كود المشروع مطلوب."));
+        }
+
+        try
+        {
+            var prj = await _context.ProjectCodes.AsNoTracking().FirstOrDefaultAsync(p => p.Id == projectCodeId);
+            if (prj == null)
+            {
+                return NotFound(ApiResponse.Fail("كود المشروع المحدد غير موجود."));
+            }
+
+            var result = await FetchEligibleTransportationsForProjectAsync(prj);
+            var message = result.Count == 0 ? "لا توجد معاملات نقل مسجلة لهذا المشروع حالياً." : null;
+            return Ok(ApiResponse<List<EligibleTransportationTransactionDto>>.Ok(result, message));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching eligible transportation transactions for project code: {ProjectCodeId}", projectCodeId);
+            return StatusCode(StatusCodes.Status500InternalServerError, ApiResponse.Fail("حدث خطأ أثناء جلب معاملات النقل المؤهلة للفوترة."));
+        }
+    }
+
+    /// <summary>
+    /// Get single Invoice by ID with all details.
+    /// </summary>
+    [HttpGet("invoices/{id:int}")]
+    [ProducesResponseType(typeof(ApiResponse<InvoiceDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetInvoiceById(int id)
+    {
+        var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+        if (!AppRoles.HasFinanceAccess(role))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponse.Fail("غير مصرح لك بالوصول لبيانات الفاتورة."));
+        }
+
+        var inv = await _context.Invoices
+            .AsNoTracking()
+            .Include(i => i.Items)
+            .Include(i => i.ProjectCode)
+            .Include(i => i.Company)
+            .Include(i => i.PurchaseOrder)
+            .FirstOrDefaultAsync(i => i.Id == id);
+
+        if (inv == null)
+        {
+            return NotFound(ApiResponse.Fail("الفاتورة المطلوبة غير موجودة."));
+        }
+
+        var dto = new InvoiceDto
+        {
+            Id = inv.Id,
+            InvoiceNumber = inv.InvoiceNumber,
+            InvoiceDate = inv.InvoiceDate,
+            ProjectCodeId = inv.ProjectCodeId,
+            ProjectCodeValue = inv.ProjectCodeValue,
+            ProjectName = inv.ProjectName,
+            RelatedEntityType = inv.RelatedEntityType,
+            PurchaseOrderId = inv.PurchaseOrderId,
+            PONumber = inv.PONumber,
+            SupplierId = inv.SupplierId,
+            SupplierName = inv.SupplierName,
+            MaterialName = inv.MaterialName,
+            OrderedQuantity = inv.OrderedQuantity,
+            InvoicedQuantity = inv.InvoicedQuantity ?? inv.Items.Sum(it => it.Quantity),
+            PoUnitPrice = inv.PoUnitPrice,
+            InvoiceUnitPrice = inv.InvoiceUnitPrice,
+            PriceChangedBy = inv.PriceChangedBy,
+            PriceChangedAt = inv.PriceChangedAt,
+            CompanyId = inv.CompanyId,
+            CompanyName = inv.CompanyName,
+            CompanyAddress = inv.CompanyAddress,
+            CompanyTaxNumber = inv.CompanyTaxNumber,
+            CompanyPhone = inv.CompanyPhone,
+            Subtotal = inv.Subtotal,
+            ShippingPrice = inv.ShippingPrice,
+            TaxRate = inv.TaxRate,
+            TaxAmount = inv.TaxAmount,
+            DiscountAmount = inv.DiscountAmount,
+            TotalAmount = inv.TotalAmount,
+            Status = inv.Status,
+            IsPrinted = inv.IsPrinted,
+            PrintedAt = inv.PrintedAt,
+            Notes = inv.Notes,
+            CreatedBy = inv.CreatedBy,
+            CreatedAt = inv.CreatedAt,
+            UpdatedAt = inv.UpdatedAt,
+            Items = inv.Items.Select(item => new InvoiceItemDto
+            {
+                Id = item.Id,
+                InvoiceId = item.InvoiceId,
+                TransportationId = item.TransportationId,
+                TransportationTransactionNumber = item.TransportationTransactionNumber,
+                PurchaseOrderId = item.PurchaseOrderId,
+                PONumber = item.PONumber,
+                WarehouseExportNumber = item.WarehouseExportNumber,
+                ProductName = item.ProductName,
+                ReferenceNumber = item.ReferenceNumber,
+                BatchNumber = item.BatchNumber,
+                ProductionOrderNumber = item.ProductionOrderNumber,
+                Quantity = item.Quantity,
+                Unit = item.Unit,
+                UnitPrice = item.UnitPrice,
+                LineTotal = item.LineTotal,
+                Destination = item.Destination,
+                TransactionDate = item.TransactionDate
+            }).ToList()
+        };
+
+        return Ok(ApiResponse<InvoiceDto>.Ok(dto));
+    }
+
+    /// <summary>
+    /// Create new Invoice (Draft or Issued) with concurrency protection.
+    /// Supports direct Purchase Order selection with partial invoicing, editable unit price,
+    /// shipping price, dynamic calculations, and supplier financial synchronization.
+    /// </summary>
+    [HttpPost("invoices")]
+    [ProducesResponseType(typeof(ApiResponse<InvoiceDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> CreateInvoice([FromBody] CreateInvoiceDto dto)
+    {
+        var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+        if (!AppRoles.HasFinanceAccess(role))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponse.Fail("غير مصرح لك بإنشاء أو إصدار الفواتير."));
+        }
+
+        if (!ModelState.IsValid)
+        {
+            var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
+            return BadRequest(ApiResponse.Fail("بيانات الفاتورة غير مكتملة.", errors));
+        }
+
+        var currentUserName = User.FindFirst(ClaimTypes.Name)?.Value ?? "المدير المالي";
+        var currentUserIdStr = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        Guid? currentUserId = Guid.TryParse(currentUserIdStr, out var gid) ? gid : null;
+
+        // Generate unique invoice number: FS-INV-YYYY-XXXX
+        var year = DateTime.UtcNow.Year;
+        var prefix = $"FS-INV-{year}-";
+        var maxExisting = await _context.Invoices
+            .Where(i => i.InvoiceNumber.StartsWith(prefix))
+            .Select(i => i.InvoiceNumber)
+            .ToListAsync();
+
+        int nextSeq = 1;
+        if (maxExisting.Count > 0)
+        {
+            var seqs = maxExisting
+                .Select(n => int.TryParse(n.Replace(prefix, string.Empty), out var s) ? s : 0)
+                .ToList();
+            nextSeq = seqs.Max() + 1;
+        }
+        var invoiceNumber = $"{prefix}{nextSeq:D4}";
+
+        using var dbTransaction = await _context.Database.BeginTransactionAsync();
+        try
+        {
+            // ==========================================================
+            // BRANCH 1: INVOICE LINKED TO PURCHASE ORDER (Legacy/PO Direct API)
+            // ==========================================================
+            if ((dto.RelatedEntityType.Equals("PURCHASE_ORDER", StringComparison.OrdinalIgnoreCase) && !dto.ProjectCodeId.HasValue) || dto.PurchaseOrderId.HasValue)
+            {
+                var poId = dto.PurchaseOrderId ?? 0;
+                var po = await _context.PurchaseOrders
+                    .Include(p => p.SupplierEntity)
+                    .FirstOrDefaultAsync(p => p.Id == poId || (!string.IsNullOrWhiteSpace(dto.PONumber) && p.PONumber == dto.PONumber.Trim()));
+
+                if (po == null)
+                {
+                    await dbTransaction.RollbackAsync();
+                    return BadRequest(ApiResponse.Fail("أمر الشراء المحدد غير موجود في النظام."));
+                }
+
+                // Calculate live previously invoiced quantity from all existing ISSUED invoices
+                var previouslyInvoicedList = await _context.Invoices
+                    .AsNoTracking()
+                    .Where(i => i.PurchaseOrderId == po.Id && i.Status == "ISSUED")
+                    .Select(i => i.InvoicedQuantity ?? (i.Items.Any() ? i.Items.Sum(it => it.Quantity) : 0m))
+                    .ToListAsync();
+                var previouslyInvoiced = previouslyInvoicedList.Sum();
+
+                var remainingOrderQty = Math.Max(0m, po.Quantity - previouslyInvoiced);
+
+                // Determine quantity to invoice
+                decimal qtyToBill = (dto.InvoicedQuantity.HasValue && dto.InvoicedQuantity.Value > 0)
+                    ? dto.InvoicedQuantity.Value
+                    : (dto.Items != null && dto.Items.Count > 0 ? dto.Items.Sum(x => x.Quantity ?? 0m) : 0m);
+
+                if (qtyToBill <= 0.0001m)
+                {
+                    await dbTransaction.RollbackAsync();
+                    return BadRequest(ApiResponse.Fail("يجب تحديد كمية صالحة للفوترة أكبر من الصفر."));
+                }
+
+                // Strict validation: Invoiced Quantity <= Remaining Quantity
+                if (qtyToBill > remainingOrderQty + 0.0001m)
+                {
+                    await dbTransaction.RollbackAsync();
+                    return BadRequest(ApiResponse.Fail($"الكمية المطلوبة ({qtyToBill:N3} {po.Unit ?? "طن"}) تتجاوز الكمية المتبقية للتوريد في أمر الشراء ({remainingOrderQty:N3} {po.Unit ?? "طن"})."));
+                }
+
+                // Unit Price logic: Default to PO price, allow Finance Manager to edit
+                decimal poTonPrice = po.TonPrice > 0 ? po.TonPrice : (po.PricePerTon > 0 ? po.PricePerTon : 0m);
+                decimal invoiceUnitPrice = (dto.InvoiceUnitPrice.HasValue && dto.InvoiceUnitPrice.Value > 0)
+                    ? dto.InvoiceUnitPrice.Value
+                    : (dto.Items != null && dto.Items.Count > 0 && dto.Items[0].UnitPrice > 0 ? dto.Items[0].UnitPrice : poTonPrice);
+
+                if (invoiceUnitPrice < 0)
+                {
+                    await dbTransaction.RollbackAsync();
+                    return BadRequest(ApiResponse.Fail("سعر الوحدة يجب أن يكون رقماً موجباً."));
+                }
+
+                string? priceChangedBy = null;
+                DateTime? priceChangedAt = null;
+                if (Math.Abs(invoiceUnitPrice - poTonPrice) > 0.001m)
+                {
+                    priceChangedBy = currentUserName;
+                    priceChangedAt = DateTime.UtcNow;
+                }
+
+                // Calculations
+                decimal shippingPrice = Math.Max(0m, dto.ShippingPrice);
+                decimal subtotal = Math.Round(qtyToBill * invoiceUnitPrice, 3);
+                decimal taxRate = Math.Max(0m, dto.TaxRate);
+                decimal taxAmount = Math.Round(subtotal * (taxRate / 100m), 3);
+                decimal discount = Math.Max(0m, dto.DiscountAmount);
+                decimal totalAmount = Math.Round(Math.Max(0m, subtotal + shippingPrice + taxAmount - discount), 3);
+
+                // Optional Project Code
+                ProjectCode? prj = null;
+                if (dto.ProjectCodeId.HasValue && dto.ProjectCodeId.Value > 0)
+                {
+                    prj = await _context.ProjectCodes.FirstOrDefaultAsync(p => p.Id == dto.ProjectCodeId.Value);
+                }
+
+                // Resolve Supplier details
+                int? supplierId = po.SupplierId ?? dto.SupplierId;
+                string supplierName = !string.IsNullOrWhiteSpace(dto.SupplierName) 
+                    ? dto.SupplierName.Trim() 
+                    : (!string.IsNullOrWhiteSpace(po.Supplier) ? po.Supplier : "مورد فيس ستون");
+                string materialName = !string.IsNullOrWhiteSpace(dto.MaterialName)
+                    ? dto.MaterialName.Trim()
+                    : (!string.IsNullOrWhiteSpace(po.MaterialName) ? po.MaterialName : "مواد خام");
+
+                var itemEntities = new List<InvoiceItem>();
+                if (dto.Items != null && dto.Items.Any(x => x.TransportationId.HasValue))
+                {
+                    foreach (var it in dto.Items.Where(x => x.TransportationId.HasValue))
+                    {
+                        var t = await _context.Transportations.FirstOrDefaultAsync(tr => tr.Id == it.TransportationId!.Value);
+                        itemEntities.Add(new InvoiceItem
+                        {
+                            TransportationId = t?.Id,
+                            TransportationTransactionNumber = t?.TransactionNumber ?? 0,
+                            WarehouseExportNumber = t?.ExportTransactionNumber ?? (t != null && t.StorageOperationId.HasValue ? $"#{t.StorageOperationId.Value}" : null),
+                            ProductName = materialName,
+                            PurchaseOrderId = po.Id,
+                            PONumber = po.PONumber,
+                            Quantity = it.Quantity ?? qtyToBill,
+                            Unit = !string.IsNullOrWhiteSpace(po.Unit) ? po.Unit : "طن",
+                            UnitPrice = it.UnitPrice > 0 ? it.UnitPrice : invoiceUnitPrice,
+                            LineTotal = Math.Round((it.Quantity ?? qtyToBill) * (it.UnitPrice > 0 ? it.UnitPrice : invoiceUnitPrice), 3),
+                            Destination = po.Destination,
+                            TransactionDate = t?.TransactionDate ?? po.OrderDate
+                        });
+                    }
+                }
+                else
+                {
+                    itemEntities.Add(new InvoiceItem
+                    {
+                        PurchaseOrderId = po.Id,
+                        PONumber = po.PONumber,
+                        ProductName = materialName,
+                        Quantity = qtyToBill,
+                        Unit = !string.IsNullOrWhiteSpace(po.Unit) ? po.Unit : "طن",
+                        UnitPrice = invoiceUnitPrice,
+                        LineTotal = subtotal,
+                        Destination = po.Destination,
+                        TransactionDate = po.OrderDate
+                    });
+                }
+
+                var invoice = new Invoice
+                {
+                    InvoiceNumber = invoiceNumber,
+                    InvoiceDate = DateTime.UtcNow,
+                    ProjectCodeId = prj?.Id,
+                    ProjectCodeValue = prj?.Code ?? string.Empty,
+                    ProjectName = prj?.ProjectName ?? string.Empty,
+                    RelatedEntityType = "PURCHASE_ORDER",
+                    PurchaseOrderId = po.Id,
+                    PONumber = po.PONumber,
+                    SupplierId = supplierId,
+                    SupplierName = supplierName,
+                    MaterialName = materialName,
+                    OrderedQuantity = po.Quantity,
+                    InvoicedQuantity = qtyToBill,
+                    PoUnitPrice = poTonPrice,
+                    InvoiceUnitPrice = invoiceUnitPrice,
+                    PriceChangedBy = priceChangedBy,
+                    PriceChangedAt = priceChangedAt,
+                    CompanyName = supplierName,
+                    Subtotal = subtotal,
+                    ShippingPrice = shippingPrice,
+                    TaxRate = taxRate,
+                    TaxAmount = taxAmount,
+                    DiscountAmount = discount,
+                    TotalAmount = totalAmount,
+                    Status = dto.Status.ToUpperInvariant() == "DRAFT" ? "DRAFT" : "ISSUED",
+                    IsPrinted = false,
+                    Notes = dto.Notes?.Trim(),
+                    CreatedBy = currentUserName,
+                    CreatedByUserId = currentUserId,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow,
+                    Items = itemEntities
+                };
+
+                _context.Invoices.Add(invoice);
+
+                // If invoice is ISSUED, update Purchase Order delivered/remaining quantity and supplier balance
+                if (invoice.Status == "ISSUED")
+                {
+                    po.DeliveredQuantity = previouslyInvoiced + qtyToBill;
+                    po.RemainingQuantity = Math.Max(0m, po.Quantity - po.DeliveredQuantity);
+                    if (po.RemainingQuantity <= 0.0001m)
+                    {
+                        po.Status = "COMPLETED";
+                    }
+                    po.UpdatedAt = DateTime.UtcNow;
+
+                    // Update Supplier Financial Record
+                    if (supplierId.HasValue)
+                    {
+                        var sup = await _context.Suppliers.FirstOrDefaultAsync(s => s.Id == supplierId.Value);
+                        if (sup != null)
+                        {
+                            sup.TotalAmountOwed += totalAmount;
+                            sup.RemainingBalance = Math.Round(sup.TotalAmountOwed - sup.TotalAmountPaid, 2);
+                            sup.UpdatedAt = DateTime.UtcNow;
+
+                            _context.SupplierFinancialTransactions.Add(new SupplierFinancialTransaction
+                            {
+                                SupplierId = sup.Id,
+                                TransactionType = "AMOUNT_OWED",
+                                Amount = totalAmount,
+                                TransactionDate = invoice.InvoiceDate,
+                                PaymentMethod = "INVOICE",
+                                ReferenceNumber = invoice.InvoiceNumber,
+                                Notes = $"فاتورة معتمدة رقم {invoice.InvoiceNumber} لأمر الشراء {po.PONumber} ({materialName})",
+                                CreatedBy = currentUserName,
+                                CreatedAt = DateTime.UtcNow
+                            });
+                        }
+                    }
+                }
+
+                await _context.SaveChangesAsync();
+                await dbTransaction.CommitAsync();
+
+                _logger.LogInformation("Invoice {InvoiceNumber} created for PO {PO} (Status: {Status}). Total: {Total} EGP.",
+                    invoice.InvoiceNumber, po.PONumber, invoice.Status, invoice.TotalAmount);
+
+                return Ok(ApiResponse<InvoiceDto>.Ok(MapToInvoiceDto(invoice), "تم إنشاء الفاتورة بنجاح."));
+            }
+
+            // ==========================================================
+            // BRANCH 2: INVOICE LINKED TO PROJECT CODE / TRANSPORTATION
+            // ==========================================================
+            if (!dto.ProjectCodeId.HasValue || dto.ProjectCodeId.Value <= 0)
+            {
+                await dbTransaction.RollbackAsync();
+                return BadRequest(ApiResponse.Fail("يرجى اختيار كود المشروع أولاً لإنشاء الفاتورة."));
+            }
+
+            if (dto.Items == null || dto.Items.Count == 0)
+            {
+                await dbTransaction.RollbackAsync();
+                return BadRequest(ApiResponse.Fail("لا توجد بنود نقل مؤهلة للفوترة لهذا المشروع. تعذر إنشاء الفاتورة."));
+            }
+
+            var prjCode = await _context.ProjectCodes
+                .Include(p => p.StorageClientDestination!)
+                    .ThenInclude(d => d.StorageClient)
+                .FirstOrDefaultAsync(p => p.Id == dto.ProjectCodeId.Value);
+
+            if (prjCode == null)
+            {
+                await dbTransaction.RollbackAsync();
+                return BadRequest(ApiResponse.Fail("كود المشروع المحدد غير موجود في النظام."));
+            }
+
+            var linkedClient = prjCode.StorageClientDestination?.StorageClient;
+            if (linkedClient == null && !string.IsNullOrWhiteSpace(prjCode.ClientName))
+            {
+                var clientNameTrimmed = prjCode.ClientName.Trim();
+                linkedClient = await _context.StorageClients
+                    .FirstOrDefaultAsync(c => c.Name == clientNameTrimmed);
+            }
+
+            string companyName = string.Empty;
+            string? companyPhone = null;
+            string? companyAddress = null;
+            string? companyTaxNum = null;
+            int? resolvedCompanyId = null;
+
+            if (dto.CompanyId.HasValue && dto.CompanyId.Value > 0)
+            {
+                var cl = await _context.StorageClients.FirstOrDefaultAsync(c => c.Id == dto.CompanyId.Value);
+                if (cl != null)
+                {
+                    resolvedCompanyId = cl.Id;
+                    companyName = cl.Name;
+                    companyPhone = cl.PhoneNumber;
+                }
+            }
+            else if (linkedClient != null)
+            {
+                resolvedCompanyId = linkedClient.Id;
+                companyName = linkedClient.Name;
+                companyPhone = linkedClient.PhoneNumber;
+            }
+
+            if (!string.IsNullOrWhiteSpace(dto.CompanyName))
+            {
+                companyName = dto.CompanyName.Trim();
+            }
+            else if (string.IsNullOrWhiteSpace(companyName))
+            {
+                companyName = !string.IsNullOrWhiteSpace(prjCode.ClientName) ? prjCode.ClientName : "عميل فيس ستون";
+            }
+
+            companyPhone = !string.IsNullOrWhiteSpace(dto.CompanyPhone) ? dto.CompanyPhone.Trim() : companyPhone;
+            companyAddress = !string.IsNullOrWhiteSpace(dto.CompanyAddress)
+                ? dto.CompanyAddress.Trim()
+                : (prjCode.StorageClientDestination?.DestinationName ?? "جمهورية مصر العربية");
+            companyTaxNum = dto.CompanyTaxNumber?.Trim();
+
+            var itemEntitiesCompany = new List<InvoiceItem>();
+            decimal subtotalComp = 0m;
+
+            var transIds = dto.Items.Where(x => x.TransportationId.HasValue).Select(x => x.TransportationId!.Value).Distinct().ToList();
+            var transportations = await _context.Transportations
+                .Where(t => transIds.Contains(t.Id))
+                .ToDictionaryAsync(t => t.Id, t => t);
+
+            var liveInvoicedMap = await _context.InvoiceItems
+                .Where(ii => ii.TransportationId.HasValue && transIds.Contains(ii.TransportationId.Value) && ii.Invoice.Status != "CANCELLED")
+                .GroupBy(ii => ii.TransportationId!.Value)
+                .Select(g => new { TransportationId = g.Key, InvoicedQty = g.Sum(x => x.Quantity) })
+                .ToDictionaryAsync(x => x.TransportationId, x => x.InvoicedQty);
+
+            var seenTransIds = new HashSet<int>();
+            var normalizedPrjCode = (prjCode.Code ?? string.Empty).Trim();
+
+            foreach (var itemDto in dto.Items)
+            {
+                if (!itemDto.TransportationId.HasValue || !transportations.TryGetValue(itemDto.TransportationId.Value, out var t))
+                {
+                    await dbTransaction.RollbackAsync();
+                    return BadRequest(ApiResponse.Fail($"معاملة النقل رقم {itemDto.TransportationId} غير موجودة."));
+                }
+
+                if (!seenTransIds.Add(t.Id))
+                {
+                    await dbTransaction.RollbackAsync();
+                    return BadRequest(ApiResponse.Fail($"تم تكرار معاملة النقل #{t.TransactionNumber} في نفس الفاتورة."));
+                }
+
+                bool belongsToProject = t.ProjectCodeId == prjCode.Id
+                    || (t.ProjectCodeId == null && !string.IsNullOrWhiteSpace(t.ProjectCodeValue) && string.Equals(t.ProjectCodeValue.Trim(), normalizedPrjCode, StringComparison.OrdinalIgnoreCase));
+                if (!belongsToProject)
+                {
+                    await dbTransaction.RollbackAsync();
+                    return BadRequest(ApiResponse.Fail($"معاملة النقل #{t.TransactionNumber} لا تنتمي إلى كود المشروع المحدد ({prjCode.Code})."));
+                }
+
+                if (string.Equals(t.ApprovalStatus, "REJECTED", StringComparison.OrdinalIgnoreCase))
+                {
+                    await dbTransaction.RollbackAsync();
+                    return BadRequest(ApiResponse.Fail($"معاملة النقل #{t.TransactionNumber} مرفوضة ولا يمكن فوترتها."));
+                }
+
+                if (itemDto.UnitPrice <= 0)
+                {
+                    await dbTransaction.RollbackAsync();
+                    return BadRequest(ApiResponse.Fail($"سعر الوحدة للمعاملة #{t.TransactionNumber} يجب أن يكون رقماً موجباً أكبر من الصفر."));
+                }
+
+                var previouslyInvoiced = liveInvoicedMap.TryGetValue(t.Id, out var inv) ? inv : 0m;
+                var remainingInvoicable = Math.Max(0m, t.NetWeight - previouslyInvoiced);
+
+                if (remainingInvoicable <= 0.0001m)
+                {
+                    await dbTransaction.RollbackAsync();
+                    return BadRequest(ApiResponse.Fail($"معاملة النقل #{t.TransactionNumber} تم فوترة كامل كميتها مسبقاً ({t.NetWeight:N3} طن). لا يمكن تكرار فوترتها."));
+                }
+
+                decimal qtyToBill = (itemDto.Quantity.HasValue && itemDto.Quantity.Value > 0)
+                    ? itemDto.Quantity.Value
+                    : remainingInvoicable;
+
+                if (qtyToBill > remainingInvoicable + 0.0001m)
+                {
+                    await dbTransaction.RollbackAsync();
+                    return BadRequest(ApiResponse.Fail($"الكمية المطلوبة ({qtyToBill:N3} طن) للمعاملة #{t.TransactionNumber} تتجاوز الرصيد المتاح للفوترة ({remainingInvoicable:N3} طن)."));
+                }
+
+                decimal lineTotal = Math.Round(qtyToBill * itemDto.UnitPrice, 3);
+                subtotalComp += lineTotal;
+
+                itemEntitiesCompany.Add(new InvoiceItem
+                {
+                    TransportationId = t.Id,
+                    TransportationTransactionNumber = t.TransactionNumber,
+                    WarehouseExportNumber = t.ExportTransactionNumber ?? (t.StorageOperationId.HasValue ? $"#{t.StorageOperationId.Value}" : null),
+                    ProductName = !string.IsNullOrWhiteSpace(t.MaterialType) ? t.MaterialType : "خرسانة / مادة توريد",
+                    ReferenceNumber = t.ManufactureNumber ?? (t.StorageOperationId.HasValue ? $"EXP-#{t.StorageOperationId}" : t.PONumber),
+                    BatchNumber = t.BatchNumber,
+                    ProductionOrderNumber = t.ProductionOrderId.HasValue ? $"PO-{t.ProductionOrderId}" : null,
+                    Quantity = qtyToBill,
+                    Unit = "طن",
+                    UnitPrice = Math.Round(itemDto.UnitPrice, 3),
+                    LineTotal = lineTotal,
+                    Destination = t.Destination,
+                    TransactionDate = t.TransactionDate
+                });
+            }
+
+            decimal shippingPriceComp = Math.Max(0m, dto.ShippingPrice);
+            decimal taxRateComp = Math.Max(0m, dto.TaxRate);
+            decimal taxAmountComp = Math.Round(subtotalComp * (taxRateComp / 100m), 3);
+            decimal discountComp = Math.Max(0m, dto.DiscountAmount);
+            decimal totalAmountComp = Math.Round(Math.Max(0m, subtotalComp + shippingPriceComp + taxAmountComp - discountComp), 3);
+
+            var companyInvoice = new Invoice
+            {
+                InvoiceNumber = invoiceNumber,
+                InvoiceDate = DateTime.UtcNow,
+                ProjectCodeId = prjCode.Id,
+                ProjectCodeValue = prjCode.Code,
+                ProjectName = prjCode.ProjectName,
+                RelatedEntityType = "COMPANY",
+                CompanyId = resolvedCompanyId,
+                CompanyName = companyName,
+                CompanyAddress = companyAddress,
+                CompanyTaxNumber = companyTaxNum,
+                CompanyPhone = companyPhone,
+                InvoicedQuantity = itemEntitiesCompany.Sum(it => it.Quantity),
+                Subtotal = subtotalComp,
+                ShippingPrice = shippingPriceComp,
+                TaxRate = taxRateComp,
+                TaxAmount = taxAmountComp,
+                DiscountAmount = discountComp,
+                TotalAmount = totalAmountComp,
+                Status = dto.Status.ToUpperInvariant() == "DRAFT" ? "DRAFT" : "ISSUED",
+                IsPrinted = false,
+                Notes = dto.Notes?.Trim(),
+                CreatedBy = currentUserName,
+                CreatedByUserId = currentUserId,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+                Items = itemEntitiesCompany
+            };
+
+            _context.Invoices.Add(companyInvoice);
+            await _context.SaveChangesAsync();
+            await dbTransaction.CommitAsync();
+
+            _logger.LogInformation("Company Invoice {InvoiceNumber} created successfully. Total: {Total} EGP.",
+                companyInvoice.InvoiceNumber, companyInvoice.TotalAmount);
+
+            return Ok(ApiResponse<InvoiceDto>.Ok(MapToInvoiceDto(companyInvoice), "تم إنشاء الفاتورة وحفظها بنجاح."));
+        }
+        catch (Exception ex)
+        {
+            await dbTransaction.RollbackAsync();
+            _logger.LogError(ex, "Error creating invoice.");
+            return StatusCode(StatusCodes.Status500InternalServerError, ApiResponse.Fail("حدث خطأ أثناء حفظ الفاتورة في قاعدة البيانات."));
+        }
+    }
+
+    private static InvoiceDto MapToInvoiceDto(Invoice inv)
+    {
+        return new InvoiceDto
+        {
+            Id = inv.Id,
+            InvoiceNumber = inv.InvoiceNumber,
+            InvoiceDate = inv.InvoiceDate,
+            ProjectCodeId = inv.ProjectCodeId,
+            ProjectCodeValue = inv.ProjectCodeValue,
+            ProjectName = inv.ProjectName,
+            RelatedEntityType = inv.RelatedEntityType,
+            PurchaseOrderId = inv.PurchaseOrderId,
+            PONumber = inv.PONumber,
+            SupplierId = inv.SupplierId,
+            SupplierName = inv.SupplierName,
+            MaterialName = inv.MaterialName,
+            OrderedQuantity = inv.OrderedQuantity,
+            InvoicedQuantity = inv.InvoicedQuantity ?? inv.Items.Sum(it => it.Quantity),
+            PoUnitPrice = inv.PoUnitPrice,
+            InvoiceUnitPrice = inv.InvoiceUnitPrice,
+            PriceChangedBy = inv.PriceChangedBy,
+            PriceChangedAt = inv.PriceChangedAt,
+            CompanyId = inv.CompanyId,
+            CompanyName = inv.CompanyName,
+            CompanyAddress = inv.CompanyAddress,
+            CompanyTaxNumber = inv.CompanyTaxNumber,
+            CompanyPhone = inv.CompanyPhone,
+            Subtotal = inv.Subtotal,
+            ShippingPrice = inv.ShippingPrice,
+            TaxRate = inv.TaxRate,
+            TaxAmount = inv.TaxAmount,
+            DiscountAmount = inv.DiscountAmount,
+            TotalAmount = inv.TotalAmount,
+            Status = inv.Status,
+            IsPrinted = inv.IsPrinted,
+            PrintedAt = inv.PrintedAt,
+            Notes = inv.Notes,
+            CreatedBy = inv.CreatedBy,
+            CreatedAt = inv.CreatedAt,
+            UpdatedAt = inv.UpdatedAt,
+            Items = inv.Items.Select(item => new InvoiceItemDto
+            {
+                Id = item.Id,
+                InvoiceId = item.InvoiceId,
+                TransportationId = item.TransportationId,
+                TransportationTransactionNumber = item.TransportationTransactionNumber,
+                PurchaseOrderId = item.PurchaseOrderId,
+                PONumber = item.PONumber,
+                WarehouseExportNumber = item.WarehouseExportNumber,
+                ProductName = item.ProductName,
+                ReferenceNumber = item.ReferenceNumber,
+                BatchNumber = item.BatchNumber,
+                ProductionOrderNumber = item.ProductionOrderNumber,
+                Quantity = item.Quantity,
+                Unit = item.Unit,
+                UnitPrice = item.UnitPrice,
+                LineTotal = item.LineTotal,
+                Destination = item.Destination,
+                TransactionDate = item.TransactionDate
+            }).ToList()
+        };
+    }
+
+    /// <summary>
+    /// Update Draft Invoice (company details, line item unit prices/quantities, shipping, tax, discount, notes, or issue).
+    /// </summary>
+    [HttpPut("invoices/{id:int}")]
+    [ProducesResponseType(typeof(ApiResponse<InvoiceDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> UpdateInvoice(int id, [FromBody] UpdateInvoiceDto dto)
+    {
+        var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+        if (!AppRoles.HasFinanceAccess(role))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponse.Fail("غير مصرح لك بتعديل الفواتير."));
+        }
+
+        var inv = await _context.Invoices.Include(i => i.Items).FirstOrDefaultAsync(i => i.Id == id);
+        if (inv == null) return NotFound(ApiResponse.Fail("الفاتورة غير موجودة."));
+
+        if (inv.Status != "DRAFT")
+        {
+            return BadRequest(ApiResponse.Fail("لا يمكن تعديل الفاتورة إلا إذا كانت في حالة 'مسودة'. الفواتير المعتمدة والمصدرة لا يمكن تعديلها للحفاظ على السجل المالي التاريخي."));
+        }
+
+        if (!string.IsNullOrWhiteSpace(dto.CompanyName))
+        {
+            inv.CompanyName = dto.CompanyName.Trim();
+        }
+        if (dto.CompanyPhone != null)
+        {
+            inv.CompanyPhone = string.IsNullOrWhiteSpace(dto.CompanyPhone) ? null : dto.CompanyPhone.Trim();
+        }
+        if (dto.CompanyAddress != null)
+        {
+            inv.CompanyAddress = string.IsNullOrWhiteSpace(dto.CompanyAddress) ? null : dto.CompanyAddress.Trim();
+        }
+        if (dto.CompanyTaxNumber != null)
+        {
+            inv.CompanyTaxNumber = string.IsNullOrWhiteSpace(dto.CompanyTaxNumber) ? null : dto.CompanyTaxNumber.Trim();
+        }
+
+        // Update item pricing & optional quantities for project/transportation invoices
+        if (dto.Items != null && dto.Items.Count > 0 && !inv.PurchaseOrderId.HasValue)
+        {
+            var transIds = inv.Items.Where(x => x.TransportationId.HasValue).Select(x => x.TransportationId!.Value).Distinct().ToList();
+            var transWeights = transIds.Count > 0
+                ? await _context.Transportations.AsNoTracking()
+                    .Where(t => transIds.Contains(t.Id))
+                    .ToDictionaryAsync(t => t.Id, t => t.NetWeight)
+                : new Dictionary<int, decimal>();
+
+            var otherInvoicedMap = transIds.Count > 0
+                ? await _context.InvoiceItems.AsNoTracking()
+                    .Where(ii => ii.TransportationId.HasValue && transIds.Contains(ii.TransportationId.Value) && ii.InvoiceId != inv.Id && ii.Invoice.Status != "CANCELLED")
+                    .GroupBy(ii => ii.TransportationId!.Value)
+                    .Select(g => new { TransportationId = g.Key, InvoicedQty = g.Sum(x => x.Quantity) })
+                    .ToDictionaryAsync(x => x.TransportationId, x => x.InvoicedQty)
+                : new Dictionary<int, decimal>();
+
+            foreach (var itemDto in dto.Items)
+            {
+                var existingItem = itemDto.TransportationId.HasValue
+                    ? inv.Items.FirstOrDefault(x => x.TransportationId == itemDto.TransportationId.Value)
+                    : null;
+
+                if (existingItem == null)
+                {
+                    return BadRequest(ApiResponse.Fail("لا يمكن إضافة بنود خارج بنود كود المشروع المسجلة في المسودة."));
+                }
+
+                if (itemDto.UnitPrice <= 0)
+                {
+                    return BadRequest(ApiResponse.Fail($"سعر الوحدة للبند #{existingItem.TransportationTransactionNumber} يجب أن يكون أكبر من الصفر."));
+                }
+
+                if (itemDto.Quantity.HasValue && itemDto.Quantity.Value > 0 && existingItem.TransportationId.HasValue)
+                {
+                    var netWeight = transWeights.TryGetValue(existingItem.TransportationId.Value, out var w) ? w : existingItem.Quantity;
+                    var otherInvoiced = otherInvoicedMap.TryGetValue(existingItem.TransportationId.Value, out var o) ? o : 0m;
+                    var maxAllowed = Math.Max(0m, netWeight - otherInvoiced);
+                    if (itemDto.Quantity.Value > maxAllowed + 0.0001m)
+                    {
+                        return BadRequest(ApiResponse.Fail($"الكمية المطلوبة ({itemDto.Quantity.Value:N3} طن) تتجاوز المتاح للفوترة ({maxAllowed:N3} طن)."));
+                    }
+                    existingItem.Quantity = Math.Round(itemDto.Quantity.Value, 3);
+                }
+
+                existingItem.UnitPrice = Math.Round(itemDto.UnitPrice, 3);
+                existingItem.LineTotal = Math.Round(existingItem.Quantity * existingItem.UnitPrice, 3);
+            }
+
+            inv.Subtotal = inv.Items.Sum(x => x.LineTotal);
+            inv.InvoicedQuantity = inv.Items.Sum(x => x.Quantity);
+        }
+
+        inv.TaxRate = Math.Max(0m, dto.TaxRate);
+        inv.DiscountAmount = Math.Max(0m, dto.DiscountAmount);
+        inv.ShippingPrice = Math.Max(0m, dto.ShippingPrice);
+        inv.Notes = dto.Notes?.Trim();
+        inv.UpdatedAt = DateTime.UtcNow;
+
+        // Recalculate totals
+        inv.TaxAmount = Math.Round(inv.Subtotal * (inv.TaxRate / 100m), 3);
+        inv.TotalAmount = Math.Round(Math.Max(0m, inv.Subtotal + inv.ShippingPrice + inv.TaxAmount - inv.DiscountAmount), 3);
+
+        if (string.Equals(dto.Status, "ISSUED", StringComparison.OrdinalIgnoreCase))
+        {
+            inv.Status = "ISSUED";
+
+            // If PO invoice, update PO delivered quantity and supplier balance
+            if (inv.PurchaseOrderId.HasValue)
+            {
+                var po = await _context.PurchaseOrders.FirstOrDefaultAsync(p => p.Id == inv.PurchaseOrderId.Value);
+                if (po != null)
+                {
+                    var prevInvoicedList = await _context.Invoices
+                        .AsNoTracking()
+                        .Where(i => i.PurchaseOrderId == po.Id && i.Status == "ISSUED" && i.Id != inv.Id)
+                        .Select(i => i.InvoicedQuantity ?? (i.Items.Any() ? i.Items.Sum(it => it.Quantity) : 0m))
+                        .ToListAsync();
+                    var previouslyInvoiced = prevInvoicedList.Sum();
+
+                    var invoiceQty = inv.InvoicedQuantity ?? inv.Items.Sum(it => it.Quantity);
+                    po.DeliveredQuantity = previouslyInvoiced + invoiceQty;
+                    po.RemainingQuantity = Math.Max(0m, po.Quantity - po.DeliveredQuantity);
+                    if (po.RemainingQuantity <= 0.0001m) po.Status = "COMPLETED";
+                    po.UpdatedAt = DateTime.UtcNow;
+
+                    var supId = inv.SupplierId ?? po.SupplierId;
+                    if (supId.HasValue)
+                    {
+                        var sup = await _context.Suppliers.FirstOrDefaultAsync(s => s.Id == supId.Value);
+                        if (sup != null)
+                        {
+                            sup.TotalAmountOwed += inv.TotalAmount;
+                            sup.RemainingBalance = Math.Round(sup.TotalAmountOwed - sup.TotalAmountPaid, 2);
+                            sup.UpdatedAt = DateTime.UtcNow;
+
+                            _context.SupplierFinancialTransactions.Add(new SupplierFinancialTransaction
+                            {
+                                SupplierId = sup.Id,
+                                TransactionType = "AMOUNT_OWED",
+                                Amount = inv.TotalAmount,
+                                TransactionDate = DateTime.UtcNow,
+                                PaymentMethod = "INVOICE",
+                                ReferenceNumber = inv.InvoiceNumber,
+                                Notes = $"اعتماد فاتورة مسودة رقم {inv.InvoiceNumber} لأمر الشراء {po.PONumber}",
+                                CreatedBy = User.FindFirst(ClaimTypes.Name)?.Value ?? "المدير المالي",
+                                CreatedAt = DateTime.UtcNow
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        await _context.SaveChangesAsync();
+        return Ok(ApiResponse<InvoiceDto>.Ok(MapToInvoiceDto(inv), "تم تحديث مسودة الفاتورة بنجاح."));
+    }
+
+    /// <summary>
+    /// Issue / Finalize a Draft Invoice.
+    /// Only finalized / approved invoices count toward Delivered Quantity and Supplier Debt.
+    /// </summary>
+    [HttpPost("invoices/{id:int}/issue")]
+    public async Task<IActionResult> IssueDraftInvoice(int id)
+    {
+        var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+        if (!AppRoles.HasFinanceAccess(role))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponse.Fail("غير مصرح لك باعتماد الفواتير."));
+        }
+
+        var inv = await _context.Invoices.Include(i => i.Items).FirstOrDefaultAsync(i => i.Id == id);
+        if (inv == null) return NotFound(ApiResponse.Fail("الفاتورة غير موجودة."));
+
+        if (inv.Status == "ISSUED")
+        {
+            return BadRequest(ApiResponse.Fail("الفاتورة معتمدة ومصدرة بالفعل مسبقاً."));
+        }
+        if (inv.Status == "CANCELLED")
+        {
+            return BadRequest(ApiResponse.Fail("لا يمكن اعتماد فاتورة ملغاة."));
+        }
+
+        inv.Status = "ISSUED";
+        inv.UpdatedAt = DateTime.UtcNow;
+
+        if (inv.PurchaseOrderId.HasValue)
+        {
+            var po = await _context.PurchaseOrders.FirstOrDefaultAsync(p => p.Id == inv.PurchaseOrderId.Value);
+            if (po != null)
+            {
+                var prevInvoicedList = await _context.Invoices
+                    .AsNoTracking()
+                    .Where(i => i.PurchaseOrderId == po.Id && i.Status == "ISSUED" && i.Id != inv.Id)
+                    .Select(i => i.InvoicedQuantity ?? (i.Items.Any() ? i.Items.Sum(it => it.Quantity) : 0m))
+                    .ToListAsync();
+                var previouslyInvoiced = prevInvoicedList.Sum();
+
+                var invoiceQty = inv.InvoicedQuantity ?? inv.Items.Sum(it => it.Quantity);
+                po.DeliveredQuantity = previouslyInvoiced + invoiceQty;
+                po.RemainingQuantity = Math.Max(0m, po.Quantity - po.DeliveredQuantity);
+                if (po.RemainingQuantity <= 0.0001m) po.Status = "COMPLETED";
+                po.UpdatedAt = DateTime.UtcNow;
+
+                var supId = inv.SupplierId ?? po.SupplierId;
+                if (supId.HasValue)
+                {
+                    var sup = await _context.Suppliers.FirstOrDefaultAsync(s => s.Id == supId.Value);
+                    if (sup != null)
+                    {
+                        sup.TotalAmountOwed += inv.TotalAmount;
+                        sup.RemainingBalance = Math.Round(sup.TotalAmountOwed - sup.TotalAmountPaid, 2);
+                        sup.UpdatedAt = DateTime.UtcNow;
+
+                        _context.SupplierFinancialTransactions.Add(new SupplierFinancialTransaction
+                        {
+                            SupplierId = sup.Id,
+                            TransactionType = "AMOUNT_OWED",
+                            Amount = inv.TotalAmount,
+                            TransactionDate = DateTime.UtcNow,
+                            PaymentMethod = "INVOICE",
+                            ReferenceNumber = inv.InvoiceNumber,
+                            Notes = $"اعتماد فاتورة مسودة رقم {inv.InvoiceNumber} لأمر الشراء {po.PONumber}",
+                            CreatedBy = User.FindFirst(ClaimTypes.Name)?.Value ?? "المدير المالي",
+                            CreatedAt = DateTime.UtcNow
+                        });
+                    }
+                }
+            }
+        }
+
+        await _context.SaveChangesAsync();
+        return Ok(ApiResponse.Ok("تم اعتماد وإصدار الفاتورة بنجاح."));
+    }
+
+    /// <summary>
+    /// Cancel an Invoice.
+    /// If the invoice was ISSUED, its quantity is deducted from the Delivered Quantity,
+    /// restoring the Remaining Quantity of the Purchase Order, and supplier debt is adjusted.
+    /// </summary>
+    [HttpPost("invoices/{id:int}/cancel")]
+    public async Task<IActionResult> CancelInvoice(int id)
+    {
+        var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+        if (!AppRoles.HasFinanceAccess(role))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponse.Fail("غير مصرح لك بإلغاء الفواتير."));
+        }
+
+        var inv = await _context.Invoices.Include(i => i.Items).FirstOrDefaultAsync(i => i.Id == id);
+        if (inv == null) return NotFound(ApiResponse.Fail("الفاتورة غير موجودة."));
+
+        if (inv.Status == "CANCELLED")
+        {
+            return BadRequest(ApiResponse.Fail("الفاتورة ملغاة بالفعل مسبقاً."));
+        }
+
+        var wasIssued = inv.Status == "ISSUED";
+        inv.Status = "CANCELLED";
+        inv.UpdatedAt = DateTime.UtcNow;
+
+        if (wasIssued && inv.PurchaseOrderId.HasValue)
+        {
+            var po = await _context.PurchaseOrders.FirstOrDefaultAsync(p => p.Id == inv.PurchaseOrderId.Value);
+            if (po != null)
+            {
+                // Recalculate delivered quantity strictly from remaining ISSUED invoices (excluding this one)
+                var remainingDeliveredList = await _context.Invoices
+                    .AsNoTracking()
+                    .Where(i => i.PurchaseOrderId == po.Id && i.Status == "ISSUED" && i.Id != inv.Id)
+                    .Select(i => i.InvoicedQuantity ?? (i.Items.Any() ? i.Items.Sum(it => it.Quantity) : 0m))
+                    .ToListAsync();
+                var remainingDelivered = remainingDeliveredList.Sum();
+
+                po.DeliveredQuantity = remainingDelivered;
+                po.RemainingQuantity = Math.Max(0m, po.Quantity - po.DeliveredQuantity);
+                if (po.RemainingQuantity > 0.0001m) po.Status = "ACTIVE";
+                po.UpdatedAt = DateTime.UtcNow;
+
+                var supId = inv.SupplierId ?? po.SupplierId;
+                if (supId.HasValue)
+                {
+                    var sup = await _context.Suppliers.FirstOrDefaultAsync(s => s.Id == supId.Value);
+                    if (sup != null)
+                    {
+                        sup.TotalAmountOwed = Math.Max(0m, sup.TotalAmountOwed - inv.TotalAmount);
+                        sup.RemainingBalance = Math.Round(sup.TotalAmountOwed - sup.TotalAmountPaid, 2);
+                        sup.UpdatedAt = DateTime.UtcNow;
+
+                        _context.SupplierFinancialTransactions.Add(new SupplierFinancialTransaction
+                        {
+                            SupplierId = sup.Id,
+                            TransactionType = "ADJUSTMENT",
+                            Amount = -inv.TotalAmount,
+                            TransactionDate = DateTime.UtcNow,
+                            PaymentMethod = "INVOICE_CANCEL",
+                            ReferenceNumber = inv.InvoiceNumber,
+                            Notes = $"إلغاء فاتورة رقم {inv.InvoiceNumber} لأمر الشراء {po.PONumber} - تسوية خصم المستحق",
+                            CreatedBy = User.FindFirst(ClaimTypes.Name)?.Value ?? "المدير المالي",
+                            CreatedAt = DateTime.UtcNow
+                        });
+                    }
+                }
+            }
+        }
+
+        await _context.SaveChangesAsync();
+        return Ok(ApiResponse.Ok("تم إلغاء الفاتورة بنجاح واستعادة الكميات المتبقية لأمر الشراء وتحديث الحسابات."));
+    }
+
+    /// <summary>
+    /// Mark Invoice as Printed.
+    /// </summary>
+    [HttpPost("invoices/{id:int}/mark-printed")]
+    public async Task<IActionResult> MarkInvoicePrinted(int id)
+    {
+        var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+        if (!AppRoles.HasFinanceAccess(role))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponse.Fail("غير مصرح لك."));
+        }
+
+        var inv = await _context.Invoices.FindAsync(id);
+        if (inv == null) return NotFound(ApiResponse.Fail("الفاتورة غير موجودة."));
+
+        inv.IsPrinted = true;
+        inv.PrintedAt = DateTime.UtcNow;
+        inv.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+
+        return Ok(ApiResponse.Ok("تم تسجيل طباعة الفاتورة بنجاح."));
     }
 }

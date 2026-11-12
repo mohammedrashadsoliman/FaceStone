@@ -19,6 +19,12 @@ public class LaboratoryInProcessReport
     public LaboratoryRawMaterialReport? RawMaterialReport { get; set; }
 
     /// <summary>
+    /// رقم العينة المرجعي المرتبط
+    /// </summary>
+    public int? SampleNumber { get; set; }
+    public string? SampleCode { get; set; }
+
+    /// <summary>
     /// رقم تشغيلة الإنتاج / Batch Tracking Number
     /// </summary>
     public string ProductionBatchNumber { get; set; } = string.Empty;

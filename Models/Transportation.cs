@@ -208,6 +208,72 @@ public class Transportation
 
     public PurchaseOrder? PurchaseOrder { get; set; }
 
+    /// <summary>
+    /// إذن صرف المستودع المرتبط - المصدر الفعلي لحركة النقل والشحن
+    /// </summary>
+    public int? StorageOperationId { get; set; }
+    public StorageOperation? StorageOperation { get; set; }
+
+    /// <summary>
+    /// بند إذن الصرف المحدد (عند الصرف متعدد الأصناف أو التشغيلات)
+    /// </summary>
+    public int? StorageOperationItemId { get; set; }
+    public StorageOperationItem? StorageOperationItem { get; set; }
+
+    /// <summary>
+    /// رقم إذن الصرف (e.g. EXP-2026-0001 أو #1)
+    /// </summary>
+    public string? ExportTransactionNumber { get; set; }
+
+    /// <summary>
+    /// نوع الصرف: RAW_MATERIAL (مواد خام) | FINISHED_PRODUCT (منتج نهائي)
+    /// </summary>
+    public string? ExportType { get; set; }
+
+    /// <summary>
+    /// أمر الإنتاج المرتبط (عند نقل منتج نهائي)
+    /// </summary>
+    public int? ProductionOrderId { get; set; }
+    public ProductionOrder? ProductionOrder { get; set; }
+
+    /// <summary>
+    /// عملية الإنتاج المرتبطة
+    /// </summary>
+    public int? ProductionProcessId { get; set; }
+    public ProductionProcess? ProductionProcess { get; set; }
+
+    /// <summary>
+    /// رقم التصنيع للمنتج النهائي
+    /// </summary>
+    public string? ManufactureNumber { get; set; }
+
+    /// <summary>
+    /// رقم التشغيلة / الدفعة المصروفة
+    /// </summary>
+    public string? BatchNumber { get; set; }
+
+    /// <summary>
+    /// كود العينة / المرجع المعملي
+    /// </summary>
+    public string? SampleCode { get; set; }
+
+    /// <summary>
+    /// مستودع المصدر المحمل منه
+    /// </summary>
+    public int? SourceStorageLocationId { get; set; }
+    public string? SourceStorageLocationName { get; set; }
+
+    /// <summary>
+    /// كود المشروع (اختياري) - Optional Project Code relationship
+    /// </summary>
+    public int? ProjectCodeId { get; set; }
+    public ProjectCode? ProjectCode { get; set; }
+
+    /// <summary>
+    /// القيمة النصية لكود المشروع (e.g. PRJ-NAC-R3) لتسريع الاستعلام والعرض
+    /// </summary>
+    public string? ProjectCodeValue { get; set; }
+
     public DateTime DateOfSubmit { get; set; }
 
     /// <summary>

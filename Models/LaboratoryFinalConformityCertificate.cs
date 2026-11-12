@@ -24,6 +24,12 @@ public class LaboratoryFinalConformityCertificate
     public LaboratoryRawMaterialReport? RawMaterialReport { get; set; }
 
     /// <summary>
+    /// رقم العينة المرجعي المرتبط
+    /// </summary>
+    public int? SampleNumber { get; set; }
+    public string? SampleCode { get; set; }
+
+    /// <summary>
     /// قسم المعمل: PHYSICAL | CHEMICAL
     /// </summary>
     public string LaboratorySection { get; set; } = "PHYSICAL";

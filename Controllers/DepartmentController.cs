@@ -146,19 +146,7 @@ public class DepartmentController : ControllerBase
             });
         }
 
-        if (hasControlMonitoring)
-        {
-            departments.Add(new DepartmentSummaryDto
-            {
-                Id = "control-monitoring",
-                Name = "CONTROL_MONITORING",
-                DisplayName = "Control & Monitoring Department",
-                Description = "Review, validate, approve, or reject forms submitted from Transportation and Storage.",
-                Icon = "control",
-                IsAvailable = true,
-                Route = "/control-monitoring"
-            });
-        }
+ // Control & Monitoring department is hidden from interface as per system requirements
 
         _logger.LogInformation("Departments requested by user with role '{Role}'. Finance: {HasFinance}, Trans: {HasTrans}, Storage: {HasStorage}, Mgmt: {HasMgmt}, Control: {HasControl}, Lab: {HasLab}", role, hasFinance, hasTransportation, hasStorage, hasManagement, hasControlMonitoring, hasLaboratory);
 
@@ -169,7 +157,7 @@ public class DepartmentController : ControllerBase
             HasTransportationAccess = hasTransportation,
             HasStorageAccess = hasStorage,
             HasManagementAccess = hasManagement,
-            HasControlMonitoringAccess = hasControlMonitoring,
+ HasControlMonitoringAccess = false,
             HasAttendanceAccess = hasAttendance,
             HasLaboratoryAccess = hasLaboratory,
             HasPhysicalLabAccess = hasPhysicalLab,
@@ -269,12 +257,16 @@ public class DepartmentController : ControllerBase
     /// Supports both direct API callers (returns 200 / 403 / 401) and browser navigation.
     /// </summary>
     [HttpGet("/transportation")]
+    [HttpGet("/transportation/{*subpath}")]
+    [HttpGet("/departments/transportation")]
     public IActionResult HandleTransportationDirect()
     {
-        // 1. If this is a browser navigation request for HTML:
-        if (Request.Headers.Accept.Any(a => a != null && a.Contains("text/html")))
+        // 1. If this is a browser navigation request for HTML or generic request:
+        var acceptsJsonOnly = Request.Headers.Accept.Any(a => a != null && a.Contains("application/json") && !a.Contains("text/html"));
+        if (!acceptsJsonOnly || Request.Headers.Accept.Any(a => a != null && a.Contains("text/html")))
         {
-            var indexPath = Path.Combine(_env.WebRootPath, "index.html");
+            var webRoot = _env.WebRootPath ?? Path.Combine(_env.ContentRootPath ?? Directory.GetCurrentDirectory(), "wwwroot");
+            var indexPath = Path.Combine(webRoot, "index.html");
             if (System.IO.File.Exists(indexPath))
             {
                 SetNoCacheHeaders();
@@ -449,35 +441,9 @@ public class DepartmentController : ControllerBase
     [HttpGet("/control-monitoring/{*subpath}")]
     public IActionResult HandleControlMonitoringDirect()
     {
-        // 1. If this is a browser navigation request for HTML:
-        if (Request.Headers.Accept.Any(a => a != null && a.Contains("text/html")))
-        {
-            var indexPath = Path.Combine(_env.WebRootPath, "index.html");
-            if (System.IO.File.Exists(indexPath))
-            {
-                SetNoCacheHeaders();
-                return PhysicalFile(indexPath, "text/html");
-            }
-        }
-
-        // 2. If caller is not authenticated:
-        if (!User.Identity?.IsAuthenticated ?? true)
-        {
-            return Unauthorized(ApiResponse.Fail("Authentication required to access Control & Monitoring."));
-        }
-
-        // 3. Check role permission:
-        var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
-        if (!AppRoles.HasControlMonitoringAccess(role))
-        {
-            _logger.LogWarning("Access Denied to /control-monitoring for user role: {Role}", role);
-            return StatusCode(StatusCodes.Status403Forbidden, 
-                ApiResponse.Fail("Access Denied: Control & Monitoring department is restricted to CEO, IT, and Control & Monitoring employees."));
-        }
-
-        return Ok(ApiResponse.Ok("FaceStone Control & Monitoring Department."));
-    }
-
+        // Control & Monitoring is hidden; redirect any direct navigation back to home/departments
+ return Redirect("/");
+ }
     /// <summary>
     /// Direct route protection for /attendance endpoint.
     /// Supports both direct API callers and browser navigation.

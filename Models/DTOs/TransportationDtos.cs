@@ -26,12 +26,34 @@ public class CreateTransportationDto
     /// </summary>
     public string? Source { get; set; }
 
-    [Required(ErrorMessage = "رقم أمر الشراء مطلوب.")]
-    [MaxLength(100, ErrorMessage = "رقم أمر الشراء لا يتجاوز 100 حرف.")]
-    public string PONumber { get; set; } = string.Empty;
+    /// <summary>
+    /// إذن صرف المستودع المرتبط (المصدر الأساسي لحركة النقل)
+    /// </summary>
+    public int? StorageOperationId { get; set; }
+    public int? StorageOperationItemId { get; set; }
+    public string? ExportTransactionNumber { get; set; }
+    public string? ExportType { get; set; }
+    public int? ProductionOrderId { get; set; }
+    public int? ProductionProcessId { get; set; }
+    public string? ManufactureNumber { get; set; }
+    public string? BatchNumber { get; set; }
+    public string? SampleCode { get; set; }
+    public int? SourceStorageLocationId { get; set; }
+    public string? SourceStorageLocationName { get; set; }
 
-    [Required(ErrorMessage = "نوع الخامة مطلوب.")]
-    [RegularExpression("^(powder|slurry)$", ErrorMessage = "نوع الخامة يجب أن يكون إما powder أو slurry فقط.")]
+    /// <summary>
+    /// كود المشروع (اختياري) - Optional Project Code
+    /// </summary>
+    public int? ProjectCodeId { get; set; }
+    public string? ProjectCode { get; set; }
+
+    /// <summary>
+    /// رقم أمر الشراء (اختياري للأنظمة القديمة، الأساس هو إذن صرف المستودع)
+    /// </summary>
+    [MaxLength(100, ErrorMessage = "رقم أمر الشراء لا يتجاوز 100 حرف.")]
+    public string? PONumber { get; set; }
+
+    [Required(ErrorMessage = "نوع المادة / الصنف مطلوب.")]
     public string MaterialType { get; set; } = string.Empty;
 
     [Required(ErrorMessage = "الوزن الداخلي فارغ مطلوب.")]
@@ -148,6 +170,23 @@ public class TransportationDto
     public string DriverName { get; set; } = string.Empty;
     public string Source { get; set; } = string.Empty;
     public string PONumber { get; set; } = string.Empty;
+    public int? StorageOperationId { get; set; }
+    public int? StorageOperationItemId { get; set; }
+    public string? ExportTransactionNumber { get; set; }
+    public string? ExportType { get; set; }
+    public int? ProductionOrderId { get; set; }
+    public string? ProductionOrderNumber { get; set; }
+    public int? ProductionProcessId { get; set; }
+    public string? ProcessNumber { get; set; }
+    public string? ManufactureNumber { get; set; }
+    public string? BatchNumber { get; set; }
+    public string? SampleCode { get; set; }
+    public int? SourceStorageLocationId { get; set; }
+    public string? SourceStorageLocationName { get; set; }
+    public int? ProjectCodeId { get; set; }
+    public string? ProjectCode { get; set; }
+    public string? ProjectName { get; set; }
+    public string ExportTypeArabic => (ExportType == "FINISHED_PRODUCT" ? "منتج نهائي" : "مواد خام");
     public string CompanyName { get; set; } = string.Empty;
     public string MaterialType { get; set; } = string.Empty;
     public decimal WeightBeforeLoading { get; set; }
@@ -222,6 +261,37 @@ public class TransportationConfigDto
     public string NextInternalWeighbridgeCode { get; set; } = string.Empty;
     public string NextExternalWeighbridgeCode { get; set; } = string.Empty;
     public string FixedSource { get; set; } = "Face stone (Full Concrete Solutions)";
+    public List<ProjectCodeDto> ProjectCodes { get; set; } = new();
+}
+
+public class ProjectCodeDto
+{
+    public int Id { get; set; }
+    public string Code { get; set; } = string.Empty;
+    public string ProjectName { get; set; } = string.Empty;
+    public string? ClientName { get; set; }
+    public string? Description { get; set; }
+    public bool IsActive { get; set; } = true;
+    public string DisplayText => $"{Code} - {ProjectName}" + (!string.IsNullOrEmpty(ClientName) ? $" ({ClientName})" : "");
+}
+
+public class CreateProjectCodeDto
+{
+    [Required(ErrorMessage = "كود المشروع مطلوب.")]
+    [MaxLength(50, ErrorMessage = "كود المشروع لا يتجاوز 50 حرف.")]
+    public string Code { get; set; } = string.Empty;
+
+    [Required(ErrorMessage = "اسم المشروع مطلوب.")]
+    [MaxLength(200, ErrorMessage = "اسم المشروع لا يتجاوز 200 حرف.")]
+    public string ProjectName { get; set; } = string.Empty;
+
+    [MaxLength(200, ErrorMessage = "اسم العميل لا يتجاوز 200 حرف.")]
+    public string? ClientName { get; set; }
+
+    [MaxLength(500, ErrorMessage = "الوصف لا يتجاوز 500 حرف.")]
+    public string? Description { get; set; }
+
+    public int? StorageClientDestinationId { get; set; }
 }
 
 public class PoLookupDto
@@ -239,4 +309,64 @@ public class PoLookupDto
     public string? InvoiceNumber { get; set; }
     public string? Notes { get; set; }
     public int NextTransactionNumber { get; set; } = 1;
+}
+
+public class EligibleTransportationExportDto
+{
+    public int StorageOperationId { get; set; }
+    public string ExportTransactionNumber { get; set; } = string.Empty;
+    public int TransactionNumber { get; set; }
+    public string ExportType { get; set; } = "RAW_MATERIAL"; // RAW_MATERIAL | FINISHED_PRODUCT
+    public string ExportTypeArabic => ExportType == "FINISHED_PRODUCT" ? "منتج نهائي" : "مواد خام";
+    public DateTime TransactionDate { get; set; }
+    public DateTime ExportDate => TransactionDate;
+    public int StorageLocationId { get; set; }
+    public string StorageLocationName { get; set; } = string.Empty;
+    public string ClientName { get; set; } = string.Empty;
+    public string DestinationName { get; set; } = string.Empty;
+    public decimal TotalExportQuantity { get; set; }
+    public decimal OriginalExportQuantity => TotalExportQuantity;
+    public decimal TransportedQuantity { get; set; }
+    public decimal PreviouslyAllocatedQuantity => TransportedQuantity;
+    public decimal RemainingQuantity { get; set; }
+    public decimal RemainingTransportationQuantity => RemainingQuantity;
+    public string Unit { get; set; } = "طن";
+    public int? ProductionOrderId { get; set; }
+    public string? ProductionOrderNumber { get; set; }
+    public int? ProductionProcessId { get; set; }
+    public string? ProcessNumber { get; set; }
+    public string? ManufactureNumber { get; set; }
+    public string? WeighbridgeAttachmentPath { get; set; }
+    public List<EligibleTransportationExportItemDto> Items { get; set; } = new();
+
+    public string MaterialName => Items.Count > 0 
+        ? string.Join(", ", Items.Select(i => i.MaterialName).Where(m => !string.IsNullOrEmpty(m)).Distinct()) 
+        : (ExportType == "FINISHED_PRODUCT" ? "منتج نهائي" : "مواد خام");
+    public string MaterialType => MaterialName;
+    public string? BatchNumber => Items.Count > 0 
+        ? string.Join(", ", Items.Where(i => !string.IsNullOrEmpty(i.BatchNumber)).Select(i => i.BatchNumber!).Distinct()) 
+        : null;
+    public string? SampleCode => Items.FirstOrDefault(i => !string.IsNullOrEmpty(i.SampleCode))?.SampleCode;
+    public int? ProductionReferenceNumber => Items.FirstOrDefault(i => i.ProductionReferenceNumber.HasValue)?.ProductionReferenceNumber;
+    public int? ReferenceNumber => ProductionReferenceNumber;
+}
+
+public class EligibleTransportationExportItemDto
+{
+    public int Id { get; set; }
+    public int RawMaterialId { get; set; }
+    public string MaterialName { get; set; } = string.Empty;
+    public decimal Quantity { get; set; }
+    public decimal OriginalExportQuantity => Quantity;
+    public decimal PreviouslyAllocatedQuantity { get; set; }
+    public decimal TransportedQuantity => PreviouslyAllocatedQuantity;
+    public decimal RemainingQuantity { get; set; }
+    public decimal RemainingTransportableQuantity => RemainingQuantity;
+    public int? WarehouseBatchId { get; set; }
+    public string? BatchNumber { get; set; }
+    public string? SampleCode { get; set; }
+    public int? ProductionReferenceNumber { get; set; }
+    public int? ProductionOrderId { get; set; }
+    public int? ProductionProcessId { get; set; }
+    public string? ManufactureNumber { get; set; }
 }

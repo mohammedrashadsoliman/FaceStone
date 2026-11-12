@@ -3,7 +3,7 @@
    High-performance caching, offline shell resilience, and background sync
    ========================================================================== */
 
-const CACHE_NAME = 'facestone-pwa-v2026.10.01.1';
+const CACHE_NAME = 'facestone-pwa-v2026.11.07.2';
 
 const PRECACHE_ASSETS = [
   '/',
@@ -67,9 +67,13 @@ self.addEventListener('fetch', (event) => {
   const request = event.request;
   const url = new URL(request.url);
 
-  // Exclude non-GET requests, SignalR WebSockets, and live API endpoints
+  // Exclude non-GET requests, SignalR WebSockets, DevTools refresh, and live API endpoints
   if (request.method !== 'GET' ||
+      url.protocol === 'ws:' ||
+      url.protocol === 'wss:' ||
       url.pathname.startsWith('/chatHub') ||
+      url.pathname.includes('aspnetcore-browser-refresh') ||
+      url.pathname.includes('browserLink') ||
       url.pathname.startsWith('/api/chat/attachments') ||
       url.pathname.startsWith('/swagger')) {
     return;
@@ -106,7 +110,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Static Assets (CSS, JS, Images, Fonts): Stale-while-revalidate
+  // Static Assets (CSS, JS, Images, Fonts): Stale-while-revalidate with guaranteed Response
   event.respondWith(
     caches.match(request).then((cachedResponse) => {
       const fetchPromise = fetch(request).then((networkResponse) => {
@@ -114,11 +118,16 @@ self.addEventListener('fetch', (event) => {
           const responseToCache = networkResponse.clone();
           caches.open(CACHE_NAME).then((cache) => {
             cache.put(request, responseToCache);
-          });
+          }).catch(() => {});
         }
         return networkResponse;
       }).catch(() => {
-        // Fallback silently if network fails while offline
+        // Fallback to cached response or a clean 404 response so respondWith never gets undefined
+        return cachedResponse || new Response('Asset not available offline', {
+          status: 404,
+          statusText: 'Not Found',
+          headers: { 'Content-Type': 'text/plain; charset=utf-8' }
+        });
       });
 
       return cachedResponse || fetchPromise;

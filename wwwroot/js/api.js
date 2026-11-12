@@ -830,6 +830,68 @@ class ChatApi {
     });
   }
 
+  static async createFinancePurchaseOrder(data) {
+    return await this.request('/api/finance/purchase-orders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+  }
+
+  static async updateFinancePurchaseOrder(id, data) {
+    return await this.request(`/api/finance/purchase-orders/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+  }
+
+  static async getFinanceSuppliers(params = {}) {
+    const qs = new URLSearchParams();
+    if (params.search) qs.append('search', params.search);
+    if (params.sourceDepartment) qs.append('sourceDepartment', params.sourceDepartment);
+    const queryStr = qs.toString() ? `?${qs.toString()}` : '';
+    return await this.request(`/api/finance/suppliers${queryStr}`, {
+      method: 'GET'
+    });
+  }
+
+  static async getFinanceSupplierDetails(id) {
+    return await this.request(`/api/finance/suppliers/${encodeURIComponent(id)}`, {
+      method: 'GET'
+    });
+  }
+
+  static async createFinanceSupplier(data) {
+    return await this.request('/api/finance/suppliers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+  }
+
+  static async updateFinanceSupplier(id, data) {
+    return await this.request(`/api/finance/suppliers/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+  }
+
+  static async addFinanceSupplierTransaction(id, data) {
+    return await this.request(`/api/finance/suppliers/${encodeURIComponent(id)}/transactions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+  }
+
+  static async syncFinanceSuppliers() {
+    return await this.request('/api/finance/suppliers/sync', {
+      method: 'POST'
+    });
+  }
+
   static async getFinancePurchaseOrderDetails(poNumber) {
     return await this.request(`/api/finance/purchase-orders/${encodeURIComponent(poNumber)}`, {
       method: 'GET'
@@ -940,6 +1002,80 @@ class ChatApi {
   }
 
   /* ------------------------------------------------------------------------
+     Finance Invoices Module Endpoints (/api/finance/invoices)
+     ------------------------------------------------------------------------ */
+  static async getInvoiceStatistics() {
+    return await this.request('/api/finance/invoices/statistics', { method: 'GET' });
+  }
+
+  static async getInvoices(params = {}) {
+    const qs = new URLSearchParams();
+    if (params.search) qs.append('search', params.search);
+    if (params.status && params.status !== 'ALL') qs.append('status', params.status);
+    if (params.projectCodeId) qs.append('projectCodeId', params.projectCodeId);
+    if (params.poNumber) qs.append('poNumber', params.poNumber);
+    if (params.companyId) qs.append('companyId', params.companyId);
+    if (params.fromDate) qs.append('fromDate', params.fromDate);
+    if (params.toDate) qs.append('toDate', params.toDate);
+    if (params.page) qs.append('page', params.page);
+    if (params.pageSize) qs.append('pageSize', params.pageSize);
+    const queryStr = qs.toString() ? `?${qs.toString()}` : '';
+    return await this.request(`/api/finance/invoices${queryStr}`, { method: 'GET' });
+  }
+
+  static async getInvoiceById(id) {
+    return await this.request(`/api/finance/invoices/${encodeURIComponent(id)}`, { method: 'GET' });
+  }
+
+  static async getInvoiceProjectCodes() {
+    return await this.request('/api/finance/invoices/project-codes', { method: 'GET' });
+  }
+
+  static async getInvoiceCompanies() {
+    return await this.request('/api/finance/invoices/companies', { method: 'GET' });
+  }
+
+  static async getInvoicePurchaseOrders() {
+    return await this.request('/api/finance/invoices/purchase-orders', { method: 'GET' });
+  }
+
+  static async getEligibleTransportations(projectCodeId) {
+    return await this.request(`/api/finance/invoices/eligible-transportations?projectCodeId=${encodeURIComponent(projectCodeId)}`, { method: 'GET' });
+  }
+
+  static async getProjectInvoiceData(projectCodeId) {
+    return await this.request(`/api/finance/invoices/project-data?projectCodeId=${encodeURIComponent(projectCodeId)}`, { method: 'GET' });
+  }
+
+  static async createInvoice(data) {
+    return await this.request('/api/finance/invoices', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+  }
+
+  static async updateInvoice(id, data) {
+    return await this.request(`/api/finance/invoices/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+  }
+
+  static async issueDraftInvoice(id) {
+    return await this.request(`/api/finance/invoices/${encodeURIComponent(id)}/issue`, { method: 'POST' });
+  }
+
+  static async cancelInvoice(id) {
+    return await this.request(`/api/finance/invoices/${encodeURIComponent(id)}/cancel`, { method: 'POST' });
+  }
+
+  static async markInvoicePrinted(id) {
+    return await this.request(`/api/finance/invoices/${encodeURIComponent(id)}/mark-printed`, { method: 'POST' });
+  }
+
+  /* ------------------------------------------------------------------------
      Transportation Department Endpoints (/api/transportation)
      ------------------------------------------------------------------------ */
   static async getTransportationPurchaseOrder(poNumber) {
@@ -986,19 +1122,6 @@ class ChatApi {
   static getTransportationInvoiceUrl(fileName) {
     if (!fileName) return '#';
     return `${API_BASE_URL}/api/transportation/invoices/${encodeURIComponent(fileName)}`;
-  }
-
-  static async getTransportationPurchaseOrder(poNumber) {
-    return await this.request(`/api/transportation/po/${encodeURIComponent(poNumber)}`, {
-      method: 'GET'
-    });
-  }
-
-  static async submitTransportationTransaction(formData) {
-    return await this.request('/api/transportation', {
-      method: 'POST',
-      body: formData
-    });
   }
 
   static async submitTransportation(data) {
@@ -1353,6 +1476,42 @@ class ChatApi {
     });
   }
 
+  static async getStorageCompliantReferences() {
+    return await this.request('/api/storage/compliant-references', {
+      method: 'GET'
+    });
+  }
+
+  static async getStoragePreviewBatchNumbers(count = 1) {
+    return await this.request(`/api/storage/preview-batch-numbers?count=${encodeURIComponent(count)}`, {
+      method: 'GET'
+    });
+  }
+
+  static async getStorageLocationAvailableBatches(locationId) {
+    return await this.request(`/api/storage/locations/${encodeURIComponent(locationId)}/available-batches`, {
+      method: 'GET'
+    });
+  }
+
+  static async getStorageLocationAvailableReferences(locationId) {
+    return await this.request(`/api/storage/locations/${encodeURIComponent(locationId)}/available-references`, {
+      method: 'GET'
+    });
+  }
+
+  static async getStorageOperationBatches(operationId) {
+    return await this.request(`/api/storage/operations/${encodeURIComponent(operationId)}/batches`, {
+      method: 'GET'
+    });
+  }
+
+  static async getStorageBatchDetails(batchId) {
+    return await this.request(`/api/storage/batches/${encodeURIComponent(batchId)}`, {
+      method: 'GET'
+    });
+  }
+
   static async getStorageOperations(params = {}) {
     const qs = new URLSearchParams();
     if (params.type && params.type !== 'ALL') qs.append('type', params.type);
@@ -1373,6 +1532,17 @@ class ChatApi {
 
   static async getStorageProductionBatches() {
     return await this.request('/api/storage/production-batches', {
+      method: 'GET'
+    });
+  }
+
+  static async getStorageInventory(params = {}) {
+    const qs = new URLSearchParams();
+    if (params.locationId) qs.append('locationId', params.locationId);
+    if (params.materialId) qs.append('materialId', params.materialId);
+    if (params.search) qs.append('search', params.search);
+    const queryStr = qs.toString() ? `?${qs.toString()}` : '';
+    return await this.request(`/api/storage/inventory${queryStr}`, {
       method: 'GET'
     });
   }
@@ -1453,6 +1623,17 @@ class ChatApi {
     });
   }
 
+  static async getPendingChemicalReferences() {
+    return await this.request('/api/laboratory/pending-chemical-references', { method: 'GET' });
+  }
+
+  static async submitChemicalInspection(formData) {
+    return await this.request('/api/laboratory/chemical-inspection', {
+      method: 'POST',
+      body: formData instanceof FormData ? formData : JSON.stringify(formData)
+    });
+  }
+
   static async getLaboratoryFinalCertificates(params = {}) {
     const qs = new URLSearchParams();
     if (params.section && params.section !== 'ALL') qs.append('section', params.section);
@@ -1490,6 +1671,54 @@ class ChatApi {
 
   static async verifyLaboratoryAccess() {
     return await this.request('/api/department/laboratory', { method: 'GET' });
+  }
+
+  static async getLabAvailableBatches() {
+    return await this.request('/api/laboratory/available-warehouse-batches', { method: 'GET' });
+  }
+
+  static async getLabNextOrderNumber() {
+    return await this.request('/api/laboratory/next-order-number', { method: 'GET' });
+  }
+
+  static async createLabProductionOrder(payload) {
+    return await this.request('/api/laboratory/production-orders', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
+
+  static async getLabProductionOrders(params = {}) {
+    const qs = new URLSearchParams();
+    if (params.status && params.status !== 'ALL') qs.append('status', params.status);
+    if (params.search) qs.append('search', params.search);
+    if (params.fromDate) qs.append('fromDate', params.fromDate);
+    if (params.toDate) qs.append('toDate', params.toDate);
+    const queryStr = qs.toString() ? `?${qs.toString()}` : '';
+    return await this.request(`/api/laboratory/production-orders${queryStr}`, { method: 'GET' });
+  }
+
+  static async getLabProductionOrderById(id) {
+    return await this.request(`/api/laboratory/production-orders/${encodeURIComponent(id)}`, { method: 'GET' });
+  }
+
+  static async cancelLabProductionOrder(id) {
+    return await this.request(`/api/laboratory/production-orders/${encodeURIComponent(id)}/cancel`, { method: 'POST' });
+  }
+
+  static async getPendingProductionOrderTransfers() {
+    return await this.request('/api/storage/production-orders/pending-transfers', { method: 'GET' });
+  }
+
+  static async confirmProductionOrderTransfer(orderId, payload) {
+    return await this.request(`/api/storage/production-orders/${encodeURIComponent(orderId)}/confirm-transfer`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
+
+  static async getProductionReadyOrders() {
+    return await this.request('/api/production/ready-orders', { method: 'GET' });
   }
 
   /* ------------------------------------------------------------------------
@@ -1696,6 +1925,135 @@ class ChatApi {
     const queryStr = qs.toString() ? `?${qs.toString()}` : '';
     return await this.request(`/api/production/daily-submissions/summary-stats${queryStr}`, { method: 'GET' });
   }
+
+  // PRODUCTION PROCESS & TRACEABILITY SYSTEM (نظام عمليات الإنتاج والتتبع الشامل)
+  // =========================================================================
+
+  static async getAvailableProductionBatches(params = {}) {
+    const qs = new URLSearchParams();
+    if (params.storageLocationId) qs.set('storageLocationId', params.storageLocationId);
+    if (params.rawMaterialId) qs.set('rawMaterialId', params.rawMaterialId);
+    if (params.referenceNumber) qs.set('referenceNumber', params.referenceNumber);
+    if (params.search) qs.set('search', params.search);
+    const queryStr = qs.toString() ? `?${qs.toString()}` : '';
+    return await this.request(`/api/production/available-batches${queryStr}`, { method: 'GET' });
+  }
+
+  static async getProductionNextNumbers() {
+    return await this.request('/api/production/next-numbers', { method: 'GET' });
+  }
+
+  static async submitProductionProcess(formData) {
+    return await this.request('/api/production/processes', {
+      method: 'POST',
+      body: formData instanceof FormData ? formData : JSON.stringify(formData)
+    });
+  }
+
+  static async getProductionProcesses(params = {}) {
+    const qs = new URLSearchParams();
+    if (params.search) qs.set('search', params.search);
+    if (params.status) qs.set('status', params.status);
+    if (params.page) qs.set('page', params.page);
+    if (params.pageSize) qs.set('pageSize', params.pageSize);
+    const queryStr = qs.toString() ? `?${qs.toString()}` : '';
+    return await this.request(`/api/production/processes${queryStr}`, { method: 'GET' });
+  }
+
+  static async getProductionProcessById(id) {
+    return await this.request(`/api/production/processes/${encodeURIComponent(id)}`, { method: 'GET' });
+  }
+
+  static async getProductionProcessByNumber(processNumber) {
+    return await this.request(`/api/production/processes/by-number/${encodeURIComponent(processNumber)}`, { method: 'GET' });
+  }
+
+  static async getProductionEligibleOrdersForFinished() {
+    return await this.request('/api/production/orders/eligible-for-finished', { method: 'GET' });
+  }
+
+  static async getEligibleProductionProcesses() {
+    return await this.request('/api/production/eligible-processes', { method: 'GET' });
+  }
+
+  static async submitProductionFinishedProduct(processId, formData) {
+    return await this.request(`/api/production/processes/${encodeURIComponent(processId)}/finished-products`, {
+      method: 'POST',
+      body: formData instanceof FormData ? formData : JSON.stringify(formData)
+    });
+  }
+
+  static async submitFinishedProduct(formData) {
+    return await this.request('/api/production/finished-products', {
+      method: 'POST',
+      body: formData instanceof FormData ? formData : JSON.stringify(formData)
+    });
+  }
+
+  static async searchProductionTraceability(params = {}) {
+    const qs = new URLSearchParams();
+    if (params.query) qs.set('query', params.query);
+    if (params.processNumber) qs.set('processNumber', params.processNumber);
+    if (params.orderNumber) qs.set('orderNumber', params.orderNumber);
+    if (params.referenceNumber) qs.set('referenceNumber', params.referenceNumber);
+    if (params.batchNumber) qs.set('batchNumber', params.batchNumber);
+    if (params.manufactureNumber) qs.set('manufactureNumber', params.manufactureNumber);
+    const queryStr = qs.toString() ? `?${qs.toString()}` : '';
+    return await this.request(`/api/production/traceability${queryStr}`, { method: 'GET' });
+  }
+
+  static async returnMaterialsToWarehouse(orderId, data) {
+    const url = orderId 
+      ? `/api/production/orders/${encodeURIComponent(orderId)}/return-to-warehouse`
+      : '/api/production/return-to-warehouse';
+    return await this.request(url, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  }
+
+  static async getAvailableFinishedProducts(locationId = null) {
+    const qs = locationId ? `?locationId=${encodeURIComponent(locationId)}` : '';
+    return await this.request(`/api/storage/available-finished-products${qs}`, { method: 'GET' });
+  }
+
+  static async getEligibleTransportationExports(search = '') {
+    const qs = search ? `?search=${encodeURIComponent(search)}` : '';
+    return await this.request(`/api/transportation/eligible-exports${qs}`, { method: 'GET' });
+  }
+
+  static async lookupTransportationExport(exportTxNumber) {
+    if (!exportTxNumber) return { success: false, message: 'رقم إذن الصرف مطلوب' };
+    const clean = exportTxNumber.toString().trim();
+    const qs = `?number=${encodeURIComponent(clean)}`;
+    return await this.request(`/api/transportation/lookup-export${qs}`, { method: 'GET' });
+  }
+
+  static async getProjectCodes(activeOnly = true) {
+    const qs = activeOnly ? '?activeOnly=true' : '';
+    return await this.request(`/api/transportation/project-codes${qs}`, { method: 'GET' });
+  }
+
+  static async createProjectCode(data) {
+    return await this.request('/api/transportation/project-codes', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  }
+
+  static async updateProjectCode(id, data) {
+    return await this.request(`/api/transportation/project-codes/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify(data)
+    });
+  }
+
+  static async deleteProjectCode(id) {
+    return await this.request(`/api/transportation/project-codes/${encodeURIComponent(id)}`, {
+      method: 'DELETE'
+    });
+  }
 }
 
 window.ChatApi = ChatApi;
+window.FaceStoneApi = ChatApi;

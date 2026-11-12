@@ -14,6 +14,7 @@ using Microsoft.Extensions.Logging;
 using FaceStone.Web.Data;
 using FaceStone.Web.Models;
 using FaceStone.Web.Models.DTOs;
+using FaceStone.Web.Services;
 
 namespace FaceStone.Web.Controllers;
 
@@ -27,17 +28,20 @@ public class StorageController : ControllerBase
     private readonly ILogger<StorageController> _logger;
     private readonly IWebHostEnvironment _env;
     private readonly Microsoft.AspNetCore.SignalR.IHubContext<FaceStone.Web.Hubs.ChatHub> _hubContext;
+    private readonly IWarehouseInventoryService _inventoryService;
 
     public StorageController(
         FaceStoneDbContext db, 
         ILogger<StorageController> logger,
         IWebHostEnvironment env,
-        Microsoft.AspNetCore.SignalR.IHubContext<FaceStone.Web.Hubs.ChatHub> hubContext)
+        Microsoft.AspNetCore.SignalR.IHubContext<FaceStone.Web.Hubs.ChatHub> hubContext,
+        IWarehouseInventoryService inventoryService)
     {
         _db = db;
         _logger = logger;
         _env = env;
         _hubContext = hubContext;
+        _inventoryService = inventoryService;
     }
 
     /// <summary>
@@ -775,7 +779,9 @@ public class StorageController : ControllerBase
             CreatedBy = callerName,
             CreatedByUserId = callerUserId,
             CreatedAt = DateTime.UtcNow,
-            ApprovalStatus = "PENDING"
+            ApprovalStatus = "APPROVED",
+            ReviewedBy = "System (Auto-Approved)",
+            ReviewedAt = DateTime.UtcNow
         };
 
         try
@@ -1993,6 +1999,10 @@ public class StorageController : ControllerBase
             dto.DiscrepancyExplanation = form["discrepancyExplanation"];
             if (int.TryParse(form["transportationId"], out var trId)) dto.TransportationId = trId;
             if (int.TryParse(form["productionReferenceNumber"], out var prnImp)) dto.ProductionReferenceNumber = prnImp;
+            if (int.TryParse(form["laboratoryReportId"], out var lrIdImp)) dto.LaboratoryReportId = lrIdImp;
+            dto.SampleCode = form["sampleCode"];
+            if (int.TryParse(form["numberOfBatches"], out var nbImp)) dto.NumberOfBatches = nbImp;
+            dto.BatchesJson = form["batchesJson"];
 
             dto.WeighbridgeAttachment = form.Files.GetFile("weighbridgeAttachment") ?? form.Files.GetFile("WeighbridgeAttachment");
             dto.QocAttachment = form.Files.GetFile("qocAttachment") ?? form.Files.GetFile("QocAttachment");
@@ -2000,6 +2010,16 @@ public class StorageController : ControllerBase
             dto.WeighbridgeAttachmentPath = form["weighbridgeAttachmentPath"];
             dto.QocAttachmentPath = form["qocAttachmentPath"];
             dto.DocumentAttachmentPath = form["documentAttachmentPath"];
+
+            if (!string.IsNullOrWhiteSpace(dto.BatchesJson))
+            {
+                try
+                {
+                    dto.Batches = System.Text.Json.JsonSerializer.Deserialize<List<BatchDivisionInputDto>>(
+                        dto.BatchesJson, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new();
+                }
+                catch { }
+            }
 
             if (!string.IsNullOrWhiteSpace(dto.ItemsJson))
             {
@@ -2019,14 +2039,26 @@ public class StorageController : ControllerBase
             if (string.IsNullOrWhiteSpace(body)) return null;
             var dto = System.Text.Json.JsonSerializer.Deserialize<CreateStorageImportRequestDto>(
                 body, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-            if (dto != null && (dto.Items == null || dto.Items.Count == 0) && !string.IsNullOrWhiteSpace(dto.ItemsJson))
+            if (dto != null)
             {
-                try
+                if ((dto.Batches == null || dto.Batches.Count == 0) && !string.IsNullOrWhiteSpace(dto.BatchesJson))
                 {
-                    dto.Items = System.Text.Json.JsonSerializer.Deserialize<List<StorageOperationLineInputDto>>(
-                        dto.ItemsJson, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new();
+                    try
+                    {
+                        dto.Batches = System.Text.Json.JsonSerializer.Deserialize<List<BatchDivisionInputDto>>(
+                            dto.BatchesJson, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new();
+                    }
+                    catch { }
                 }
-                catch { }
+                if ((dto.Items == null || dto.Items.Count == 0) && !string.IsNullOrWhiteSpace(dto.ItemsJson))
+                {
+                    try
+                    {
+                        dto.Items = System.Text.Json.JsonSerializer.Deserialize<List<StorageOperationLineInputDto>>(
+                            dto.ItemsJson, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new();
+                    }
+                    catch { }
+                }
             }
             return dto;
         }
@@ -2046,6 +2078,16 @@ public class StorageController : ControllerBase
             if (DateTime.TryParse(form["transactionDate"], out var dt)) dto.TransactionDate = dt;
             dto.Notes = form["notes"];
             dto.ItemsJson = form["itemsJson"];
+            dto.SelectionMode = form["selectionMode"].ToString() ?? "BY_REFERENCE";
+            if (string.IsNullOrWhiteSpace(dto.SelectionMode)) dto.SelectionMode = "BY_REFERENCE";
+            dto.SampleCode = form["sampleCode"];
+            if (int.TryParse(form["productionReferenceNumber"], out var prnExp)) dto.ProductionReferenceNumber = prnExp;
+            if (int.TryParse(form["laboratoryReportId"], out var lrExp)) dto.LaboratoryReportId = lrExp;
+
+            if (!string.IsNullOrWhiteSpace(form["exportType"])) dto.ExportType = form["exportType"].ToString()!;
+            if (int.TryParse(form["productionOrderId"], out var poIdExp)) dto.ProductionOrderId = poIdExp;
+            if (int.TryParse(form["productionProcessId"], out var procIdExp)) dto.ProductionProcessId = procIdExp;
+            if (!string.IsNullOrWhiteSpace(form["manufactureNumber"])) dto.ManufactureNumber = form["manufactureNumber"].ToString()!;
 
             if (decimal.TryParse(form["externalReportedWeight"], out var extW)) dto.ExternalReportedWeight = extW;
             if (decimal.TryParse(form["internalLoadedWeight"], out var inLw)) dto.InternalLoadedWeight = inLw;
@@ -2102,7 +2144,14 @@ public class StorageController : ControllerBase
             if (int.TryParse(form["storageLocationId"], out var locId)) dto.StorageLocationId = locId;
             if (DateTime.TryParse(form["transactionDate"], out var dt)) dto.TransactionDate = dt;
             dto.Notes = form["notes"];
+            dto.DestinationType = form["destinationType"].ToString();
+            if (string.IsNullOrWhiteSpace(dto.DestinationType)) dto.DestinationType = "PRODUCTION";
+            if (int.TryParse(form["destinationStorageLocationId"], out var dstLoc)) dto.DestinationStorageLocationId = dstLoc;
             dto.ItemsJson = form["itemsJson"];
+            dto.SelectionMode = form["selectionMode"].ToString() ?? "BY_REFERENCE";
+            if (string.IsNullOrWhiteSpace(dto.SelectionMode)) dto.SelectionMode = "BY_REFERENCE";
+            dto.SampleCode = form["sampleCode"];
+            if (int.TryParse(form["laboratoryReportId"], out var lrTrf)) dto.LaboratoryReportId = lrTrf;
             if (int.TryParse(form["productionReferenceNumber"], out var prnTrf)) dto.ProductionReferenceNumber = prnTrf;
             dto.DocumentAttachment = form.Files.GetFile("documentAttachment") ?? form.Files.GetFile("DocumentAttachment");
             dto.WeighbridgeAttachment = form.Files.GetFile("weighbridgeAttachment") ?? form.Files.GetFile("WeighbridgeAttachment");
@@ -2189,67 +2238,116 @@ public class StorageController : ControllerBase
             return BadRequest(ApiResponse.Fail("رقم هاتف المورد / المصدر غير صالح. يرجى إدخال رقم هاتف صحيح أو تركه فارغاً."));
         }
 
-        // 5. Validate Items & Material Type Compatibility
-        if (dto.Items == null || dto.Items.Count == 0)
+        // 5. Check if this is a Laboratory Reference-based Import (Primary Workflow)
+        LaboratoryRawMaterialReport? labReport = null;
+        if (dto.LaboratoryReportId.HasValue && dto.LaboratoryReportId.Value > 0)
         {
-            return BadRequest(ApiResponse.Fail("يجب تحديد صنف وارد واحد على الأقل في العملية."));
+            labReport = await _db.LaboratoryRawMaterialReports
+                .Include(r => r.RawMaterial)
+                .FirstOrDefaultAsync(r => r.Id == dto.LaboratoryReportId.Value);
+        }
+        else if (!string.IsNullOrWhiteSpace(dto.SampleCode))
+        {
+            var sc = dto.SampleCode.Trim().ToLowerInvariant();
+            labReport = await _db.LaboratoryRawMaterialReports
+                .Include(r => r.RawMaterial)
+                .FirstOrDefaultAsync(r => r.SampleCode != null && r.SampleCode.ToLower() == sc);
+        }
+        else if (dto.ProductionReferenceNumber.HasValue && dto.ProductionReferenceNumber.Value > 0)
+        {
+            labReport = await _db.LaboratoryRawMaterialReports
+                .Include(r => r.RawMaterial)
+                .FirstOrDefaultAsync(r => r.ProductionReferenceNumber == dto.ProductionReferenceNumber.Value);
         }
 
-        var resolvedItems = new List<(RawMaterial Material, decimal Quantity, string? Notes)>();
-        foreach (var item in dto.Items)
+        decimal remainingAvailable = 0m;
+        List<BatchDivisionInputDto> resolvedBatches = new();
+
+        if (labReport != null)
         {
-            if (item.Quantity <= 0)
+            // Strictly validate compliance status
+            if (labReport.ApprovalStatus != "APPROVED")
             {
-                return BadRequest(ApiResponse.Fail("يجب أن تكون كمية كل صنف وارد أكبر من الصفر."));
+                return BadRequest(ApiResponse.Fail($"المرجع المعملي ({labReport.SampleCode ?? $"#{labReport.ProductionReferenceNumber}"}) قيد المراجعة ({labReport.ApprovalStatus}) ولا يمكن الاستلام قبل اعتماد قسم التحكم والمراقبة."));
+            }
+            if (labReport.ComplyStatus != "COMPLY" || labReport.InspectionDecision == "REJECTED")
+            {
+                return BadRequest(ApiResponse.Fail($"المرجع المعملي ({labReport.SampleCode ?? $"#{labReport.ProductionReferenceNumber}"}) غير مطابق لمواصفات الجودة ({labReport.ComplyStatus} - {labReport.InspectionDecision}) ولا يمكن استلامه في المستودع."));
+            }
+            if (labReport.AcceptedQuantity <= 0)
+            {
+                return BadRequest(ApiResponse.Fail($"المرجع المعملي ({labReport.SampleCode ?? $"#{labReport.ProductionReferenceNumber}"}) لا يحتوي على كمية مقبولة للاستلام."));
             }
 
-            RawMaterial? mat = null;
-            if (item.RawMaterialId.HasValue && item.RawMaterialId.Value > 0)
-            {
-                mat = await _db.RawMaterials.FirstOrDefaultAsync(m => m.Id == item.RawMaterialId.Value);
-                if (mat == null)
-                {
-                    return BadRequest(ApiResponse.Fail($"الصنف ذو المعرف #{item.RawMaterialId} غير موجود."));
-                }
+            var alreadyAllocated = await _db.WarehouseBatches
+                .Where(b => b.LaboratoryReportId == labReport.Id && b.Status != "REJECTED")
+                .SumAsync(b => (decimal?)b.InitialQuantity) ?? 0m;
 
-                if (!string.IsNullOrWhiteSpace(mat.MaterialType) && mat.MaterialType != materialType)
-                {
-                    var expectedAr = materialType == MaterialProcessType.Mechanical ? "خامات ميكانيكية" : "خامات كيميائية";
-                    var actualAr = mat.MaterialType == MaterialProcessType.Mechanical ? "خامات ميكانيكية" : "خامات كيميائية";
-                    return BadRequest(ApiResponse.Fail($"الصنف '{mat.Name}' يتبع ({actualAr}) ولا يمكن إضافته ضمن إذن إضافة ({expectedAr})."));
-                }
-            }
-            else if (!string.IsNullOrWhiteSpace(item.NewMaterialName))
+            remainingAvailable = Math.Round(labReport.AcceptedQuantity - alreadyAllocated, 3);
+            if (remainingAvailable <= 0)
             {
-                var cleanName = item.NewMaterialName.Trim();
-                mat = await _db.RawMaterials.FirstOrDefaultAsync(m => m.Name.ToLower() == cleanName.ToLower());
-                if (mat == null)
+                return BadRequest(ApiResponse.Fail($"المرجع المعملي ({labReport.SampleCode ?? $"#{labReport.ProductionReferenceNumber}"}) تم استلام كامل كميته وتوزيعها على دفعات سابقة ({alreadyAllocated:N3} طن)."));
+            }
+
+            // Batches input validation
+            if (dto.Batches != null && dto.Batches.Count > 0)
+            {
+                resolvedBatches = dto.Batches.Where(b => b.Quantity > 0).ToList();
+            }
+            else if (dto.Items != null && dto.Items.Count > 0)
+            {
+                resolvedBatches = dto.Items.Where(i => i.Quantity > 0).Select(i => new BatchDivisionInputDto
                 {
-                    mat = new RawMaterial
-                    {
-                        Name = cleanName,
-                        MaterialType = materialType,
-                        InitialQuantity = 0m,
-                        CreatedAt = DateTime.UtcNow,
-                        CreatedBy = userName,
-                        CreatedByUserId = userId
-                    };
-                    await _db.RawMaterials.AddAsync(mat);
-                    await _db.SaveChangesAsync();
-                }
-                else if (!string.IsNullOrWhiteSpace(mat.MaterialType) && mat.MaterialType != materialType)
-                {
-                    var expectedAr = materialType == MaterialProcessType.Mechanical ? "خامات ميكانيكية" : "خامات كيميائية";
-                    var actualAr = mat.MaterialType == MaterialProcessType.Mechanical ? "خامات ميكانيكية" : "خامات كيميائية";
-                    return BadRequest(ApiResponse.Fail($"الصنف '{mat.Name}' مسجل مسبقاً كـ ({actualAr}) ولا يتطابق مع نوع الإذن المحدد ({expectedAr})."));
-                }
+                    Quantity = i.Quantity,
+                    Notes = i.Notes
+                }).ToList();
             }
             else
             {
-                return BadRequest(ApiResponse.Fail("يجب تحديد صنف موجود أو إدخال اسم صنف جديد."));
+                resolvedBatches = new List<BatchDivisionInputDto>
+                {
+                    new BatchDivisionInputDto { Quantity = remainingAvailable }
+                };
             }
 
-            resolvedItems.Add((mat, item.Quantity, item.Notes));
+            if (resolvedBatches.Count == 0)
+            {
+                return BadRequest(ApiResponse.Fail("يجب تحديد دفعة واحدة على الأقل للاستلام."));
+            }
+
+            var sumBatches = Math.Round(resolvedBatches.Sum(b => b.Quantity), 3);
+            if (sumBatches > remainingAvailable)
+            {
+                return BadRequest(ApiResponse.Fail($"إجمالي كميات الدفعات ({sumBatches:N3} طن) يتجاوز الرصيد المتبقي المتاح للاستلام ({remainingAvailable:N3} طن)."));
+            }
+            if (sumBatches <= 0)
+            {
+                return BadRequest(ApiResponse.Fail("يجب أن يكون إجمالي كميات الدفعات أكبر من الصفر."));
+            }
+
+            if (alreadyAllocated + sumBatches >= labReport.AcceptedQuantity)
+            {
+                labReport.IsStorageReceived = true;
+                labReport.StorageReceivedAt = DateTime.UtcNow;
+            }
+
+            // Auto-align classification & source if from Lab Report
+            if (!string.IsNullOrWhiteSpace(labReport.MaterialClassification))
+            {
+                materialType = labReport.MaterialClassification.Trim().ToUpperInvariant();
+            }
+            if (!string.IsNullOrWhiteSpace(labReport.SupplierName))
+            {
+                source = labReport.SupplierName.Trim();
+            }
+        }
+        else
+        {
+            // Legacy / Direct Item validation fallback
+            if (dto.Items == null || dto.Items.Count == 0)
+            {
+                return BadRequest(ApiResponse.Fail("يجب اختيار رقم عينة معتمد من المعمل أو تحديد صنف وارد واحد على الأقل."));
+            }
         }
 
         // 6. Internal Weighing & Discrepancy Validation
@@ -2288,7 +2386,6 @@ public class StorageController : ControllerBase
         {
             diff = Math.Round(Math.Abs(internalNet.Value - externalWeight.Value), 3);
             diffPct = Math.Round((diff.Value / externalWeight.Value) * 100m, 2);
-            // Factory standard tolerance: 0.5% or > 0.05 tons
             if (diffPct.Value > 0.5m || diff.Value > 0.05m)
             {
                 isFlagged = true;
@@ -2298,57 +2395,6 @@ public class StorageController : ControllerBase
         if (isFlagged && string.IsNullOrWhiteSpace(dto.DiscrepancyExplanation))
         {
             return BadRequest(ApiResponse.Fail($"تم رصد فارق وزن بين الكمية الموردة ({externalWeight:N3} طن) والوزن الصافي الداخلي ({internalNet:N3} طن) بمقدار {diff:N3} طن ({diffPct:N2}%) يتجاوز نسبة التفاوت المسموحة (0.5%). يرجى إدخال سبب الفارق في الميزان الداخلي للمتابعة."));
-        }
-
-        // 6.5 Validate Laboratory Production Reference (shared traceability key)
-        LaboratoryRawMaterialReport? labReport = null;
-        LaboratoryFinalConformityCertificate? labFinalCert = null;
-        if (dto.ProductionReferenceNumber.HasValue && dto.ProductionReferenceNumber.Value > 0)
-        {
-            labReport = await _db.LaboratoryRawMaterialReports
-                .FirstOrDefaultAsync(r => r.ProductionReferenceNumber == dto.ProductionReferenceNumber.Value);
-            if (labReport == null)
-            {
-                return BadRequest(ApiResponse.Fail($"الرقم المرجعي التتبعي #{dto.ProductionReferenceNumber} غير مسجل بقسم المعمل. يرجى اختيار رقم مرجعي صحيح."));
-            }
-
-            // Finished-product receiving: an approved, conforming final certificate exists for this reference
-            labFinalCert = await _db.LaboratoryFinalConformityCertificates
-                .FirstOrDefaultAsync(c => c.ProductionReferenceNumber == dto.ProductionReferenceNumber.Value &&
-                                          c.ApprovalStatus == "APPROVED" && c.ConformityDecision == "CONFORMS");
-
-            var totalItemsQty = dto.Items.Sum(i => i.Quantity);
-
-            if (labFinalCert != null)
-            {
-                if (labFinalCert.IsStoragePosted)
-                {
-                    return BadRequest(ApiResponse.Fail($"الرقم المرجعي #{dto.ProductionReferenceNumber.Value}: تم استلام المنتج النهائي المعتمد ({labFinalCert.CertificateNumber}) بالمستودع مسبقاً ولا يمكن استلامه مرة أخرى."));
-                }
-                if (labFinalCert.ActualFinalProductQuantity > 0 && totalItemsQty > labFinalCert.ActualFinalProductQuantity)
-                {
-                    return BadRequest(ApiResponse.Fail($"إجمالي كميات الأصناف ({totalItemsQty:N3} طن) يتجاوز كمية المنتج النهائي المعتمدة ({labFinalCert.ActualFinalProductQuantity:N3} طن) بالرقم المرجعي #{dto.ProductionReferenceNumber.Value}."));
-                }
-            }
-            else
-            {
-                if (labReport.ApprovalStatus != "APPROVED")
-                {
-                    return BadRequest(ApiResponse.Fail($"الرقم المرجعي #{dto.ProductionReferenceNumber.Value}: تقرير فحص المواد الخام قيد المراجعة ({labReport.ApprovalStatus}) ولا يمكن الاستلام قبل اعتماد قسم التحكم والمراقبة."));
-                }
-                if (labReport.IsStorageReceived)
-                {
-                    return BadRequest(ApiResponse.Fail($"الرقم المرجعي #{dto.ProductionReferenceNumber.Value}: تم استلام الكمية المقبولة بالمستودع مسبقاً ولا يمكن استلام نفس الكمية مرة أخرى."));
-                }
-                if (labReport.InspectionDecision != "ACCEPTED" && labReport.ComplyStatus != "COMPLY")
-                {
-                    return BadRequest(ApiResponse.Fail($"الرقم المرجعي #{dto.ProductionReferenceNumber.Value}: تقرير فحص المعمل غير مقبول للاستلام (القرار: {labReport.InspectionDecision})."));
-                }
-                if (labReport.AcceptedQuantity > 0 && totalItemsQty > labReport.AcceptedQuantity)
-                {
-                    return BadRequest(ApiResponse.Fail($"إجمالي كميات الأصناف ({totalItemsQty:N3} طن) يتجاوز الكمية المقبولة من المعمل ({labReport.AcceptedQuantity:N3} طن) بالرقم المرجعي #{dto.ProductionReferenceNumber.Value}."));
-                }
-            }
         }
 
         // 7. Validate Attachments (Optional, saved if uploaded)
@@ -2412,6 +2458,7 @@ public class StorageController : ControllerBase
                 DiscrepancyExplanation = dto.DiscrepancyExplanation?.Trim(),
                 TransportationId = dto.TransportationId,
                 ProductionReferenceNumber = labReport != null ? labReport.ProductionReferenceNumber : dto.ProductionReferenceNumber,
+                SampleCode = labReport != null ? (labReport.SampleCode ?? $"SMP-{labReport.SampleNumber:D4}") : dto.SampleCode,
 
                 // Attachments
                 WeighbridgeAttachmentPath = !string.IsNullOrWhiteSpace(weighbridgeRes.StoredFileName) ? $"/uploads/storage/{weighbridgeRes.StoredFileName}" : null,
@@ -2433,30 +2480,152 @@ public class StorageController : ControllerBase
             await _db.StorageOperations.AddAsync(op);
             await _db.SaveChangesAsync();
 
-            int lineIndex = 1;
-            foreach (var (mat, qty, notes) in resolvedItems)
+            var createdBatches = new List<WarehouseBatch>();
+            var createdItems = new List<StorageOperationItem>();
+
+            if (labReport != null && resolvedBatches.Count > 0)
             {
-                var tracking = $"IMP-{txDate:yyyy}-{txNumber:D4}-L{lineIndex}";
-                var opItem = new StorageOperationItem
+                var sampleName = (!string.IsNullOrWhiteSpace(labReport.SampleName) ? labReport.SampleName : labReport.RawMaterialDescription).Trim();
+                var rawMat = labReport.RawMaterial;
+                if (rawMat == null)
                 {
-                    StorageOperationId = op.Id,
-                    RawMaterialId = mat.Id,
-                    MaterialName = mat.Name,
-                    Quantity = qty,
-                    TrackingNumber = tracking,
-                    Notes = notes
-                };
-                await _db.StorageOperationItems.AddAsync(opItem);
-                lineIndex++;
+                    rawMat = await _db.RawMaterials.FirstOrDefaultAsync(m => m.Name.ToLower() == sampleName.ToLower());
+                    if (rawMat == null)
+                    {
+                        rawMat = new RawMaterial
+                        {
+                            Name = sampleName,
+                            MaterialType = materialType == "CHEMICAL" ? MaterialProcessType.Chemical : MaterialProcessType.Mechanical,
+                            InitialQuantity = 0m,
+                            CreatedAt = DateTime.UtcNow,
+                            CreatedBy = userName,
+                            CreatedByUserId = userId
+                        };
+                        await _db.RawMaterials.AddAsync(rawMat);
+                        await _db.SaveChangesAsync();
+                    }
+                }
+
+                var batchNumbers = await ReserveBatchNumbersAsync(resolvedBatches.Count);
+
+                for (int idx = 0; idx < resolvedBatches.Count; idx++)
+                {
+                    var bIn = resolvedBatches[idx];
+                    var batchNum = !string.IsNullOrWhiteSpace(bIn.BatchNumber) && !await _db.WarehouseBatches.AnyAsync(b => b.BatchNumber == bIn.BatchNumber.Trim())
+                        ? bIn.BatchNumber.Trim()
+                        : batchNumbers[idx];
+
+                    var batch = new WarehouseBatch
+                    {
+                        LaboratoryReportId = labReport.Id,
+                        ProductionReferenceNumber = labReport.ProductionReferenceNumber,
+                        SampleCode = labReport.SampleCode ?? $"SMP-{labReport.SampleNumber:D4}",
+                        BatchNumber = batchNum,
+                        RawMaterialId = rawMat.Id,
+                        MaterialName = sampleName,
+                        MaterialClassification = materialType,
+                        SupplierName = source,
+                        StorageLocationId = location.Id,
+                        InitialQuantity = Math.Round(bIn.Quantity, 3),
+                        CurrentQuantity = Math.Round(bIn.Quantity, 3),
+                        StorageOperationId = op.Id,
+                        ImportDate = txDate,
+                        Status = "APPROVED",
+                        IsActive = true,
+                        CreatedAt = DateTime.UtcNow,
+                        CreatedBy = userName,
+                        CreatedByUserId = userId,
+                        Notes = bIn.Notes
+                    };
+                    await _db.WarehouseBatches.AddAsync(batch);
+                    await _db.SaveChangesAsync();
+
+                    var opItem = new StorageOperationItem
+                    {
+                        StorageOperationId = op.Id,
+                        RawMaterialId = rawMat.Id,
+                        WarehouseBatchId = batch.Id,
+                        BatchNumber = batchNum,
+                        SampleCode = batch.SampleCode,
+                        ProductionReferenceNumber = labReport.ProductionReferenceNumber,
+                        MaterialName = sampleName,
+                        Quantity = Math.Round(bIn.Quantity, 3),
+                        TrackingNumber = $"IMP-{txDate:yyyy}-{txNumber:D4}-B{idx + 1}",
+                        Notes = bIn.Notes
+                    };
+                    await _db.StorageOperationItems.AddAsync(opItem);
+                    await _db.SaveChangesAsync();
+
+                    batch.StorageOperationItemId = opItem.Id;
+                    createdBatches.Add(batch);
+                    createdItems.Add(opItem);
+                }
+            }
+            else
+            {
+                // Fallback for direct manual items
+                int lineIndex = 1;
+                foreach (var item in (dto.Items ?? new List<StorageOperationLineInputDto>()))
+                {
+                    if (item.Quantity <= 0) continue;
+                    RawMaterial? mat = null;
+                    if (item.RawMaterialId.HasValue && item.RawMaterialId.Value > 0)
+                    {
+                        mat = await _db.RawMaterials.FirstOrDefaultAsync(m => m.Id == item.RawMaterialId.Value);
+                    }
+                    else if (!string.IsNullOrWhiteSpace(item.NewMaterialName))
+                    {
+                        var cleanName = item.NewMaterialName.Trim();
+                        mat = await _db.RawMaterials.FirstOrDefaultAsync(m => m.Name.ToLower() == cleanName.ToLower());
+                        if (mat == null)
+                        {
+                            mat = new RawMaterial
+                            {
+                                Name = cleanName,
+                                MaterialType = materialType,
+                                InitialQuantity = 0m,
+                                CreatedAt = DateTime.UtcNow,
+                                CreatedBy = userName,
+                                CreatedByUserId = userId
+                            };
+                            await _db.RawMaterials.AddAsync(mat);
+                            await _db.SaveChangesAsync();
+                        }
+                    }
+
+                    if (mat == null) continue;
+
+                    var opItem = new StorageOperationItem
+                    {
+                        StorageOperationId = op.Id,
+                        RawMaterialId = mat.Id,
+                        MaterialName = mat.Name,
+                        Quantity = Math.Round(item.Quantity, 3),
+                        TrackingNumber = $"IMP-{txDate:yyyy}-{txNumber:D4}-L{lineIndex}",
+                        Notes = item.Notes
+                    };
+                    await _db.StorageOperationItems.AddAsync(opItem);
+                    createdItems.Add(opItem);
+                    lineIndex++;
+                }
             }
 
             await _db.SaveChangesAsync();
             await dbTransaction.CommitAsync();
 
-            _logger.LogInformation("Import Storage Operation #{TxNumber} (ID: {Id}) submitted successfully by {User}.",
-                op.TransactionNumber, op.Id, userName);
+            // Auto-Approve: Automatically approve and post inventory ledger immediately
+            var (appOk, _, appDto) = await ApproveStorageOperationCoreAsync(_db, _logger, _hubContext, op.Id, "System (Auto-Approved)", userId, "SYSTEM");
+            if (appOk && appDto != null)
+            {
+                op.ApprovalStatus = "APPROVED";
+                op.IsInventoryPosted = true;
+            }
 
-            var resultDto = MapOperationToDto(op, await _db.StorageOperationItems.Where(i => i.StorageOperationId == op.Id).ToListAsync());
+            _logger.LogInformation("Import Storage Operation #{TxNumber} (ID: {Id}) with {BatchesCount} batches auto-approved successfully.",
+                op.TransactionNumber, op.Id, createdBatches.Count);
+
+            op.CreatedBatches = createdBatches;
+            var resultDto = MapOperationToDto(op, createdItems);
 
             // SignalR notification
             var msg = isFlagged 
@@ -2497,6 +2666,8 @@ public class StorageController : ControllerBase
             return BadRequest(ApiResponse.Fail("بيانات إذن الصرف غير صالحة."));
         }
 
+        var isFinishedProductExport = string.Equals(dto.ExportType, "FINISHED_PRODUCT", StringComparison.OrdinalIgnoreCase);
+
         // 1. Validate Location
         var location = await _db.StorageLocations.FirstOrDefaultAsync(l => l.Id == dto.StorageLocationId && l.IsActive);
         if (location == null)
@@ -2526,13 +2697,22 @@ public class StorageController : ControllerBase
             return BadRequest(ApiResponse.Fail("رقم هاتف العميل / المسؤول غير صالح. يرجى إدخال رقم هاتف صحيح أو تركه فارغاً."));
         }
 
-        // 5. Validate Items & Real-time Location Stock
+        // 5. Validate Items & Real-time Location Stock / Batch Stock
         if (dto.Items == null || dto.Items.Count == 0)
         {
-            return BadRequest(ApiResponse.Fail("يجب تحديد صنف صادر واحد على الأقل في العملية."));
+            return BadRequest(ApiResponse.Fail("يجب تحديد صنف أو دفعة واحدة على الأقل للصرف."));
         }
 
-        var resolvedItems = new List<(RawMaterial Material, decimal Quantity, string? Notes)>();
+        var isByReference = !isFinishedProductExport && string.Equals(dto.SelectionMode, "BY_REFERENCE", StringComparison.OrdinalIgnoreCase);
+        if (isByReference)
+        {
+            if (!dto.LaboratoryReportId.HasValue && string.IsNullOrWhiteSpace(dto.SampleCode) && !dto.ProductionReferenceNumber.HasValue)
+            {
+                return BadRequest(ApiResponse.Fail("في وضع الصرف برقم العينة، يجب اختيار رقم العينة المرجعية."));
+            }
+        }
+
+        var resolvedItems = new List<(RawMaterial Material, decimal Quantity, string? Notes, WarehouseBatch? Batch)>();
         foreach (var item in dto.Items)
         {
             if (item.Quantity <= 0)
@@ -2540,34 +2720,90 @@ public class StorageController : ControllerBase
                 return BadRequest(ApiResponse.Fail("يجب أن تكون كمية الصرف أكبر من الصفر."));
             }
 
-            if (!item.RawMaterialId.HasValue || item.RawMaterialId.Value <= 0)
+            WarehouseBatch? batch = null;
+            if (item.WarehouseBatchId.HasValue && item.WarehouseBatchId.Value > 0)
             {
-                return BadRequest(ApiResponse.Fail("معرف الصنف الصادر مطلوب."));
+                batch = await _db.WarehouseBatches.FirstOrDefaultAsync(b => b.Id == item.WarehouseBatchId.Value && b.IsActive);
+                if (batch == null)
+                {
+                    return BadRequest(ApiResponse.Fail($"الدفعة رقم #{item.WarehouseBatchId} غير موجودة أو غير نشطة."));
+                }
+            }
+            else if (!string.IsNullOrWhiteSpace(item.BatchNumber))
+            {
+                batch = await _db.WarehouseBatches.FirstOrDefaultAsync(b => b.BatchNumber == item.BatchNumber && b.StorageLocationId == location.Id && b.IsActive);
+                if (batch == null)
+                {
+                    return BadRequest(ApiResponse.Fail($"الدفعة رقم '{item.BatchNumber}' غير موجودة في هذا المستودع أو غير نشطة."));
+                }
             }
 
-            var mat = await _db.RawMaterials.FirstOrDefaultAsync(m => m.Id == item.RawMaterialId.Value);
+            if (batch != null)
+            {
+                if (batch.StorageLocationId != location.Id)
+                {
+                    return BadRequest(ApiResponse.Fail($"الدفعة '{batch.BatchNumber}' غير موجودة في مكان التخزين المختار ({location.Name})."));
+                }
+
+                if (batch.Status != "APPROVED")
+                {
+                    return BadRequest(ApiResponse.Fail($"الدفعة '{batch.BatchNumber}' غير معتمدة للصرف (حالتها الحالية: {batch.Status})."));
+                }
+
+                if (isByReference)
+                {
+                    if (dto.LaboratoryReportId.HasValue && batch.LaboratoryReportId != dto.LaboratoryReportId.Value)
+                    {
+                        return BadRequest(ApiResponse.Fail($"الدفعة '{batch.BatchNumber}' لا تتبع رقم التقرير المعملي المختار."));
+                    }
+                    if (!string.IsNullOrWhiteSpace(dto.SampleCode) && !string.Equals(batch.SampleCode, dto.SampleCode, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return BadRequest(ApiResponse.Fail($"الدفعة '{batch.BatchNumber}' تتبع رقم العينة '{batch.SampleCode}' ولا تتبع رقم العينة المختار ({dto.SampleCode})."));
+                    }
+                }
+
+                if (item.Quantity > batch.CurrentQuantity)
+                {
+                    return BadRequest(ApiResponse.Fail($"الكمية المطلوبة من الدفعة '{batch.BatchNumber}' ({item.Quantity:N3} طن) تتجاوز الرصيد المتاح للدفعة ({batch.CurrentQuantity:N3} طن)."));
+                }
+            }
+
+            // Resolve material
+            RawMaterial? mat = null;
+            var targetMatId = item.RawMaterialId ?? batch?.RawMaterialId;
+            if (targetMatId.HasValue && targetMatId.Value > 0)
+            {
+                mat = await _db.RawMaterials.FirstOrDefaultAsync(m => m.Id == targetMatId.Value);
+            }
+            else if (batch != null && !string.IsNullOrWhiteSpace(batch.MaterialName))
+            {
+                mat = await _db.RawMaterials.FirstOrDefaultAsync(m => m.Name.ToLower() == batch.MaterialName.ToLower());
+            }
+
             if (mat == null)
             {
-                return BadRequest(ApiResponse.Fail($"الصنف رقم #{item.RawMaterialId} غير موجود."));
+                return BadRequest(ApiResponse.Fail("معرف الصنف الصادر مطلوب أو غير موجود."));
             }
 
             // Real-time server-side stock validation strictly for this location
-            var availableStock = await GetAvailableStockAsync(location.Id, mat.Id);
+            var ledgerStock = await GetAvailableStockAsync(location.Id, mat.Id);
+            var batchStock = batch != null ? batch.CurrentQuantity : 0m;
+            var availableStock = Math.Max(ledgerStock, batchStock);
             if (availableStock < item.Quantity)
             {
                 return BadRequest(ApiResponse.Fail($"الكمية المطلوبة من الصنف '{mat.Name}' ({item.Quantity:N3} طن) تتجاوز الرصيد المتاح حالياً في {location.Name} ({availableStock:N3} طن)."));
             }
 
-            // Enforce Material Type compatibility if specified
+            // Enforce Material Type compatibility if specified (only for raw materials, finished products are always allowed)
             var expMatType = (dto.MaterialType ?? string.Empty).Trim().ToUpperInvariant();
-            if (!string.IsNullOrWhiteSpace(expMatType) && !string.IsNullOrWhiteSpace(mat.MaterialType) && mat.MaterialType != expMatType)
+            if (!isFinishedProductExport && !string.IsNullOrWhiteSpace(expMatType) && !string.IsNullOrWhiteSpace(mat.MaterialType) && mat.MaterialType != expMatType)
             {
                 var expectedAr = expMatType == MaterialProcessType.Mechanical ? "خامات ميكانيكية" : "خامات كيميائية";
                 var actualAr = mat.MaterialType == MaterialProcessType.Mechanical ? "خامات ميكانيكية" : "خامات كيميائية";
                 return BadRequest(ApiResponse.Fail($"الصنف '{mat.Name}' يتبع ({actualAr}) ولا يمكن صرفه ضمن إذن صرف ({expectedAr})."));
             }
 
-            resolvedItems.Add((mat, item.Quantity, item.Notes));
+            resolvedItems.Add((mat, item.Quantity, item.Notes, batch));
         }
 
         // 6. Internal Weighing & Discrepancy Validation
@@ -2660,6 +2896,13 @@ public class StorageController : ControllerBase
                 ResponsibleEmployee = userName,
                 ResponsibleUserId = userId,
                 Notes = dto.Notes,
+                ExportType = isFinishedProductExport ? "FINISHED_PRODUCT" : "RAW_MATERIAL",
+                ProductionOrderId = dto.ProductionOrderId ?? resolvedItems.FirstOrDefault(x => x.Batch?.ProductionOrderId > 0).Batch?.ProductionOrderId,
+                ProductionProcessId = dto.ProductionProcessId ?? resolvedItems.FirstOrDefault(x => x.Batch?.ProductionProcessId > 0).Batch?.ProductionProcessId,
+                ManufactureNumber = !string.IsNullOrWhiteSpace(dto.ManufactureNumber) ? dto.ManufactureNumber : resolvedItems.FirstOrDefault(x => !string.IsNullOrEmpty(x.Batch?.BatchNumber) && isFinishedProductExport).Batch?.BatchNumber,
+                SelectionMode = dto.SelectionMode ?? "BY_REFERENCE",
+                SampleCode = dto.SampleCode ?? resolvedItems.FirstOrDefault(x => !string.IsNullOrEmpty(x.Batch?.SampleCode)).Batch?.SampleCode,
+                ProductionReferenceNumber = dto.ProductionReferenceNumber ?? resolvedItems.FirstOrDefault(x => x.Batch?.ProductionReferenceNumber > 0).Batch?.ProductionReferenceNumber,
                 ApprovalStatus = "PENDING",
                 IsInventoryPosted = false,
                 CreatedAt = DateTime.UtcNow,
@@ -2696,7 +2939,7 @@ public class StorageController : ControllerBase
             await _db.SaveChangesAsync();
 
             int lineIndex = 1;
-            foreach (var (mat, qty, notes) in resolvedItems)
+            foreach (var (mat, qty, notes, batch) in resolvedItems)
             {
                 var tracking = $"EXP-{txDate:yyyy}-{txNumber:D4}-L{lineIndex}";
                 var opItem = new StorageOperationItem
@@ -2706,7 +2949,14 @@ public class StorageController : ControllerBase
                     MaterialName = mat.Name,
                     Quantity = qty,
                     TrackingNumber = tracking,
-                    Notes = notes
+                    Notes = notes,
+                    WarehouseBatchId = batch?.Id,
+                    BatchNumber = batch?.BatchNumber,
+                    SampleCode = batch?.SampleCode ?? dto.SampleCode,
+                    ProductionReferenceNumber = batch?.ProductionReferenceNumber ?? dto.ProductionReferenceNumber,
+                    ProductionOrderId = dto.ProductionOrderId ?? batch?.ProductionOrderId,
+                    ProductionProcessId = dto.ProductionProcessId ?? batch?.ProductionProcessId,
+                    ManufactureNumber = batch?.BatchNumber
                 };
                 await _db.StorageOperationItems.AddAsync(opItem);
                 lineIndex++;
@@ -2715,8 +2965,16 @@ public class StorageController : ControllerBase
             await _db.SaveChangesAsync();
             await dbTransaction.CommitAsync();
 
-            _logger.LogInformation("Export Storage Operation #{TxNumber} (ID: {Id}) submitted successfully by {User}.",
-                op.TransactionNumber, op.Id, userName);
+            // Auto-Approve: Automatically approve and post inventory ledger immediately
+            var (expOk, _, expDto) = await ApproveStorageOperationCoreAsync(_db, _logger, _hubContext, op.Id, "System (Auto-Approved)", userId, "SYSTEM");
+            if (expOk && expDto != null)
+            {
+                op.ApprovalStatus = "APPROVED";
+                op.IsInventoryPosted = true;
+            }
+
+            _logger.LogInformation("Export Storage Operation #{TxNumber} (ID: {Id}) auto-approved successfully.",
+                op.TransactionNumber, op.Id);
 
             var resultDto = MapOperationToDto(op, await _db.StorageOperationItems.Where(i => i.StorageOperationId == op.Id).ToListAsync());
 
@@ -2766,10 +3024,19 @@ public class StorageController : ControllerBase
             return BadRequest(ApiResponse.Fail("مكان التخزين المصدر غير موجود أو غير مفعل."));
         }
 
-        // 2. Validate Items & Real-time Location Stock
+        // 2. Validate Items & Real-time Location Stock / Batch Stock
         if (dto.Items == null || dto.Items.Count == 0)
         {
-            return BadRequest(ApiResponse.Fail("يجب تحديد مادة واحدة على الأقل للتحويل إلى الإنتاج."));
+            return BadRequest(ApiResponse.Fail("يجب تحديد مادة أو دفعة واحدة على الأقل للتحويل إلى الإنتاج."));
+        }
+
+        var isByReference = string.Equals(dto.SelectionMode, "BY_REFERENCE", StringComparison.OrdinalIgnoreCase);
+        if (isByReference)
+        {
+            if (!dto.LaboratoryReportId.HasValue && string.IsNullOrWhiteSpace(dto.SampleCode) && !dto.ProductionReferenceNumber.HasValue)
+            {
+                return BadRequest(ApiResponse.Fail("في وضع التحويل برقم العينة، يجب اختيار رقم العينة المرجعية."));
+            }
         }
 
         // 2.5 Validate Laboratory Production Reference (shared traceability key for the production batch)
@@ -2783,7 +3050,7 @@ public class StorageController : ControllerBase
             }
         }
 
-        var resolvedItems = new List<(RawMaterial Material, decimal Quantity, string? Notes)>();
+        var resolvedItems = new List<(RawMaterial Material, decimal Quantity, string? Notes, WarehouseBatch? Batch)>();
         foreach (var item in dto.Items)
         {
             if (item.Quantity <= 0)
@@ -2791,24 +3058,80 @@ public class StorageController : ControllerBase
                 return BadRequest(ApiResponse.Fail("يجب أن تكون كمية التحويل أكبر من الصفر."));
             }
 
-            if (!item.RawMaterialId.HasValue || item.RawMaterialId.Value <= 0)
+            WarehouseBatch? batch = null;
+            if (item.WarehouseBatchId.HasValue && item.WarehouseBatchId.Value > 0)
             {
-                return BadRequest(ApiResponse.Fail("معرف المادة المحولة مطلوب."));
+                batch = await _db.WarehouseBatches.FirstOrDefaultAsync(b => b.Id == item.WarehouseBatchId.Value && b.IsActive);
+                if (batch == null)
+                {
+                    return BadRequest(ApiResponse.Fail($"الدفعة رقم #{item.WarehouseBatchId} غير موجودة أو غير نشطة."));
+                }
+            }
+            else if (!string.IsNullOrWhiteSpace(item.BatchNumber))
+            {
+                batch = await _db.WarehouseBatches.FirstOrDefaultAsync(b => b.BatchNumber == item.BatchNumber && b.StorageLocationId == location.Id && b.IsActive);
+                if (batch == null)
+                {
+                    return BadRequest(ApiResponse.Fail($"الدفعة رقم '{item.BatchNumber}' غير موجودة في هذا المستودع أو غير نشطة."));
+                }
             }
 
-            var mat = await _db.RawMaterials.FirstOrDefaultAsync(m => m.Id == item.RawMaterialId.Value);
+            if (batch != null)
+            {
+                if (batch.StorageLocationId != location.Id)
+                {
+                    return BadRequest(ApiResponse.Fail($"الدفعة '{batch.BatchNumber}' غير موجودة في مكان التخزين المصدر ({location.Name})."));
+                }
+
+                if (batch.Status != "APPROVED")
+                {
+                    return BadRequest(ApiResponse.Fail($"الدفعة '{batch.BatchNumber}' غير معتمدة للتحويل (حالتها الحالية: {batch.Status})."));
+                }
+
+                if (isByReference)
+                {
+                    if (dto.LaboratoryReportId.HasValue && batch.LaboratoryReportId != dto.LaboratoryReportId.Value)
+                    {
+                        return BadRequest(ApiResponse.Fail($"الدفعة '{batch.BatchNumber}' لا تتبع رقم التقرير المعملي المختار."));
+                    }
+                    if (!string.IsNullOrWhiteSpace(dto.SampleCode) && !string.Equals(batch.SampleCode, dto.SampleCode, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return BadRequest(ApiResponse.Fail($"الدفعة '{batch.BatchNumber}' تتبع رقم العينة '{batch.SampleCode}' ولا تتبع رقم العينة المختار ({dto.SampleCode})."));
+                    }
+                }
+
+                if (item.Quantity > batch.CurrentQuantity)
+                {
+                    return BadRequest(ApiResponse.Fail($"الكمية المراد تحويلها من الدفعة '{batch.BatchNumber}' ({item.Quantity:N3} طن) تتجاوز الرصيد المتاح للدفعة ({batch.CurrentQuantity:N3} طن)."));
+                }
+            }
+
+            // Resolve material
+            RawMaterial? mat = null;
+            var targetMatId = item.RawMaterialId ?? batch?.RawMaterialId;
+            if (targetMatId.HasValue && targetMatId.Value > 0)
+            {
+                mat = await _db.RawMaterials.FirstOrDefaultAsync(m => m.Id == targetMatId.Value);
+            }
+            else if (batch != null && !string.IsNullOrWhiteSpace(batch.MaterialName))
+            {
+                mat = await _db.RawMaterials.FirstOrDefaultAsync(m => m.Name.ToLower() == batch.MaterialName.ToLower());
+            }
+
             if (mat == null)
             {
-                return BadRequest(ApiResponse.Fail($"الصنف رقم #{item.RawMaterialId} غير موجود."));
+                return BadRequest(ApiResponse.Fail("معرف المادة المحولة مطلوب أو غير موجود."));
             }
 
-            var availableStock = await GetAvailableStockAsync(location.Id, mat.Id);
+            var ledgerStock = await GetAvailableStockAsync(location.Id, mat.Id);
+            var batchStock = batch != null ? batch.CurrentQuantity : 0m;
+            var availableStock = Math.Max(ledgerStock, batchStock);
             if (availableStock < item.Quantity)
             {
                 return BadRequest(ApiResponse.Fail($"الكمية المراد تحويلها من '{mat.Name}' ({item.Quantity:N3} طن) تتجاوز الرصيد المتاح حالياً في {location.Name} ({availableStock:N3} طن)."));
             }
 
-            resolvedItems.Add((mat, item.Quantity, item.Notes));
+            resolvedItems.Add((mat, item.Quantity, item.Notes, batch));
         }
 
         // 3. Validate attachments (Optional for Transfer, saved if uploaded)
@@ -2825,6 +3148,25 @@ public class StorageController : ControllerBase
             return BadRequest(ApiResponse.Fail(weighbridgeRes.ErrorMessage ?? "مرفق الميزان غير صالح."));
         }
 
+        StorageLocation? destLocation = null;
+        var isWarehouseTransfer = string.Equals(dto.DestinationType, "WAREHOUSE", StringComparison.OrdinalIgnoreCase);
+        if (isWarehouseTransfer)
+        {
+            if (!dto.DestinationStorageLocationId.HasValue || dto.DestinationStorageLocationId.Value <= 0)
+            {
+                return BadRequest(ApiResponse.Fail("مكان التخزين المستقبل مطلوب عند التحويل لمستودع آخر."));
+            }
+            if (dto.DestinationStorageLocationId.Value == location.Id)
+            {
+                return BadRequest(ApiResponse.Fail("مكان التخزين المستقبل لا يمكن أن يكون نفس مكان التخزين المصدر."));
+            }
+            destLocation = await _db.StorageLocations.FirstOrDefaultAsync(l => l.Id == dto.DestinationStorageLocationId.Value && l.IsActive);
+            if (destLocation == null)
+            {
+                return BadRequest(ApiResponse.Fail("مكان التخزين المستقبل غير موجود أو غير مفعل."));
+            }
+        }
+
         var txDate = dto.TransactionDate ?? DateTime.UtcNow;
 
         using var dbTransaction = await _db.Database.BeginTransactionAsync();
@@ -2839,8 +3181,12 @@ public class StorageController : ControllerBase
                 TransactionDate = txDate,
                 StorageLocationId = location.Id,
                 StorageLocationName = location.Name,
-                DestinationDepartment = "الإنتاج",
-                ProductionReferenceNumber = dto.ProductionReferenceNumber,
+                DestinationDepartment = isWarehouseTransfer ? "مستودع" : "الإنتاج",
+                DestinationName = isWarehouseTransfer ? destLocation!.Name : "خطوط الإنتاج والتصنيع",
+                DestinationId = isWarehouseTransfer ? destLocation!.Id : null,
+                SelectionMode = dto.SelectionMode ?? "BY_REFERENCE",
+                SampleCode = dto.SampleCode ?? resolvedItems.FirstOrDefault(x => !string.IsNullOrEmpty(x.Batch?.SampleCode)).Batch?.SampleCode,
+                ProductionReferenceNumber = dto.ProductionReferenceNumber ?? resolvedItems.FirstOrDefault(x => x.Batch?.ProductionReferenceNumber > 0).Batch?.ProductionReferenceNumber,
                 ResponsibleEmployee = userName,
                 ResponsibleUserId = userId,
                 Notes = dto.Notes,
@@ -2866,7 +3212,7 @@ public class StorageController : ControllerBase
             await _db.SaveChangesAsync();
 
             int lineIndex = 1;
-            foreach (var (mat, qty, notes) in resolvedItems)
+            foreach (var (mat, qty, notes, batch) in resolvedItems)
             {
                 // Concurrency-safe unique tracking identifier per transfer line
                 var tracking = $"TRF-{txDate:yyyy}-{txNumber:D4}-L{lineIndex}";
@@ -2877,7 +3223,14 @@ public class StorageController : ControllerBase
                     MaterialName = mat.Name,
                     Quantity = qty,
                     TrackingNumber = tracking,
-                    Notes = notes
+                    Notes = notes,
+                    WarehouseBatchId = batch?.Id,
+                    BatchNumber = batch?.BatchNumber,
+                    SampleCode = batch?.SampleCode ?? dto.SampleCode,
+                    ProductionReferenceNumber = batch?.ProductionReferenceNumber ?? dto.ProductionReferenceNumber,
+                    ProductionOrderId = dto.ProductionOrderId ?? batch?.ProductionOrderId,
+                    ProductionProcessId = dto.ProductionProcessId ?? batch?.ProductionProcessId,
+                    ManufactureNumber = batch?.BatchNumber
                 };
                 await _db.StorageOperationItems.AddAsync(opItem);
                 lineIndex++;
@@ -2886,8 +3239,16 @@ public class StorageController : ControllerBase
             await _db.SaveChangesAsync();
             await dbTransaction.CommitAsync();
 
-            _logger.LogInformation("Transfer Storage Operation #{TxNumber} (ID: {Id}) submitted successfully by {User}.",
-                op.TransactionNumber, op.Id, userName);
+            // Auto-Approve: Automatically approve and post inventory ledger immediately
+            var (trfOk, _, trfDto) = await ApproveStorageOperationCoreAsync(_db, _logger, _hubContext, op.Id, "System (Auto-Approved)", userId, "SYSTEM");
+            if (trfOk && trfDto != null)
+            {
+                op.ApprovalStatus = "APPROVED";
+                op.IsInventoryPosted = true;
+            }
+
+            _logger.LogInformation("Transfer Storage Operation #{TxNumber} (ID: {Id}) auto-approved successfully.",
+                op.TransactionNumber, op.Id);
 
             var resultDto = MapOperationToDto(op, await _db.StorageOperationItems.Where(i => i.StorageOperationId == op.Id).ToListAsync());
 
@@ -3106,6 +3467,315 @@ public class StorageController : ControllerBase
             .ToListAsync();
 
         return Ok(ApiResponse<List<ProductionWorkInProcessDto>>.Ok(batches));
+    }
+
+    /// <summary>
+    /// Retrieve compliant, approved Laboratory references eligible for Warehouse Import with batch division.
+    /// Only displays materials that have passed Laboratory compliance and have unallocated accepted quantities remaining.
+    /// </summary>
+    [HttpGet("compliant-references")]
+    [ProducesResponseType(typeof(ApiResponse<List<WarehouseCompliantReferenceDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetCompliantLaboratoryReferences()
+    {
+        var reports = await _db.LaboratoryRawMaterialReports
+            .AsNoTracking()
+            .Include(r => r.RawMaterial)
+            .Where(r => r.ApprovalStatus == "APPROVED" &&
+                        r.ComplyStatus == "COMPLY" &&
+                        r.InspectionDecision != "REJECTED" &&
+                        r.AcceptedQuantity > 0)
+            .OrderByDescending(r => r.ProductionReferenceNumber)
+            .Take(150)
+            .ToListAsync();
+
+        var reportIds = reports.Select(r => r.Id).ToList();
+        var allocatedGrouped = await _db.WarehouseBatches
+            .AsNoTracking()
+            .Where(b => reportIds.Contains(b.LaboratoryReportId) && b.Status != "REJECTED")
+            .GroupBy(b => b.LaboratoryReportId)
+            .Select(g => new { LabId = g.Key, Allocated = g.Sum(x => x.InitialQuantity) })
+            .ToDictionaryAsync(x => x.LabId, x => x.Allocated);
+
+        var result = new List<WarehouseCompliantReferenceDto>();
+        foreach (var r in reports)
+        {
+            allocatedGrouped.TryGetValue(r.Id, out var allocated);
+            var remaining = Math.Round(r.AcceptedQuantity - allocated, 3);
+            if (remaining > 0)
+            {
+                result.Add(new WarehouseCompliantReferenceDto
+                {
+                    LaboratoryReportId = r.Id,
+                    ProductionReferenceNumber = r.ProductionReferenceNumber,
+                    SampleNumber = r.SampleNumber,
+                    SampleCode = !string.IsNullOrWhiteSpace(r.SampleCode) ? r.SampleCode : (r.ProductionReferenceNumber > 0 ? $"REF-{r.ProductionReferenceNumber:D4}" : $"SMP-{r.SampleNumber:D4}"),
+                    MaterialName = !string.IsNullOrWhiteSpace(r.SampleName) ? r.SampleName : (r.RawMaterial != null ? r.RawMaterial.Name : r.RawMaterialDescription),
+                    MaterialClassification = r.MaterialClassification ?? "MECHANICAL",
+                    SupplierName = !string.IsNullOrWhiteSpace(r.SupplierName) ? r.SupplierName : "داخلي",
+                    ReceivedQuantity = r.ReceivedQuantity,
+                    AcceptedQuantity = r.AcceptedQuantity,
+                    AlreadyAllocatedQuantity = allocated,
+                    RemainingAvailableQuantity = remaining,
+                    ComplyStatus = r.ComplyStatus,
+                    InspectionDecision = r.InspectionDecision,
+                    ApprovalStatus = r.ApprovalStatus,
+                    AnalysisDateTime = r.AnalysisDateTime,
+                    SampleReceivedDate = r.SampleReceivedDate,
+                    RawMaterialId = r.RawMaterialId ?? r.RawMaterial?.Id,
+                    AttachmentPath = r.AttachmentPath,
+                    AttachmentFileName = r.AttachmentFileName,
+                    Notes = r.Notes
+                });
+            }
+        }
+
+        return Ok(ApiResponse<List<WarehouseCompliantReferenceDto>>.Ok(result));
+    }
+
+    /// <summary>
+    /// Retrieve available approved batches physically located in the specified storage location.
+    /// Excludes zero-balance, pending, rejected, or fully consumed batches.
+    /// </summary>
+    [HttpGet("locations/{locationId:int}/available-batches")]
+    [ProducesResponseType(typeof(ApiResponse<List<LocationBatchAvailabilityDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetLocationAvailableBatches(
+        int locationId,
+        [FromQuery] string? sampleCode = null,
+        [FromQuery] int? referenceNumber = null)
+    {
+        var query = _db.WarehouseBatches
+            .AsNoTracking()
+            .Include(b => b.StorageLocation)
+            .Where(b => b.StorageLocationId == locationId &&
+                        b.CurrentQuantity > 0 &&
+                        b.Status == "APPROVED" &&
+                        b.IsActive);
+
+        if (!string.IsNullOrWhiteSpace(sampleCode))
+        {
+            var sc = sampleCode.Trim().ToLowerInvariant();
+            query = query.Where(b => b.SampleCode.ToLower() == sc);
+        }
+
+        if (referenceNumber.HasValue && referenceNumber.Value > 0)
+        {
+            query = query.Where(b => b.ProductionReferenceNumber == referenceNumber.Value);
+        }
+
+        var batches = await query
+            .OrderBy(b => b.BatchNumber)
+            .Select(b => new LocationBatchAvailabilityDto
+            {
+                BatchId = b.Id,
+                BatchNumber = b.BatchNumber,
+                SampleCode = b.SampleCode,
+                ProductionReferenceNumber = b.ProductionReferenceNumber,
+                LaboratoryReportId = b.LaboratoryReportId,
+                RawMaterialId = b.RawMaterialId,
+                MaterialName = b.MaterialName,
+                MaterialClassification = b.MaterialClassification,
+                SupplierName = b.SupplierName,
+                StorageLocationId = b.StorageLocationId,
+                StorageLocationName = b.StorageLocation != null ? b.StorageLocation.Name : string.Empty,
+                InitialQuantity = b.InitialQuantity,
+                AvailableQuantity = b.CurrentQuantity,
+                ImportDate = b.ImportDate
+            })
+            .ToListAsync();
+
+        return Ok(ApiResponse<List<LocationBatchAvailabilityDto>>.Ok(batches));
+    }
+
+    /// <summary>
+    /// Retrieve distinct Laboratory references available in the specified storage location with active batch balances.
+    /// </summary>
+    [HttpGet("locations/{locationId:int}/available-references")]
+    [ProducesResponseType(typeof(ApiResponse<List<WarehouseCompliantReferenceDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetLocationAvailableReferences(int locationId)
+    {
+        var activeBatches = await _db.WarehouseBatches
+            .AsNoTracking()
+            .Where(b => b.StorageLocationId == locationId &&
+                        b.CurrentQuantity > 0 &&
+                        b.Status == "APPROVED" &&
+                        b.IsActive)
+            .ToListAsync();
+
+        if (!activeBatches.Any())
+        {
+            return Ok(ApiResponse<List<WarehouseCompliantReferenceDto>>.Ok(new List<WarehouseCompliantReferenceDto>()));
+        }
+
+        var labIds = activeBatches.Where(b => b.LaboratoryReportId > 0).Select(b => b.LaboratoryReportId).Distinct().ToList();
+        var reportsMap = await _db.LaboratoryRawMaterialReports
+            .AsNoTracking()
+            .Where(r => labIds.Contains(r.Id))
+            .ToDictionaryAsync(r => r.Id);
+
+        var grouped = activeBatches
+            .GroupBy(b => new
+            {
+                RefNo = b.ProductionReferenceNumber,
+                Code = b.SampleCode,
+                LabId = b.LaboratoryReportId,
+                Mat = b.MaterialName
+            })
+            .Select(g =>
+            {
+                reportsMap.TryGetValue(g.Key.LabId, out var rep);
+                var totalAvailable = g.Sum(x => x.CurrentQuantity);
+                var sampleCode = !string.IsNullOrWhiteSpace(g.Key.Code)
+                    ? g.Key.Code
+                    : (rep != null && !string.IsNullOrWhiteSpace(rep.SampleCode)
+                        ? rep.SampleCode
+                        : (g.Key.RefNo > 0 ? $"REF-{g.Key.RefNo:D4}" : $"SMP-{g.Key.LabId:D4}"));
+                var matName = !string.IsNullOrWhiteSpace(g.Key.Mat)
+                    ? g.Key.Mat
+                    : (rep?.SampleName ?? "خام معملي");
+                var matClass = rep?.MaterialClassification ?? g.First().MaterialClassification ?? "MECHANICAL";
+                var suppName = rep?.SupplierName ?? g.First().SupplierName;
+
+                return new WarehouseCompliantReferenceDto
+                {
+                    LaboratoryReportId = g.Key.LabId,
+                    ProductionReferenceNumber = g.Key.RefNo,
+                    SampleNumber = rep?.SampleNumber ?? 0,
+                    SampleCode = sampleCode,
+                    MaterialName = matName,
+                    MaterialClassification = matClass,
+                    SupplierName = suppName,
+                    ReceivedQuantity = rep?.ReceivedQuantity ?? totalAvailable,
+                    AcceptedQuantity = rep?.AcceptedQuantity ?? totalAvailable,
+                    RemainingAvailableQuantity = totalAvailable,
+                    ComplyStatus = rep?.ComplyStatus ?? "COMPLY",
+                    InspectionDecision = rep?.InspectionDecision ?? "ACCEPTED",
+                    ApprovalStatus = "APPROVED",
+                    AnalysisDateTime = rep?.AnalysisDateTime ?? g.First().ImportDate,
+                    SampleReceivedDate = rep?.SampleReceivedDate ?? g.First().ImportDate,
+                    RawMaterialId = g.First().RawMaterialId,
+                    AttachmentPath = rep?.AttachmentPath,
+                    AttachmentFileName = rep?.AttachmentFileName,
+                    Notes = rep?.Notes
+                };
+            })
+            .OrderByDescending(r => r.ProductionReferenceNumber)
+            .ToList();
+
+        return Ok(ApiResponse<List<WarehouseCompliantReferenceDto>>.Ok(grouped));
+    }
+
+    /// <summary>
+    /// Retrieve real-time dynamic inventory of active warehouse batches.
+    /// Can be filtered by storage location ID. Excludes zero-balance or consumed batches.
+    /// </summary>
+    [HttpGet("inventory")]
+    [ProducesResponseType(typeof(ApiResponse<List<WarehouseBatchAvailabilityDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetWarehouseInventory([FromQuery] int? locationId = null)
+    {
+        var batches = await _inventoryService.GetAuthoritativeBatchesAsync(locationId);
+        return Ok(ApiResponse<List<WarehouseBatchAvailabilityDto>>.Ok(batches));
+    }
+
+    /// <summary>
+    /// Preview next consecutive unique batch numbers for form generation.
+    /// </summary>
+    [HttpGet("preview-batch-numbers")]
+    [ProducesResponseType(typeof(ApiResponse<List<string>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> PreviewBatchNumbers([FromQuery] int count = 1)
+    {
+        if (count < 1) count = 1;
+        if (count > 50) count = 50;
+        var batchNumbers = await PeekNextBatchNumbersAsync(count);
+        return Ok(ApiResponse<List<string>>.Ok(batchNumbers));
+    }
+
+    /// <summary>
+    /// Retrieve all batches associated with a specific storage operation (for reprint and details).
+    /// </summary>
+    [HttpGet("operations/{id:int}/batches")]
+    [ProducesResponseType(typeof(ApiResponse<List<WarehouseBatchDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetOperationBatches(int id)
+    {
+        var batches = await _db.WarehouseBatches
+            .AsNoTracking()
+            .Include(b => b.StorageLocation)
+            .Include(b => b.StorageOperation)
+            .Where(b => b.StorageOperationId == id)
+            .OrderBy(b => b.BatchNumber)
+            .ToListAsync();
+
+        var dtos = batches.Select(MapBatchToDto).ToList();
+        return Ok(ApiResponse<List<WarehouseBatchDto>>.Ok(dtos));
+    }
+
+    /// <summary>
+    /// Retrieve details of a single warehouse batch by Id.
+    /// </summary>
+    [HttpGet("batches/{id:int}")]
+    [ProducesResponseType(typeof(ApiResponse<WarehouseBatchDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetBatchById(int id)
+    {
+        var batch = await _db.WarehouseBatches
+            .AsNoTracking()
+            .Include(b => b.StorageLocation)
+            .Include(b => b.StorageOperation)
+            .FirstOrDefaultAsync(b => b.Id == id);
+
+        if (batch == null)
+        {
+            return NotFound(ApiResponse.Fail($"الدفعة رقم #{id} غير موجودة."));
+        }
+
+        return Ok(ApiResponse<WarehouseBatchDto>.Ok(MapBatchToDto(batch)));
+    }
+
+    /// <summary>
+    /// Retrieve available finished products stored in warehouses with stock > 0.
+    /// </summary>
+    [HttpGet("available-finished-products")]
+    [HttpGet("locations/{locationId:int}/available-finished-products")]
+    [ProducesResponseType(typeof(ApiResponse<List<AvailableFinishedProductDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetAvailableFinishedProducts([FromQuery] int? locationId = null, [FromRoute] int? routeLocationId = null)
+    {
+        var targetLocationId = (routeLocationId.HasValue && routeLocationId.Value > 0) ? routeLocationId : locationId;
+        var query = _db.WarehouseBatches
+            .AsNoTracking()
+            .Include(b => b.StorageLocation)
+            .Include(b => b.ProductionOrder)
+            .Include(b => b.ProductionProcess)
+            .Where(b => b.IsActive && b.CurrentQuantity > 0 &&
+                   (b.MaterialClassification == "FINAL_PRODUCT" || b.ProductionOrderId != null || b.ProductionProcessId != null));
+
+        if (targetLocationId.HasValue && targetLocationId.Value > 0)
+        {
+            query = query.Where(b => b.StorageLocationId == targetLocationId.Value);
+        }
+
+        var batches = await query
+            .OrderByDescending(b => b.ImportDate)
+            .ThenByDescending(b => b.Id)
+            .ToListAsync();
+
+        var dtos = batches.Select(b => new AvailableFinishedProductDto
+        {
+            WarehouseBatchId = b.Id,
+            BatchNumber = b.BatchNumber,
+            ManufactureNumber = b.BatchNumber,
+            ProductName = b.MaterialName,
+            StorageLocationId = b.StorageLocationId,
+            StorageLocationName = b.StorageLocation?.Name ?? string.Empty,
+            AvailableQuantity = b.CurrentQuantity,
+            InitialQuantity = b.InitialQuantity,
+            Unit = "طن",
+            ProductionOrderId = b.ProductionOrderId,
+            ProductionOrderNumber = b.ProductionOrder?.OrderNumber,
+            ProductionProcessId = b.ProductionProcessId,
+            ProcessNumber = b.ProductionProcess?.ProcessNumber,
+            ProductionDate = b.ImportDate
+        }).ToList();
+
+        return Ok(ApiResponse<List<AvailableFinishedProductDto>>.Ok(dtos));
     }
 
     /// <summary>
@@ -3349,6 +4019,15 @@ public class StorageController : ControllerBase
             // Perform inventory updates per operation type
             if (opType == "IMPORT")
             {
+                // Activate batches created for this import operation
+                var batches = await db.WarehouseBatches.Where(b => b.StorageOperationId == op.Id).ToListAsync();
+                foreach (var b in batches)
+                {
+                    b.Status = "APPROVED";
+                    b.CurrentQuantity = b.InitialQuantity;
+                    b.IsActive = true;
+                }
+
                 // Inflow: increase stock for each material line in this location
                 foreach (var item in op.Items)
                 {
@@ -3364,6 +4043,8 @@ public class StorageController : ControllerBase
                         RawMaterialId = item.RawMaterialId,
                         StorageOperationId = op.Id,
                         StorageOperationItemId = item.Id,
+                        WarehouseBatchId = item.WarehouseBatchId,
+                        BatchNumber = item.BatchNumber,
                         MovementType = "IMPORT",
                         Quantity = item.Quantity, // Positive for inflow
                         RunningBalance = newStock,
@@ -3377,9 +4058,26 @@ public class StorageController : ControllerBase
             }
             else if (opType == "EXPORT")
             {
-                // Outflow: verify stock and decrease stock for each material line
+                // Outflow: verify stock and decrease stock for each material line and batch
                 foreach (var item in op.Items)
                 {
+                    if (item.WarehouseBatchId.HasValue && item.WarehouseBatchId.Value > 0)
+                    {
+                        var batch = await db.WarehouseBatches.FirstOrDefaultAsync(b => b.Id == item.WarehouseBatchId.Value);
+                        if (batch == null || batch.CurrentQuantity < item.Quantity)
+                        {
+                            await dbTransaction.RollbackAsync();
+                            var avail = batch?.CurrentQuantity ?? 0m;
+                            return (false, $"الرصيد المتاح للدفعة '{item.BatchNumber}' في {op.StorageLocationName} ({avail:N3} طن) غير كافٍ لصرف الكمية المطلوبة ({item.Quantity:N3} طن).", null);
+                        }
+                        batch.CurrentQuantity = Math.Round(batch.CurrentQuantity - item.Quantity, 3);
+                        if (batch.CurrentQuantity <= 0)
+                        {
+                            batch.CurrentQuantity = 0m;
+                            batch.Status = "CONSUMED";
+                        }
+                    }
+
                     var currentStock = await db.StorageInventoryLedger
                         .Where(l => l.StorageLocationId == op.StorageLocationId && l.RawMaterialId == item.RawMaterialId)
                         .SumAsync(l => (decimal?)l.Quantity) ?? 0m;
@@ -3398,6 +4096,8 @@ public class StorageController : ControllerBase
                         RawMaterialId = item.RawMaterialId,
                         StorageOperationId = op.Id,
                         StorageOperationItemId = item.Id,
+                        WarehouseBatchId = item.WarehouseBatchId,
+                        BatchNumber = item.BatchNumber,
                         MovementType = "EXPORT",
                         Quantity = -item.Quantity, // Negative for outflow
                         RunningBalance = newStock,
@@ -3414,6 +4114,24 @@ public class StorageController : ControllerBase
                 // Transfer to production: deduct warehouse stock and record WIP batch
                 foreach (var item in op.Items)
                 {
+                    WarehouseBatch? batch = null;
+                    if (item.WarehouseBatchId.HasValue && item.WarehouseBatchId.Value > 0)
+                    {
+                        batch = await db.WarehouseBatches.FirstOrDefaultAsync(b => b.Id == item.WarehouseBatchId.Value);
+                        if (batch == null || batch.CurrentQuantity < item.Quantity)
+                        {
+                            await dbTransaction.RollbackAsync();
+                            var avail = batch?.CurrentQuantity ?? 0m;
+                            return (false, $"الرصيد المتاح للدفعة '{item.BatchNumber}' في {op.StorageLocationName} ({avail:N3} طن) غير كافٍ للتحويل إلى الإنتاج ({item.Quantity:N3} طن).", null);
+                        }
+                        batch.CurrentQuantity = Math.Round(batch.CurrentQuantity - item.Quantity, 3);
+                        if (batch.CurrentQuantity <= 0)
+                        {
+                            batch.CurrentQuantity = 0m;
+                            batch.Status = "CONSUMED";
+                        }
+                    }
+
                     var currentStock = await db.StorageInventoryLedger
                         .Where(l => l.StorageLocationId == op.StorageLocationId && l.RawMaterialId == item.RawMaterialId)
                         .SumAsync(l => (decimal?)l.Quantity) ?? 0m;
@@ -3432,6 +4150,8 @@ public class StorageController : ControllerBase
                         RawMaterialId = item.RawMaterialId,
                         StorageOperationId = op.Id,
                         StorageOperationItemId = item.Id,
+                        WarehouseBatchId = item.WarehouseBatchId,
+                        BatchNumber = item.BatchNumber,
                         MovementType = "TRANSFER",
                         Quantity = -item.Quantity, // Negative for transfer out of warehouse
                         RunningBalance = newStock,
@@ -3442,23 +4162,79 @@ public class StorageController : ControllerBase
 
                     await db.StorageInventoryLedger.AddAsync(ledgerEntry);
 
-                    // Create Production WIP record
-                    var wip = new ProductionWorkInProcess
+                    if (op.DestinationDepartment == "مستودع" && op.DestinationId.HasValue && op.DestinationId.Value > 0)
                     {
-                        StorageOperationId = op.Id,
-                        StorageOperationItemId = item.Id,
-                        RawMaterialId = item.RawMaterialId,
-                        ProductionReferenceNumber = op.ProductionReferenceNumber,
-                        TrackingNumber = !string.IsNullOrWhiteSpace(item.TrackingNumber) ? item.TrackingNumber : $"TRF-{op.TransactionDate:yyyy}-{op.TransactionNumber:D4}-L{item.Id}",
-                        MaterialQuantityIssued = item.Quantity,
-                        SourceStorageLocation = op.StorageLocationName,
-                        TransferDate = op.TransactionDate,
-                        Status = "قيد التشغيل",
-                        CreatedAt = DateTime.UtcNow,
-                        CreatedBy = reviewerName
-                    };
+                        var destLocId = op.DestinationId.Value;
+                        var destCurrentStock = await db.StorageInventoryLedger
+                            .Where(l => l.StorageLocationId == destLocId && l.RawMaterialId == item.RawMaterialId)
+                            .SumAsync(l => (decimal?)l.Quantity) ?? 0m;
+                        var destNewStock = destCurrentStock + item.Quantity;
 
-                    await db.ProductionWorkInProcess.AddAsync(wip);
+                        var destBatch = new WarehouseBatch
+                        {
+                            LaboratoryReportId = batch?.LaboratoryReportId ?? 0,
+                            ProductionReferenceNumber = item.ProductionReferenceNumber ?? batch?.ProductionReferenceNumber ?? op.ProductionReferenceNumber ?? 0,
+                            SampleCode = item.SampleCode ?? batch?.SampleCode ?? op.SampleCode ?? string.Empty,
+                            BatchNumber = $"{item.BatchNumber}-T{op.TransactionNumber}",
+                            RawMaterialId = item.RawMaterialId,
+                            MaterialName = item.MaterialName,
+                            MaterialClassification = batch?.MaterialClassification ?? "MECHANICAL",
+                            SupplierName = batch?.SupplierName,
+                            StorageLocationId = destLocId,
+                            InitialQuantity = item.Quantity,
+                            CurrentQuantity = item.Quantity,
+                            StorageOperationId = op.Id,
+                            StorageOperationItemId = item.Id,
+                            ImportDate = op.TransactionDate,
+                            Status = "APPROVED",
+                            IsActive = true,
+                            CreatedAt = DateTime.UtcNow,
+                            CreatedBy = reviewerName,
+                            Notes = $"محول من {op.StorageLocationName} بإذن تحويل #{op.TransactionNumber}"
+                        };
+                        await db.WarehouseBatches.AddAsync(destBatch);
+                        await db.SaveChangesAsync();
+
+                        var destLedgerEntry = new StorageInventoryLedger
+                        {
+                            StorageLocationId = destLocId,
+                            RawMaterialId = item.RawMaterialId,
+                            StorageOperationId = op.Id,
+                            StorageOperationItemId = item.Id,
+                            WarehouseBatchId = destBatch.Id,
+                            BatchNumber = destBatch.BatchNumber,
+                            MovementType = "TRANSFER",
+                            Quantity = item.Quantity, // Inflow into destination warehouse
+                            RunningBalance = destNewStock,
+                            MovementDate = op.TransactionDate,
+                            CreatedAt = DateTime.UtcNow,
+                            CreatedBy = reviewerName
+                        };
+                        await db.StorageInventoryLedger.AddAsync(destLedgerEntry);
+                    }
+                    else
+                    {
+                        // Create Production WIP record
+                        var wip = new ProductionWorkInProcess
+                        {
+                            StorageOperationId = op.Id,
+                            StorageOperationItemId = item.Id,
+                            RawMaterialId = item.RawMaterialId,
+                            WarehouseBatchId = item.WarehouseBatchId ?? batch?.Id,
+                            BatchNumber = item.BatchNumber ?? batch?.BatchNumber,
+                            SampleCode = item.SampleCode ?? batch?.SampleCode ?? op.SampleCode,
+                            ProductionReferenceNumber = item.ProductionReferenceNumber ?? batch?.ProductionReferenceNumber ?? op.ProductionReferenceNumber,
+                            TrackingNumber = !string.IsNullOrWhiteSpace(item.TrackingNumber) ? item.TrackingNumber : $"TRF-{op.TransactionDate:yyyy}-{op.TransactionNumber:D4}-L{item.Id}",
+                            MaterialQuantityIssued = item.Quantity,
+                            SourceStorageLocation = op.StorageLocationName,
+                            TransferDate = op.TransactionDate,
+                            Status = "قيد التشغيل",
+                            CreatedAt = DateTime.UtcNow,
+                            CreatedBy = reviewerName
+                        };
+
+                        await db.ProductionWorkInProcess.AddAsync(wip);
+                    }
                 }
             }
 
@@ -3542,6 +4318,13 @@ public class StorageController : ControllerBase
                 await hubContext.Clients.All.SendAsync("OnDepartmentDataChanged", payload);
                 await hubContext.Clients.All.SendAsync("OnFormApprovalStatusChanged", payload);
                 await hubContext.Clients.All.SendAsync("OnFormApproved", payload);
+                await hubContext.Clients.All.SendAsync("OnWarehouseInventoryChanged", new
+                {
+                    Action = op.OperationType,
+                    OperationId = op.Id,
+                    TransactionNumber = $"#{op.TransactionNumber}",
+                    Timestamp = DateTime.UtcNow
+                });
             }
             catch (Exception sEx)
             {
@@ -3588,6 +4371,17 @@ public class StorageController : ControllerBase
         op.ReviewedBy = reviewerName;
         op.ReviewedByUserId = reviewerId;
         op.ReviewedAt = DateTime.UtcNow;
+
+        if (op.OperationType.ToUpperInvariant() == "IMPORT")
+        {
+            var batches = await db.WarehouseBatches.Where(b => b.StorageOperationId == op.Id).ToListAsync();
+            foreach (var b in batches)
+            {
+                b.Status = "REJECTED";
+                b.IsActive = false;
+                b.CurrentQuantity = 0m;
+            }
+        }
 
         var history = new FormApprovalHistory
         {
@@ -3745,6 +4539,76 @@ public class StorageController : ControllerBase
         return 1;
     }
 
+    private async Task<List<string>> ReserveBatchNumbersAsync(int count)
+    {
+        if (count <= 0) return new List<string>();
+        var countParam = new Microsoft.Data.SqlClient.SqlParameter("@count", count);
+        var startValParam = new Microsoft.Data.SqlClient.SqlParameter("@startVal", System.Data.SqlDbType.Int)
+        {
+            Direction = System.Data.ParameterDirection.Output
+        };
+        var typeParam = new Microsoft.Data.SqlClient.SqlParameter("@seqType", "BATCH");
+
+        await _db.Database.ExecuteSqlRawAsync(@"
+            UPDATE StorageSequences WITH (UPDLOCK, ROWLOCK)
+            SET @startVal = NextValue, NextValue = NextValue + @count
+            WHERE SequenceType = @seqType;
+            IF @@ROWCOUNT = 0
+            BEGIN
+                INSERT INTO StorageSequences (SequenceType, NextValue) VALUES (@seqType, 1 + @count);
+                SET @startVal = 1;
+            END", typeParam, countParam, startValParam);
+
+        int startVal = (int)startValParam.Value;
+        var batchNumbers = new List<string>(count);
+        for (int i = 0; i < count; i++)
+        {
+            batchNumbers.Add($"B-{(startVal + i):D4}");
+        }
+        return batchNumbers;
+    }
+
+    private async Task<List<string>> PeekNextBatchNumbersAsync(int count)
+    {
+        if (count <= 0) count = 1;
+        var seq = await _db.StorageSequences.AsNoTracking().FirstOrDefaultAsync(s => s.SequenceType == "BATCH");
+        int nextVal = seq?.NextValue ?? 1;
+        var batchNumbers = new List<string>(count);
+        for (int i = 0; i < count; i++)
+        {
+            batchNumbers.Add($"B-{(nextVal + i):D4}");
+        }
+        return batchNumbers;
+    }
+
+    public static WarehouseBatchDto MapBatchToDto(WarehouseBatch b)
+    {
+        return new WarehouseBatchDto
+        {
+            Id = b.Id,
+            LaboratoryReportId = b.LaboratoryReportId,
+            ProductionReferenceNumber = b.ProductionReferenceNumber,
+            SampleCode = b.SampleCode,
+            BatchNumber = b.BatchNumber,
+            RawMaterialId = b.RawMaterialId,
+            MaterialName = b.MaterialName,
+            MaterialClassification = b.MaterialClassification,
+            SupplierName = b.SupplierName,
+            StorageLocationId = b.StorageLocationId,
+            StorageLocationName = b.StorageLocation != null ? b.StorageLocation.Name : string.Empty,
+            InitialQuantity = b.InitialQuantity,
+            CurrentQuantity = b.CurrentQuantity,
+            StorageOperationId = b.StorageOperationId,
+            StorageOperationTransactionNumber = b.StorageOperation != null ? b.StorageOperation.TransactionNumber : null,
+            ImportDate = b.ImportDate,
+            Status = b.Status,
+            IsActive = b.IsActive,
+            CreatedAt = b.CreatedAt,
+            CreatedBy = b.CreatedBy,
+            Notes = b.Notes
+        };
+    }
+
     private async Task<decimal> GetAvailableStockAsync(int locationId, int rawMaterialId)
     {
         return await _db.StorageInventoryLedger
@@ -3772,6 +4636,10 @@ public class StorageController : ControllerBase
 
     public static StorageOperationDto MapOperationToDto(StorageOperation op, List<StorageOperationItem> items)
     {
+        var effectiveItems = (items != null && items.Count > 0)
+            ? items
+            : (op.Items != null && op.Items.Count > 0 ? op.Items.ToList() : new List<StorageOperationItem>());
+
         var attachments = new List<StorageAttachmentItemDto>();
         if (!string.IsNullOrWhiteSpace(op.WeighbridgeAttachmentPath) || !string.IsNullOrWhiteSpace(op.WeighbridgeFileName))
         {
@@ -3833,6 +4701,16 @@ public class StorageController : ControllerBase
             StorageLocationId = op.StorageLocationId,
             StorageLocationName = op.StorageLocationName,
             MaterialType = op.MaterialType,
+            ProductionReferenceNumber = op.ProductionReferenceNumber,
+            ProductionOrderId = op.ProductionOrderId,
+            ProductionOrderNumber = op.ProductionOrder?.OrderNumber,
+            ProductionProcessId = op.ProductionProcessId,
+            ProcessNumber = op.ProductionProcess?.ProcessNumber,
+            ManufactureNumber = op.ManufactureNumber,
+            ExportType = op.ExportType,
+            SampleCode = op.SampleCode,
+            SelectionMode = op.SelectionMode,
+            Batches = (op.CreatedBatches ?? new List<WarehouseBatch>()).Select(MapBatchToDto).ToList(),
             Source = op.Source,
             SourcePhone = op.SourcePhone,
             ClientId = op.ClientId,
@@ -3868,15 +4746,22 @@ public class StorageController : ControllerBase
             DiscrepancyExplanation = op.DiscrepancyExplanation,
             TransportationId = op.TransportationId,
 
-            TotalQuantity = items.Sum(i => i.Quantity),
-            Items = items.Select(i => new StorageOperationItemDto
+            TotalQuantity = effectiveItems.Sum(i => i.Quantity),
+            Items = effectiveItems.Select(i => new StorageOperationItemDto
             {
                 Id = i.Id,
                 StorageOperationId = i.StorageOperationId,
                 RawMaterialId = i.RawMaterialId,
+                WarehouseBatchId = i.WarehouseBatchId,
+                BatchNumber = i.BatchNumber,
+                SampleCode = i.SampleCode,
+                ProductionReferenceNumber = i.ProductionReferenceNumber,
                 MaterialName = i.MaterialName,
                 Quantity = i.Quantity,
                 TrackingNumber = i.TrackingNumber,
+                ProductionOrderId = i.ProductionOrderId,
+                ProductionProcessId = i.ProductionProcessId,
+                ManufactureNumber = i.ManufactureNumber,
                 Notes = i.Notes
             }).ToList(),
 
@@ -4192,5 +5077,395 @@ public class StorageController : ControllerBase
         _logger.LogInformation("Production Order {OrderNumber} rejected by Storage Manager {User}.", order.OrderNumber, userName);
 
         return Ok(ApiResponse<ProductionOrderDto>.Ok(ProductionController.MapOrderToDto(order), "تم رفض طلب المواد من قِبل إدارة المستودعات."));
+    }
+
+    // =========================================================================
+    // 12. LABORATORY PRODUCTION ORDERS WAREHOUSE TRANSFER INTEGRATION
+    // =========================================================================
+
+    /// <summary>
+    /// Gets all Laboratory Production Orders waiting for physical transfer to production.
+    /// </summary>
+    [HttpGet("production-orders/pending-transfers")]
+    [ProducesResponseType(typeof(ApiResponse<List<LaboratoryProductionOrderDetailDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetPendingProductionOrderTransfers()
+    {
+        var orders = await _db.ProductionOrders
+            .AsNoTracking()
+            .Include(o => o.Items)
+            .Include(o => o.Transfers)
+            .Where(o => o.Status == "PENDING_TRANSFER" || o.Status == "PARTIALLY_TRANSFERRED")
+            .OrderByDescending(o => o.CreatedAt)
+            .ToListAsync();
+
+        var batchIds = orders.SelectMany(o => o.Items)
+            .Select(i => i.WarehouseBatchId ?? 0)
+            .Where(b => b > 0)
+            .Distinct()
+            .ToList();
+
+        var batchNumbers = orders.SelectMany(o => o.Items)
+            .Select(i => i.BatchNumber)
+            .Where(b => !string.IsNullOrWhiteSpace(b))
+            .Distinct()
+            .ToList();
+
+        var currentBatches = await _db.WarehouseBatches
+            .AsNoTracking()
+            .Where(b => batchIds.Contains(b.Id) || (b.BatchNumber != null && batchNumbers.Contains(b.BatchNumber)))
+            .ToListAsync();
+
+        var currentBatchesById = currentBatches.ToDictionary(b => b.Id, b => b.CurrentQuantity);
+        var currentBatchesByNumber = currentBatches
+            .Where(b => !string.IsNullOrWhiteSpace(b.BatchNumber))
+            .GroupBy(b => b.BatchNumber!)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(b => b.CurrentQuantity).First().CurrentQuantity);
+
+        var result = orders.Select(order => new LaboratoryProductionOrderDetailDto
+        {
+            Id = order.Id,
+            OrderNumber = order.OrderNumber,
+            ProductName = order.ProductName,
+            ProductDescription = order.ProductDescription,
+            RequestedQuantity = order.RequestedQuantity,
+            Unit = order.Unit,
+            StorageLocationId = order.StorageLocationId,
+            StorageLocationName = order.StorageLocationName,
+            TotalPlannedRawMaterialQuantity = order.TotalPlannedRawMaterialQuantity,
+            TotalTransferredQuantity = order.TotalTransferredQuantity,
+            Status = order.Status,
+            StatusArabic = order.Status == "PENDING_TRANSFER" ? "في انتظار نقل المستودع" : "تم النقل جزئياً",
+            LaboratoryManagerName = order.LaboratoryManagerName ?? order.CreatedBy,
+            FormulaVersion = order.FormulaVersion,
+            ProductionInstructions = order.ProductionInstructions,
+            Notes = order.Notes,
+            CreatedAt = order.CreatedAt,
+            ItemsCount = order.Items.Count,
+            Items = order.Items.Select(i => {
+                decimal curQty = 0;
+                if (i.WarehouseBatchId.HasValue && currentBatchesById.ContainsKey(i.WarehouseBatchId.Value))
+                {
+                    curQty = currentBatchesById[i.WarehouseBatchId.Value];
+                }
+                else if (!string.IsNullOrWhiteSpace(i.BatchNumber) && currentBatchesByNumber.ContainsKey(i.BatchNumber))
+                {
+                    curQty = currentBatchesByNumber[i.BatchNumber];
+                }
+
+                return new LaboratoryProductionOrderItemDto
+                {
+                    Id = i.Id,
+                    WarehouseBatchId = i.WarehouseBatchId ?? 0,
+                    BatchNumber = i.BatchNumber ?? string.Empty,
+                    ProductionReferenceNumber = i.ProductionReferenceNumber ?? 0,
+                    SampleCode = i.SampleCode ?? string.Empty,
+                    RawMaterialId = i.RawMaterialId,
+                    MaterialName = i.MaterialName,
+                    MaterialType = i.MaterialType ?? string.Empty,
+                    StorageLocationName = i.StorageLocationName ?? order.StorageLocationName,
+                    AvailableQuantityBefore = i.AvailableQuantityBefore,
+                    CurrentWarehouseBatchQuantity = curQty,
+                    RequestedQuantity = i.RequestedQuantity,
+                    IssuedQuantity = i.IssuedQuantity,
+                    Unit = i.Unit
+                };
+            }).ToList(),
+            Transfers = order.Transfers.OrderByDescending(t => t.ConfirmedAt).Select(t => new LaboratoryProductionOrderTransferDto
+            {
+                Id = t.Id,
+                ProductionOrderItemId = t.ProductionOrderItemId,
+                WarehouseBatchId = t.WarehouseBatchId,
+                BatchNumber = t.BatchNumber,
+                MaterialName = t.MaterialName,
+                TransferredQuantity = t.TransferredQuantity,
+                Unit = t.Unit,
+                StorageLocationName = t.StorageLocationName,
+                ConfirmedBy = t.ConfirmedBy,
+                ConfirmedAt = t.ConfirmedAt,
+                TransferTransactionNumber = t.TransferTransactionNumber,
+                Notes = t.Notes
+            }).ToList()
+        }).ToList();
+
+        return Ok(ApiResponse<List<LaboratoryProductionOrderDetailDto>>.Ok(result));
+    }
+
+    /// <summary>
+    /// Warehouse Manager confirms physical transfer of raw materials to Production.
+    /// Supports partial transfers: deducts only confirmed quantities from WarehouseBatches and StorageInventoryLedger.
+    /// </summary>
+    [HttpPost("production-orders/{id:int}/confirm-transfer")]
+    [ProducesResponseType(typeof(ApiResponse<LaboratoryProductionOrderDetailDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ConfirmProductionOrderTransfer(int id, [FromBody] ConfirmWarehouseTransferRequestDto request)
+    {
+        var (isAuth, role, userName, userId) = GetAuthenticatedUser();
+        if (!isAuth)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponse.Fail("غير مصرح لك بتأكيد نقل المواد من المستودع."));
+        }
+
+        var order = await _db.ProductionOrders
+            .Include(o => o.Items)
+            .Include(o => o.Transfers)
+            .FirstOrDefaultAsync(o => o.Id == id);
+
+        if (order == null)
+        {
+            return NotFound(ApiResponse.Fail("أمر الإنتاج المطلوب غير موجود."));
+        }
+
+        if (order.Status != "PENDING_TRANSFER" && order.Status != "PARTIALLY_TRANSFERRED")
+        {
+            return BadRequest(ApiResponse.Fail("لا يمكن نقل هذا الأمر لأنه في حالة: " + order.Status));
+        }
+
+        if (request.Items == null || request.Items.Count == 0 || !request.Items.Any(i => i.TransferQuantity > 0))
+        {
+            return BadRequest(ApiResponse.Fail("يجب تحديد كمية نقل أكبر من الصفر لمادة واحدة على الأقل."));
+        }
+
+        // Fallback: If request items have WarehouseBatchId <= 0, resolve from order item
+        foreach (var reqItem in request.Items.Where(i => i.TransferQuantity > 0))
+        {
+            var orderItem = order.Items.FirstOrDefault(oi => oi.Id == reqItem.ProductionOrderItemId);
+            if (orderItem != null && reqItem.WarehouseBatchId <= 0 && orderItem.WarehouseBatchId.HasValue && orderItem.WarehouseBatchId.Value > 0)
+            {
+                reqItem.WarehouseBatchId = orderItem.WarehouseBatchId.Value;
+            }
+        }
+
+        // Validate items and quantities
+        var validTransferItems = request.Items.Where(i => i.TransferQuantity > 0).ToList();
+        var batchIds = validTransferItems.Select(i => i.WarehouseBatchId).Where(b => b > 0).Distinct().ToList();
+        var batches = await _db.WarehouseBatches
+            .Include(b => b.StorageLocation)
+            .Where(b => batchIds.Contains(b.Id))
+            .ToListAsync();
+
+        // Fallback: Check if any items can be resolved by BatchNumber
+        if (batches.Count < batchIds.Count)
+        {
+            var missingBatchNumbers = order.Items
+                .Where(oi => !string.IsNullOrWhiteSpace(oi.BatchNumber) && !batches.Any(b => b.Id == oi.WarehouseBatchId))
+                .Select(oi => oi.BatchNumber!)
+                .Distinct()
+                .ToList();
+
+            if (missingBatchNumbers.Count > 0)
+            {
+                var extraBatches = await _db.WarehouseBatches
+                    .Include(b => b.StorageLocation)
+                    .Where(b => missingBatchNumbers.Contains(b.BatchNumber))
+                    .ToListAsync();
+                batches.AddRange(extraBatches.Where(eb => !batches.Any(b => b.Id == eb.Id)));
+            }
+        }
+
+        foreach (var reqItem in validTransferItems)
+        {
+            var orderItem = order.Items.FirstOrDefault(oi => oi.Id == reqItem.ProductionOrderItemId);
+            if (orderItem == null)
+            {
+                return BadRequest(ApiResponse.Fail($"عنصر أمر الإنتاج رقم {reqItem.ProductionOrderItemId} غير موجود في هذا الأمر."));
+            }
+
+            var remainingRequested = orderItem.RequestedQuantity - orderItem.IssuedQuantity;
+            if (reqItem.TransferQuantity > remainingRequested)
+            {
+                return BadRequest(ApiResponse.Fail($"الكمية المطلوب نقلها ({reqItem.TransferQuantity:N3} طن) للمادة {orderItem.MaterialName} تتجاوز المتبقي من أمر الإنتاج ({remainingRequested:N3} طن)."));
+            }
+
+            var batch = batches.FirstOrDefault(b => b.Id == reqItem.WarehouseBatchId)
+                     ?? (orderItem.WarehouseBatchId.HasValue ? batches.FirstOrDefault(b => b.Id == orderItem.WarehouseBatchId.Value) : null)
+                     ?? (!string.IsNullOrWhiteSpace(orderItem.BatchNumber) ? batches.FirstOrDefault(b => b.BatchNumber == orderItem.BatchNumber) : null);
+
+            if (batch == null)
+            {
+                return BadRequest(ApiResponse.Fail($"التشغيلة ذات المعرف {reqItem.WarehouseBatchId} غير موجودة."));
+            }
+
+            // Ensure reqItem has the resolved batch id
+            reqItem.WarehouseBatchId = batch.Id;
+
+            if (batch.CurrentQuantity < reqItem.TransferQuantity)
+            {
+                return BadRequest(ApiResponse.Fail($"الكمية المتوفرة حالياً في تشغيلة المستودع {batch.BatchNumber} ({batch.CurrentQuantity:N3} طن) غير كافية لنقل {reqItem.TransferQuantity:N3} طن."));
+            }
+        }
+
+        using var dbTx = await _db.Database.BeginTransactionAsync();
+        try
+        {
+            var txDate = DateTime.UtcNow;
+            var txNumber = await GetNextSequenceNumberAsync("TRANSFER");
+
+            var op = new StorageOperation
+            {
+                OperationType = "TRANSFER",
+                TransactionNumber = txNumber,
+                TransactionDate = txDate,
+                StorageLocationId = order.StorageLocationId,
+                StorageLocationName = order.StorageLocationName,
+                DestinationDepartment = "الإنتاج",
+                DestinationName = "خطوط الإنتاج والتصنيع",
+                MaterialType = "مواد خام لإنتاج",
+                Source = "المستودع",
+                ResponsibleEmployee = userName,
+                ResponsibleUserId = userId,
+                Notes = $"نقل مواد خام لأمر إنتاج {order.OrderNumber} - {request.Notes}",
+                ApprovalStatus = "APPROVED",
+                IsInventoryPosted = true,
+                InventoryPostedAt = txDate,
+                CreatedAt = txDate,
+                CreatedBy = userName,
+                CreatedByUserId = userId
+            };
+            _db.StorageOperations.Add(op);
+            await _db.SaveChangesAsync(); // Generates op.Id
+
+            int lineIdx = 1;
+            foreach (var reqItem in validTransferItems)
+            {
+                var orderItem = order.Items.First(oi => oi.Id == reqItem.ProductionOrderItemId);
+                var batch = batches.First(b => b.Id == reqItem.WarehouseBatchId);
+                var transferQty = reqItem.TransferQuantity;
+
+                // 1. Deduct from WarehouseBatch
+                batch.CurrentQuantity -= transferQty;
+                if (batch.CurrentQuantity <= 0)
+                {
+                    batch.CurrentQuantity = 0;
+                    batch.Status = "DEPLETED";
+                }
+
+                // 2. Update ProductionOrderItem
+                orderItem.IssuedQuantity += transferQty;
+
+                // 2.5 Create StorageOperationItem
+                var tracking = $"TRF-{txDate:yyyy}-{op.TransactionNumber:D4}-L{lineIdx++}";
+                var opItem = new StorageOperationItem
+                {
+                    StorageOperationId = op.Id,
+                    RawMaterialId = batch.RawMaterialId,
+                    MaterialName = orderItem.MaterialName,
+                    Quantity = transferQty,
+                    TrackingNumber = tracking,
+                    Notes = $"نقل لأمر الإنتاج #{order.OrderNumber}",
+                    WarehouseBatchId = batch.Id,
+                    BatchNumber = batch.BatchNumber,
+                    SampleCode = batch.SampleCode,
+                    ProductionReferenceNumber = orderItem.ProductionReferenceNumber ?? batch.ProductionReferenceNumber
+                };
+                await _db.StorageOperationItems.AddAsync(opItem);
+
+                // 3. Deduct from StorageInventoryLedger
+                var currentStock = await _db.StorageInventoryLedger
+                    .Where(l => l.StorageLocationId == batch.StorageLocationId && l.RawMaterialId == batch.RawMaterialId)
+                    .SumAsync(l => (decimal?)l.Quantity) ?? 0m;
+
+                var ledgerEntry = new StorageInventoryLedger
+                {
+                    StorageLocationId = batch.StorageLocationId,
+                    RawMaterialId = batch.RawMaterialId,
+                    StorageOperationId = op.Id,
+                    StorageOperationItem = opItem,
+                    MovementType = "TRANSFER",
+                    Quantity = -transferQty, // Negative stock deduction upon physical warehouse transfer
+                    RunningBalance = currentStock - transferQty,
+                    BatchNumber = batch.BatchNumber,
+                    WarehouseBatchId = batch.Id,
+                    MovementDate = txDate,
+                    CreatedAt = txDate,
+                    CreatedBy = userName
+                };
+                _db.StorageInventoryLedger.Add(ledgerEntry);
+
+                // 4. Create ProductionOrderTransfer record
+                var transferRecord = new ProductionOrderTransfer
+                {
+                    ProductionOrderId = order.Id,
+                    ProductionOrderItemId = orderItem.Id,
+                    WarehouseBatchId = batch.Id,
+                    BatchNumber = batch.BatchNumber,
+                    RawMaterialId = batch.RawMaterialId,
+                    MaterialName = orderItem.MaterialName,
+                    ProductionReferenceNumber = orderItem.ProductionReferenceNumber,
+                    StorageOperationId = op.Id,
+                    TransferTransactionNumber = $"TRF-{txDate:yyyy}-{op.TransactionNumber:D6}",
+                    TransferredQuantity = transferQty,
+                    Unit = orderItem.Unit,
+                    StorageLocationId = batch.StorageLocationId,
+                    StorageLocationName = batch.StorageLocation != null ? batch.StorageLocation.Name : order.StorageLocationName,
+                    ConfirmedBy = userName,
+                    ConfirmedByUserId = userId,
+                    ConfirmedAt = txDate,
+                    Notes = request.Notes
+                };
+                _db.ProductionOrderTransfers.Add(transferRecord);
+            }
+
+            // Recalculate totals and update status
+            order.TotalTransferredQuantity = order.Items.Sum(i => i.IssuedQuantity);
+            var isFullyTransferred = order.Items.All(i => i.IssuedQuantity >= i.RequestedQuantity);
+
+            if (isFullyTransferred)
+            {
+                order.Status = "TRANSFERRED_TO_PRODUCTION";
+                order.CurrentStage = "تم النقل بالكامل - جاهز للتشغيل بالإنتاج";
+            }
+            else
+            {
+                order.Status = "PARTIALLY_TRANSFERRED";
+                order.CurrentStage = "تم النقل جزئياً من المستودع";
+            }
+
+            await _db.SaveChangesAsync();
+            await dbTx.CommitAsync();
+
+            try
+            {
+                await _hubContext.Clients.All.SendAsync("OnDepartmentDataChanged", new
+                {
+                    Department = "Storage",
+                    Action = "TRANSFER_CONFIRMED",
+                    OrderId = order.Id,
+                    OrderNumber = order.OrderNumber,
+                    Timestamp = DateTime.UtcNow
+                });
+                await _hubContext.Clients.All.SendAsync("OnWarehouseInventoryChanged", new
+                {
+                    Action = "TRANSFER_CONFIRMED",
+                    Timestamp = DateTime.UtcNow
+                });
+                await _hubContext.Clients.All.SendAsync("OnProductionOrderChanged", new
+                {
+                    OrderId = order.Id,
+                    OrderNumber = order.OrderNumber,
+                    Status = order.Status,
+                    Timestamp = DateTime.UtcNow
+                });
+            }
+            catch (Exception exSignal)
+            {
+                _logger.LogWarning(exSignal, "Failed to broadcast transfer confirmation SignalR event for {OrderNumber}", order.OrderNumber);
+            }
+
+            _logger.LogInformation("Confirmed transfer of {Count} items for Production Order {OrderNumber}. New Status: {Status}.",
+                validTransferItems.Count, order.OrderNumber, order.Status);
+
+            var message = isFullyTransferred
+                ? "تم تأكيد نقل كافة المواد الخام المطلوبة بنجاح وإرسالها للإنتاج."
+                : "تم تأكيد النقل الجزئي للمواد الخام وخصمها من رصيد المستودع بنجاح.";
+
+            return Ok(ApiResponse.Ok(message));
+        }
+        catch (Exception ex)
+        {
+            await dbTx.RollbackAsync();
+            _logger.LogError(ex, "Failed to confirm transfer for Production Order #{Id}.", id);
+            return StatusCode(StatusCodes.Status500InternalServerError, ApiResponse.Fail("حدث خطأ أثناء تأكيد نقل المواد: " + ex.Message));
+        }
     }
 }

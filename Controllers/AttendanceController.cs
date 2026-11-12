@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -720,7 +720,9 @@ public class AttendanceController : ControllerBase
                 SubmittedByUserId = currentUserId,
                 SubmittedBy = currentUserName,
                 SubmittedAt = DateTime.UtcNow,
-                ApprovalStatus = "PENDING",
+                ApprovalStatus = "APPROVED",
+                ReviewedBy = "System (Auto-Approved)",
+                ReviewedAt = DateTime.UtcNow,
                 Notes = notes,
                 TotalEmployeesCount = records.Count,
                 PresentCount = presentCount,
@@ -752,7 +754,9 @@ public class AttendanceController : ControllerBase
                     CheckOutTime = r.CheckOutTime,
                     Notes = r.Notes,
                     AttendanceSubmissionId = submission.Id,
-                    ApprovalStatus = "PENDING",
+                    ApprovalStatus = "APPROVED",
+                    ReviewedBy = "System (Auto-Approved)",
+                    ReviewedAt = DateTime.UtcNow,
                     CreatedAt = DateTime.UtcNow
                 };
                 await _db.AttendanceRecords.AddAsync(record);
@@ -783,12 +787,12 @@ public class AttendanceController : ControllerBase
                 PONumber = null,
                 TransactionOrMovementNumber = txNumber,
                 PreviousStatus = "DRAFT",
-                NewStatus = "PENDING",
-                Action = "SUBMITTED",
-                ActorName = currentUserName,
+                NewStatus = "APPROVED",
+                Action = "APPROVED",
+                ActorName = "System (Auto-Approved)",
                 ActorUserId = currentUserId,
-                ActorRole = currentUserRole,
-                Comment = "تم إرسال كشف الحضور والانصراف مع المرفقات الثبوتية للمراجعة والاعتماد.",
+                ActorRole = "System",
+                Comment = "تم اعتماد كشف الحضور والانصراف تلقائياً بواسطة النظام.",
                 Timestamp = DateTime.UtcNow
             };
             await _db.FormApprovalHistories.AddAsync(history);

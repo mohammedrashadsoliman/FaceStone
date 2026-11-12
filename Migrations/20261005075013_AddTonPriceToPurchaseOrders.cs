@@ -20,8 +20,8 @@ namespace FaceStone.Web.Migrations
                 defaultValue: 0m);
 
             migrationBuilder.Sql("UPDATE PurchaseOrders SET TonPrice = PricePerTon WHERE TonPrice = 0;");
-            migrationBuilder.Sql("UPDATE t SET t.PurchaseOrderId = po.Id FROM Transportation t INNER JOIN PurchaseOrders po ON t.PONumber = po.PONumber WHERE t.PurchaseOrderId IS NULL;");
-            migrationBuilder.Sql("UPDATE s SET s.PurchaseOrderId = po.Id FROM StorageTransactions s INNER JOIN PurchaseOrders po ON s.PONumber = po.PONumber WHERE s.PurchaseOrderId IS NULL AND s.PONumber IS NOT NULL AND s.PONumber <> '';");
+            migrationBuilder.Sql("IF COL_LENGTH('Transportation', 'PurchaseOrderId') IS NOT NULL EXEC('UPDATE t SET t.PurchaseOrderId = po.Id FROM Transportation t INNER JOIN PurchaseOrders po ON t.PONumber = po.PONumber WHERE t.PurchaseOrderId IS NULL;');");
+            migrationBuilder.Sql("IF COL_LENGTH('StorageTransactions', 'PurchaseOrderId') IS NOT NULL EXEC('UPDATE s SET s.PurchaseOrderId = po.Id FROM StorageTransactions s INNER JOIN PurchaseOrders po ON s.PONumber = po.PONumber WHERE s.PurchaseOrderId IS NULL AND s.PONumber IS NOT NULL AND s.PONumber <> ''''');");
         }
 
         /// <inheritdoc />

@@ -14,6 +14,44 @@ public class StorageOperationItem
     public RawMaterial? RawMaterial { get; set; }
 
     /// <summary>
+    /// Foreign key to linked WarehouseBatch (for Import batch creation or Export/Transfer batch consumption)
+    /// </summary>
+    public int? WarehouseBatchId { get; set; }
+    public WarehouseBatch? WarehouseBatch { get; set; }
+
+    /// <summary>
+    /// Batch Number (رقم الدفعة, e.g. B-0001)
+    /// </summary>
+    public string? BatchNumber { get; set; }
+
+    /// <summary>
+    /// Sample Code / Reference Number from Laboratory (رقم العينة, e.g. SMP-0001)
+    /// </summary>
+    public string? SampleCode { get; set; }
+
+    /// <summary>
+    /// Shared Production Reference Number
+    /// </summary>
+    public int? ProductionReferenceNumber { get; set; }
+
+    /// <summary>
+    /// أمر الإنتاج المرتبط (عند صرف منتج نهائي)
+    /// </summary>
+    public int? ProductionOrderId { get; set; }
+    public ProductionOrder? ProductionOrder { get; set; }
+
+    /// <summary>
+    /// عملية الإنتاج المرتبطة
+    /// </summary>
+    public int? ProductionProcessId { get; set; }
+    public ProductionProcess? ProductionProcess { get; set; }
+
+    /// <summary>
+    /// رقم التصنيع (Manufacture Number)
+    /// </summary>
+    public string? ManufactureNumber { get; set; }
+
+    /// <summary>
     /// اسم الصنف
     /// </summary>
     public string MaterialName { get; set; } = string.Empty;

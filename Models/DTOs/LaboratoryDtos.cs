@@ -26,6 +26,8 @@ public class LaboratoryDashboardStatsDto
 public class LaboratoryReferenceLookupDto
 {
     public int ProductionReferenceNumber { get; set; }
+    public int? SampleNumber { get; set; }
+    public string? SampleCode { get; set; }
     public string LaboratorySection { get; set; } = string.Empty;
     public string RawMaterialDescription { get; set; } = string.Empty;
     public int? RawMaterialId { get; set; }
@@ -34,6 +36,7 @@ public class LaboratoryReferenceLookupDto
     public int? SourceTransportationId { get; set; }
     public int? TransportationTransactionNumber { get; set; }
     public string? PONumber { get; set; }
+    public string Unit { get; set; } = "طن";
     public decimal ReceivedQuantity { get; set; }
     public decimal AcceptedQuantity { get; set; }
     public decimal RejectedQuantity { get; set; }
@@ -52,6 +55,7 @@ public class LaboratoryReferenceLookupDto
 public class NextSampleNumberDto
 {
     public int SampleNumber { get; set; }
+    public string SampleCode { get; set; } = string.Empty;
     public Guid UserId { get; set; }
     public string UserName { get; set; } = string.Empty;
     public string LaboratorySection { get; set; } = string.Empty;
@@ -60,6 +64,8 @@ public class NextSampleNumberDto
 public class LaboratoryBatchLookupDto
 {
     public int ProductionReferenceNumber { get; set; }
+    public int? SampleNumber { get; set; }
+    public string? SampleCode { get; set; }
     public string BatchNumber { get; set; } = string.Empty;
     public string SampleName { get; set; } = string.Empty;
     public string SampleDescription { get; set; } = string.Empty;
@@ -74,6 +80,8 @@ public class CreateRawMaterialReportDto
 {
     public int? ProductionReferenceNumber { get; set; }
     public int? SampleNumber { get; set; }
+    public string? SampleCode { get; set; }
+    public string? MaterialClassification { get; set; } = "MECHANICAL";
     public string? SampleName { get; set; } = "سيليكا باودر (Micro Silica Powder)";
     public string? SampleDescription { get; set; } = "بودرة رمادية اللون";
     public string? BatchNumber { get; set; }
@@ -91,7 +99,9 @@ public class CreateRawMaterialReportDto
     public int? SourceTransportationId { get; set; }
     public int? PurchaseOrderId { get; set; }
     public string? PONumber { get; set; }
+    public string Unit { get; set; } = "طن";
     public decimal ReceivedQuantity { get; set; }
+    public decimal TestedMaterialWeight { get; set; }
     public decimal AcceptedQuantity { get; set; }
     public decimal? RejectedQuantity { get; set; }
     public string? AnalysisResultsJson { get; set; }
@@ -99,6 +109,9 @@ public class CreateRawMaterialReportDto
     public string? Notes { get; set; }
     public IFormFile? Attachment { get; set; }
     public string? AttachmentPath { get; set; }
+    public IFormFile? QuantityConfirmationDocument { get; set; }
+    public string? QuantityConfirmationPath { get; set; }
+    public string? QuantityConfirmationFileName { get; set; }
 }
 
 public class RawMaterialReportDto
@@ -106,6 +119,8 @@ public class RawMaterialReportDto
     public int Id { get; set; }
     public int ProductionReferenceNumber { get; set; }
     public int SampleNumber { get; set; }
+    public string SampleCode { get; set; } = string.Empty;
+    public string MaterialClassification { get; set; } = "MECHANICAL";
     public string SampleName { get; set; } = string.Empty;
     public string? SampleDescription { get; set; }
     public string? BatchNumber { get; set; }
@@ -125,7 +140,9 @@ public class RawMaterialReportDto
     public int? TransportationTransactionNumber { get; set; }
     public int? PurchaseOrderId { get; set; }
     public string? PONumber { get; set; }
+    public string Unit { get; set; } = "طن";
     public decimal ReceivedQuantity { get; set; }
+    public decimal TestedMaterialWeight { get; set; }
     public decimal AcceptedQuantity { get; set; }
     public decimal RejectedQuantity { get; set; }
     public string? AnalysisResultsJson { get; set; }
@@ -135,6 +152,10 @@ public class RawMaterialReportDto
     public string? AttachmentFileName { get; set; }
     public string? AttachmentFileType { get; set; }
     public long AttachmentFileSize { get; set; }
+    public string? QuantityConfirmationPath { get; set; }
+    public string? QuantityConfirmationFileName { get; set; }
+    public string? QuantityConfirmationFileType { get; set; }
+    public long QuantityConfirmationFileSize { get; set; }
     public string ResponsibleEmployee { get; set; } = string.Empty;
     public string ApprovalStatus { get; set; } = string.Empty;
     public string? ReviewedBy { get; set; }
@@ -143,8 +164,55 @@ public class RawMaterialReportDto
     public bool IsStorageReceived { get; set; }
     public DateTime? StorageReceivedAt { get; set; }
     public int? StorageOperationId { get; set; }
+    public string? PhysicalInspectionStatus { get; set; }
+    public string? PhysicalInspectedBy { get; set; }
+    public DateTime? PhysicalInspectedAt { get; set; }
+    public string? PhysicalNotes { get; set; }
+    public string? ChemicalInspectionStatus { get; set; }
+    public string? ChemicalInspectedBy { get; set; }
+    public DateTime? ChemicalInspectedAt { get; set; }
+    public string? ChemicalNotes { get; set; }
+    public string? ChemicalResultsJson { get; set; }
+    public string? OverallStatus { get; set; }
     public DateTime CreatedAt { get; set; }
     public string CreatedBy { get; set; } = string.Empty;
+}
+
+public class PendingChemicalReferenceDto
+{
+    public int Id { get; set; }
+    public int ProductionReferenceNumber { get; set; }
+    public int SampleNumber { get; set; }
+    public string SampleCode { get; set; } = string.Empty;
+    public string SampleName { get; set; } = string.Empty;
+    public string? SampleDescription { get; set; }
+    public string MaterialClassification { get; set; } = "MECHANICAL";
+    public string? SupplierName { get; set; }
+    public DateTime? SampleReceivedDate { get; set; }
+    public decimal ReceivedQuantity { get; set; }
+    public decimal TestedMaterialWeight { get; set; }
+    public string Unit { get; set; } = "طن";
+    public string? PhysicalNotes { get; set; }
+    public string? PhysicalInspectedBy { get; set; }
+    public DateTime? PhysicalInspectedAt { get; set; }
+    public string? PhysicalResultsJson { get; set; }
+    public string? AttachmentPath { get; set; }
+    public string? AttachmentFileName { get; set; }
+}
+
+public class SubmitChemicalInspectionDto
+{
+    public int LaboratoryReportId { get; set; }
+    public string? SampleCode { get; set; }
+    public DateTime? AnalysisDateTime { get; set; }
+    public string ComplyStatus { get; set; } = "COMPLY"; // COMPLY | NOT_COMPLIED
+    public string? Notes { get; set; }
+    public string? AnalysisResultsJson { get; set; }
+    public string? LabManagerName { get; set; }
+    public string? LabManagerSignature { get; set; }
+    public DateTime? LabManagerDate { get; set; }
+    public IFormFile? Attachment { get; set; }
+    public string? AttachmentPath { get; set; }
 }
 
 public class CreateInProcessReportDto
@@ -169,6 +237,8 @@ public class InProcessReportDto
     public int Id { get; set; }
     public int ProductionReferenceNumber { get; set; }
     public int? RawMaterialReportId { get; set; }
+    public int? SampleNumber { get; set; }
+    public string? SampleCode { get; set; }
     public string ProductionBatchNumber { get; set; } = string.Empty;
     public int? ProductionWorkInProcessId { get; set; }
     public string LaboratorySection { get; set; } = string.Empty;
@@ -217,6 +287,8 @@ public class FinalConformityCertificateDto
     public string CertificateNumber { get; set; } = string.Empty;
     public int ProductionReferenceNumber { get; set; }
     public int? RawMaterialReportId { get; set; }
+    public int? SampleNumber { get; set; }
+    public string? SampleCode { get; set; }
     public string LaboratorySection { get; set; } = string.Empty;
     public string FinalProductName { get; set; } = string.Empty;
     public decimal ActualFinalProductQuantity { get; set; }
