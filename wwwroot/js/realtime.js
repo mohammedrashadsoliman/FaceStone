@@ -74,10 +74,11 @@ class RealTimeChatService {
     try {
       this.setConnectionState('connecting');
 
-      // Use accessTokenFactory to prevent exposing JWT tokens in URLs and logs
+      // Use accessTokenFactory and all transports (WebSockets, SSE, LongPolling) for maximum resilience on cloud IIS hosting
       this.hubConnection = new signalR.HubConnectionBuilder()
         .withUrl('/chatHub', {
-          accessTokenFactory: () => ChatApi.getToken()
+          accessTokenFactory: () => ChatApi.getToken(),
+          transport: signalR.HttpTransportType.WebSockets | signalR.HttpTransportType.ServerSentEvents | signalR.HttpTransportType.LongPolling
         })
         .withAutomaticReconnect({
           nextRetryDelayInMilliseconds: retryContext => {

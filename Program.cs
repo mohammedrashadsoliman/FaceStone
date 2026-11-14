@@ -133,11 +133,6 @@ builder.Services.AddDbContext<FaceStoneDbContext>(options =>
 {
     options.UseSqlServer(connectionString, sqlOptions =>
     {
-        // Resilient retry policy for remote cloud database operations
-        sqlOptions.EnableRetryOnFailure(
-            maxRetryCount: 5,
-            maxRetryDelay: TimeSpan.FromSeconds(30),
-            errorNumbersToAdd: null);
         sqlOptions.CommandTimeout(60);
     });
 });

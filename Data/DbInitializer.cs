@@ -1466,6 +1466,8 @@ BEGIN
         ALTER TABLE LaboratoryRawMaterialReports ADD ChemicalResultsJson NVARCHAR(MAX) NULL;
     IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryRawMaterialReports') AND name = 'OverallStatus')
         ALTER TABLE LaboratoryRawMaterialReports ADD OverallStatus NVARCHAR(50) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.default_constraints WHERE parent_object_id = OBJECT_ID('LaboratoryRawMaterialReports') AND name = 'DF_LabRaw_AttSize')
+        ALTER TABLE LaboratoryRawMaterialReports ADD CONSTRAINT DF_LabRaw_AttSize DEFAULT 0 FOR AttachmentFileSize;
 
     IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_LaboratoryRawMaterialReports_ResponsibleUserId_SampleNumber')
     BEGIN

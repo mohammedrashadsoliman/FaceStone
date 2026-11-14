@@ -1783,6 +1783,7 @@ public class FaceStoneDbContext : DbContext
             entity.Property(e => e.QuantityConfirmationFileName).HasMaxLength(255);
             entity.Property(e => e.QuantityConfirmationFileType).HasMaxLength(100);
             entity.Property(e => e.QuantityConfirmationFileSize).HasDefaultValue(0L);
+            entity.Property(e => e.AttachmentFileSize).HasDefaultValue(0L);
             entity.Property(e => e.AcceptedQuantity).HasPrecision(18, 3);
             entity.Property(e => e.RejectedQuantity).HasPrecision(18, 3);
             entity.Property(e => e.InspectionDecision).HasMaxLength(50).IsRequired();
