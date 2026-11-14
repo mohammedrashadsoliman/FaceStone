@@ -532,11 +532,13 @@ public class DepartmentController : ControllerBase
     }
 
     /// <summary>
-    /// Direct route protection for /laboratory, /laboratory/physical, and /laboratory/chemical.
+    /// Direct route protection for /laboratory, /laboratory/physical, /laboratory/chemical, /physical, and /chemical.
     /// Supports both direct API callers and SPA browser navigation.
     /// </summary>
     [HttpGet("/laboratory")]
     [HttpGet("/laboratory/{*subpath}")]
+    [HttpGet("/physical")]
+    [HttpGet("/chemical")]
     public IActionResult HandleLaboratoryDirect(string? subpath = null)
     {
         if (Request.Headers.Accept.Any(a => a != null && a.Contains("text/html")))
@@ -562,14 +564,15 @@ public class DepartmentController : ControllerBase
                 ApiResponse.Fail("Access Denied: Laboratory department is restricted to authorized laboratory personnel, IT, and CEO."));
         }
 
+        var requestPath = Request.Path.Value?.Trim().ToLowerInvariant() ?? string.Empty;
         var normalizedSub = (subpath ?? string.Empty).Trim().ToLowerInvariant();
-        if (normalizedSub.StartsWith("physical") && !AppRoles.HasPhysicalLabAccess(role))
+        if ((requestPath == "/physical" || normalizedSub.StartsWith("physical")) && !AppRoles.HasPhysicalLabAccess(role))
         {
             return StatusCode(StatusCodes.Status403Forbidden,
                 ApiResponse.Fail("Access Denied: Physical Laboratory is restricted to Physical Laboratory personnel, IT, and CEO."));
         }
 
-        if (normalizedSub.StartsWith("chemical") && !AppRoles.HasChemicalLabAccess(role))
+        if ((requestPath == "/chemical" || normalizedSub.StartsWith("chemical")) && !AppRoles.HasChemicalLabAccess(role))
         {
             return StatusCode(StatusCodes.Status403Forbidden,
                 ApiResponse.Fail("Access Denied: Chemical Laboratory is restricted to Chemical Laboratory personnel, IT, and CEO."));

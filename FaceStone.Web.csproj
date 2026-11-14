@@ -8,8 +8,8 @@
     <AssemblyName>FaceStone.Web</AssemblyName>
     <ProjectGuid>{9FDCA4DF-723E-44A1-A396-D1F85ADE9AA5}</ProjectGuid>
     <UserSecretsId>facestone-secrets-guid-2026</UserSecretsId>
-    <!-- Completely exclude dynamic runtime uploads and scratch test files from build/publish -->
-    <DefaultItemExcludes>$(DefaultItemExcludes);uploads\**;wwwroot\uploads\**;App_Data\**;scratch\**</DefaultItemExcludes>
+    <!-- Completely exclude dynamic runtime uploads, publish directory and scratch test files from build/publish -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);uploads\**;wwwroot\uploads\**;App_Data\**;scratch\**;publish_monsterasp\**</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>
@@ -23,10 +23,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Content Remove="uploads\**;wwwroot\uploads\**;App_Data\**;scratch\**" />
-    <None Remove="uploads\**;wwwroot\uploads\**;App_Data\**;scratch\**" />
-    <Compile Remove="uploads\**;wwwroot\uploads\**;App_Data\**;scratch\**" />
-    <Watch Remove="uploads\**;wwwroot\uploads\**;App_Data\**;scratch\**" />
+    <Content Remove="uploads\**;wwwroot\uploads\**;App_Data\**;scratch\**;publish_monsterasp\**" />
+    <None Remove="uploads\**;wwwroot\uploads\**;App_Data\**;scratch\**;publish_monsterasp\**" />
+    <Compile Remove="uploads\**;wwwroot\uploads\**;App_Data\**;scratch\**;publish_monsterasp\**" />
+    <Watch Remove="uploads\**;wwwroot\uploads\**;App_Data\**;scratch\**;publish_monsterasp\**" />
   </ItemGroup>
 
 </Project>

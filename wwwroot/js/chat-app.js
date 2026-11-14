@@ -1,4 +1,4 @@
-﻿/* ==========================================================================
+/* ==========================================================================
    FACESTONE REAL-TIME CHAT — MAIN APPLICATION CONTROLLER
    Bright, Fast, Minimalist Messaging Engine Inspired by WhatsApp / Messenger
    ========================================================================== */
@@ -959,6 +959,10 @@ class ChatApp {
     } else if (path.startsWith('/laboratory') || hash.startsWith('#/laboratory')) {
       const targetSubRoute = path.startsWith('/laboratory') ? window.location.pathname : hash.replace('#', '');
       this.enterDepartment('laboratory', targetSubRoute);
+    } else if (path === '/physical' || path.startsWith('/physical') || hash.startsWith('#/physical')) {
+      this.enterDepartment('laboratory', '/laboratory/physical');
+    } else if (path === '/chemical' || path.startsWith('/chemical') || hash.startsWith('#/chemical')) {
+      this.enterDepartment('laboratory', '/laboratory/chemical');
     } else if (path.startsWith('/production') || hash.startsWith('#/production')) {
       const targetSubRoute = path.startsWith('/production') ? window.location.pathname : hash.replace('#', '');
       this.enterDepartment('production', targetSubRoute);
@@ -1078,6 +1082,10 @@ class ChatApp {
     } else if (path.startsWith('/laboratory') || hash.startsWith('#/laboratory')) {
       const targetSubRoute = path.startsWith('/laboratory') ? window.location.pathname : hash.replace('#', '');
       await this.enterDepartment('laboratory', targetSubRoute);
+    } else if (path === '/physical' || path.startsWith('/physical') || hash.startsWith('#/physical')) {
+      await this.enterDepartment('laboratory', '/laboratory/physical');
+    } else if (path === '/chemical' || path.startsWith('/chemical') || hash.startsWith('#/chemical')) {
+      await this.enterDepartment('laboratory', '/laboratory/chemical');
     } else if (path.startsWith('/production') || hash.startsWith('#/production')) {
       const targetSubRoute = path.startsWith('/production') ? window.location.pathname : hash.replace('#', '');
       await this.enterDepartment('production', targetSubRoute);

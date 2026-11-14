@@ -1736,6 +1736,20 @@ BEGIN
     END
     IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionFinishedProducts') AND name = 'DestinationStorageLocationName')
         ALTER TABLE ProductionFinishedProducts ADD DestinationStorageLocationName NVARCHAR(255) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionFinishedProducts') AND name = 'ManufacturedQuantity')
+    BEGIN
+        ALTER TABLE ProductionFinishedProducts ADD ManufacturedQuantity DECIMAL(18,3) NOT NULL CONSTRAINT DF_PFP_MfgQty DEFAULT 0;
+        IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionFinishedProducts') AND name = 'ProducedQuantity')
+            EXEC sp_executesql N'UPDATE ProductionFinishedProducts SET ManufacturedQuantity = ProducedQuantity WHERE ManufacturedQuantity = 0 AND ProducedQuantity > 0;';
+    END
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionFinishedProducts') AND name = 'WeighbridgeAttachmentPath')
+        ALTER TABLE ProductionFinishedProducts ADD WeighbridgeAttachmentPath NVARCHAR(1000) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionFinishedProducts') AND name = 'WeighbridgeFileName')
+        ALTER TABLE ProductionFinishedProducts ADD WeighbridgeFileName NVARCHAR(255) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionFinishedProducts') AND name = 'WeighbridgeFileType')
+        ALTER TABLE ProductionFinishedProducts ADD WeighbridgeFileType NVARCHAR(100) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionFinishedProducts') AND name = 'WeighbridgeFileSize')
+        ALTER TABLE ProductionFinishedProducts ADD WeighbridgeFileSize BIGINT NOT NULL CONSTRAINT DF_PFP_WbFileSize DEFAULT 0;
     IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_ProductionFinishedProducts_ProductionOrderId' AND object_id = OBJECT_ID('ProductionFinishedProducts'))
         CREATE INDEX IX_ProductionFinishedProducts_ProductionOrderId ON ProductionFinishedProducts (ProductionOrderId);
 END
@@ -1758,6 +1772,17 @@ BEGIN
     );
     CREATE INDEX IX_ProductionAttachments_ProductionProcessId ON ProductionAttachments (ProductionProcessId);
     CREATE INDEX IX_ProductionAttachments_FinishedProductId ON ProductionAttachments (FinishedProductId);
+END
+ELSE
+BEGIN
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionAttachments') AND name = 'FileType')
+    BEGIN
+        ALTER TABLE ProductionAttachments ADD FileType NVARCHAR(100) NOT NULL CONSTRAINT DF_PA_FileType DEFAULT '';
+        IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionAttachments') AND name = 'ContentType')
+            EXEC sp_executesql N'UPDATE ProductionAttachments SET FileType = ContentType WHERE FileType = '''' AND ContentType IS NOT NULL;';
+    END
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionAttachments') AND name = 'UploadedBy')
+        ALTER TABLE ProductionAttachments ADD UploadedBy NVARCHAR(255) NOT NULL CONSTRAINT DF_PA_UploadedBy DEFAULT '';
 END
 
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'ProductionWasteRecords')
