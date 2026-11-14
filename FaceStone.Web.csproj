@@ -7,6 +7,7 @@
     <RootNamespace>FaceStone.Web</RootNamespace>
     <AssemblyName>FaceStone.Web</AssemblyName>
     <ProjectGuid>{9FDCA4DF-723E-44A1-A396-D1F85ADE9AA5}</ProjectGuid>
+    <UserSecretsId>facestone-secrets-guid-2026</UserSecretsId>
     <!-- Completely exclude dynamic runtime uploads and scratch test files from build/publish -->
     <DefaultItemExcludes>$(DefaultItemExcludes);uploads\**;wwwroot\uploads\**;App_Data\**;scratch\**</DefaultItemExcludes>
   </PropertyGroup>

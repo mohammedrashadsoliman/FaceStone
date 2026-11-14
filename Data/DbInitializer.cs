@@ -21,6 +21,10 @@ public static class DbInitializer
             {
                 logger.LogInformation("[DB] Connection successful to database: {DbName}", dbName);
             }
+            else
+            {
+                logger.LogWarning("[DB] Connection test returned false for database: {DbName}. If connecting to MonsterASP.NET remotely, please verify 'Remote Access' is switched to 'Enabled' in the MonsterASP Control Panel.", dbName);
+            }
 
             // 1. In production / hosted environments, apply pending EF Core migrations safely
             if (db.Database.IsSqlServer())

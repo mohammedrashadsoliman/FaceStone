@@ -10,7 +10,7 @@ using FaceStone.Web.Services;
 if (args.Contains("--test-storage-queries"))
 {
     var options = new DbContextOptionsBuilder<FaceStoneDbContext>()
-        .UseSqlServer("Server=Server=db79422.databaseasp.net; Database=db79422; User Id=db79422; Password=Cr7-8=zEDx6@; Encrypt=False; MultipleActiveResultSets=True;")
+        .UseSqlServer("Server=db79422.databaseasp.net; Database=db79422; User Id=db79422; Password=Cr7-8=zEDx6@; Encrypt=False; MultipleActiveResultSets=True;")
         .Options;
     using var db = new FaceStoneDbContext(options);
 
@@ -104,20 +104,43 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 // Configure default local listening URL (prevents fallback to port 5000)
 builder.WebHost.UseUrls("http://localhost:5124");
 
-// 1. Add Database Context with SQL Server (Active with resilient Azure SQL retry policy)
-const string localSqlExpress = "Server=DESKTOP-OVKNQTJ\\SQLEXPRESS; Database=FaceStone; Trusted_Connection=True; TrustServerCertificate=True; MultipleActiveResultSets=True;";
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") ?? localSqlExpress;
+// 1. Add Database Context with SQL Server (Centralized MonsterASP.NET Database)
+const string monsterAspDefaultConn = "Server=db79422.databaseasp.net; Database=db79422; User Id=db79422; Password=Cr7-8=zEDx6@; Encrypt=False; MultipleActiveResultSets=True;";
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 
-// CRITICAL SAFEGUARD: Local development must NEVER connect to remote db69901.databaseasp.net
-if (string.Equals(Environment.MachineName, "DESKTOP-OVKNQTJ", StringComparison.OrdinalIgnoreCase) ||
-    connectionString.Contains("databaseasp.net", StringComparison.OrdinalIgnoreCase) ||
-    builder.Environment.IsDevelopment())
+if (string.IsNullOrWhiteSpace(connectionString))
 {
-    connectionString = localSqlExpress;
+    connectionString = monsterAspDefaultConn;
+}
+
+// When running locally in Development mode (Visual Studio 2022 on developer workstation),
+// if the connection string targets MonsterASP's internal hostname (db79422.databaseasp.net),
+// adapt it to the public endpoint (db79422.public.databaseasp.net) required for external connections.
+if (builder.Environment.IsDevelopment() || string.Equals(Environment.MachineName, "DESKTOP-OVKNQTJ", StringComparison.OrdinalIgnoreCase))
+{
+    if (connectionString.Contains("db79422.databaseasp.net", StringComparison.OrdinalIgnoreCase) &&
+        !connectionString.Contains("db79422.public.databaseasp.net", StringComparison.OrdinalIgnoreCase))
+    {
+        connectionString = connectionString.Replace("db79422.databaseasp.net", "db79422.public.databaseasp.net", StringComparison.OrdinalIgnoreCase);
+        if (!connectionString.Contains("TrustServerCertificate", StringComparison.OrdinalIgnoreCase))
+        {
+            connectionString += ";TrustServerCertificate=True;";
+        }
+    }
 }
 
 builder.Services.AddDbContext<FaceStoneDbContext>(options =>
-    options.UseSqlServer(connectionString));
+{
+    options.UseSqlServer(connectionString, sqlOptions =>
+    {
+        // Resilient retry policy for remote cloud database operations
+        sqlOptions.EnableRetryOnFailure(
+            maxRetryCount: 5,
+            maxRetryDelay: TimeSpan.FromSeconds(30),
+            errorNumbersToAdd: null);
+        sqlOptions.CommandTimeout(60);
+    });
+});
 
 // 2. Add API Controllers with JSON configurations
 builder.Services.AddControllers()
@@ -459,7 +482,9 @@ app.Lifetime.ApplicationStarted.Register(() =>
     var logger = app.Services.GetRequiredService<ILogger<Program>>();
     logger.LogInformation("==================================================================");
     logger.LogInformation("[FaceStone] Web Application successfully started at: {Url}", url);
-    logger.LogInformation("[FaceStone] Database: Local SQL Server (DESKTOP-OVKNQTJ\\SQLEXPRESS -> FaceStone)");
+    var dbHost = "db79422.databaseasp.net";
+    try { dbHost = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(connectionString).DataSource; } catch { }
+    logger.LogInformation("[FaceStone] Centralized Database: MonsterASP.NET SQL Server ({Host} -> db79422)", dbHost);
     logger.LogInformation("[FaceStone] Hosting Environment: {Env}", app.Environment.EnvironmentName);
     logger.LogInformation("==================================================================");
 

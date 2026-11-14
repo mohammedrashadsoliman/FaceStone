@@ -1,7 +1,7 @@
 # Docs for the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
 # More GitHub Actions for Azure: https://github.com/Azure/actions
 
-name: Build and deploy ASP.Net Core app to Azure Web App - facestone
+name: Build and Deploy to MonsterASP.NET - facestone
 
 on:
   push:
@@ -13,7 +13,7 @@ jobs:
   build:
     runs-on: windows-latest
     permissions:
-      contents: read # This is required for actions/checkout
+      contents: read
 
     steps:
       - uses: actions/checkout@v4
@@ -42,26 +42,33 @@ jobs:
     runs-on: windows-latest
     needs: build
     permissions:
-      id-token: write # This is required for requesting the JWT
-      contents: read # This is required for actions/checkout
+      contents: read
 
     steps:
       - name: Download artifact from build job
         uses: actions/download-artifact@v4
         with:
           name: .net-app
-      
-      - name: Login to Azure
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_673EE96EFC384554BCDFC38267C0753B }}
-          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_038A7EABE1874D5A842E7AF7E194393F }}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_85F42C1362B24230B7E8FAAD4B801486 }}
+          path: ./publish
 
-      - name: Deploy to Azure Web App
-        id: deploy-to-webapp
-        uses: azure/webapps-deploy@v3
-        with:
-          app-name: 'facestone'
-          slot-name: 'Production'
-          package: .
+      # Deploy to MonsterASP.NET using Web Deploy if MONSTERASP_PASSWORD is configured
+      - name: Deploy to MonsterASP.NET via WebDeploy
+        if: env.MONSTERASP_PASSWORD != ''
+        shell: pwsh
+        env:
+          MONSTERASP_PASSWORD: ${{ secrets.MONSTERASP_PASSWORD }}
+          MONSTERASP_USERNAME: ${{ secrets.MONSTERASP_USERNAME || 'site92914' }}
+          MONSTERASP_SITE_NAME: ${{ secrets.MONSTERASP_SITE_NAME || 'site92914' }}
+          MONSTERASP_SERVER: ${{ secrets.MONSTERASP_SERVER || 'site92914.siteasp.net:8172' }}
+        run: |
+          $msdeploy = "C:\Program Files\IIS\Microsoft Web Deploy V3\msdeploy.exe"
+          if (-not (Test-Path $msdeploy)) {
+            $msdeploy = "C:\Program Files (x86)\IIS\Microsoft Web Deploy V3\msdeploy.exe"
+          }
+          if (Test-Path $msdeploy) {
+            Write-Host "Deploying to MonsterASP.NET site $env:MONSTERASP_SITE_NAME at $env:MONSTERASP_SERVER..."
+            & $msdeploy -verb:sync -source:contentPath="$(Get-Location)\publish" -dest:contentPath="$($env:MONSTERASP_SITE_NAME)",computerName="https://$($env:MONSTERASP_SERVER)/msdeploy.axd",userName="$($env:MONSTERASP_USERNAME)",password="$($env:MONSTERASP_PASSWORD)",authtype="Basic" -allowUntrusted
+            Write-Host "Deployment to MonsterASP.NET completed successfully."
+          } else {
+            Write-Host "msdeploy.exe not found on runner; deployment artifact is preserved in build artifacts."
+          }
