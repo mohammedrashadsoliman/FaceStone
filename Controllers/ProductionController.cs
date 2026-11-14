@@ -2726,7 +2726,9 @@ public class ProductionController : ControllerBase
                     AttachmentType = "IncomingWeighbridge",
                     FilePath = storedWeighbridgePath,
                     FileName = storedWeighbridgeFileName ?? "weighbridge.pdf",
+                    StoredFileName = Path.GetFileName(storedWeighbridgePath) ?? storedWeighbridgeFileName ?? "weighbridge.pdf",
                     FileType = storedWeighbridgeFileType ?? "application/pdf",
+                    ContentType = storedWeighbridgeFileType ?? "application/pdf",
                     FileSize = storedWeighbridgeFileSize,
                     UploadedBy = userName,
                     UploadedAt = DateTime.UtcNow
@@ -3300,7 +3302,9 @@ public class ProductionController : ControllerBase
                     AttachmentType = "FinishedProductWeighbridge",
                     FilePath = storedPath,
                     FileName = storedOrigName ?? "finished_product_weighbridge.pdf",
+                    StoredFileName = Path.GetFileName(storedPath) ?? storedOrigName ?? "finished_product_weighbridge.pdf",
                     FileType = storedContentType ?? "application/pdf",
+                    ContentType = storedContentType ?? "application/pdf",
                     FileSize = storedFileSize,
                     UploadedBy = userName,
                     UploadedAt = DateTime.UtcNow

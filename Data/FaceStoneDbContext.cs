@@ -2348,7 +2348,9 @@ public class FaceStoneDbContext : DbContext
             entity.Property(e => e.AttachmentType).HasMaxLength(100).IsRequired();
             entity.Property(e => e.FilePath).HasMaxLength(1000).IsRequired();
             entity.Property(e => e.FileName).HasMaxLength(255).IsRequired();
+            entity.Property(e => e.StoredFileName).HasMaxLength(255);
             entity.Property(e => e.FileType).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.ContentType).HasMaxLength(100);
             entity.Property(e => e.UploadedBy).HasMaxLength(255).IsRequired();
 
             entity.HasOne(e => e.ProductionProcess)

@@ -1791,6 +1791,14 @@ BEGIN
     END
     IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionAttachments') AND name = 'UploadedBy')
         ALTER TABLE ProductionAttachments ADD UploadedBy NVARCHAR(255) NOT NULL CONSTRAINT DF_PA_UploadedBy DEFAULT '';
+    IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'ProductionAttachments' AND COLUMN_NAME = 'StoredFileName' AND IS_NULLABLE = 'NO')
+        ALTER TABLE ProductionAttachments ALTER COLUMN StoredFileName NVARCHAR(255) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.default_constraints WHERE name = 'DF_PA_StoredFileName')
+        ALTER TABLE ProductionAttachments ADD CONSTRAINT DF_PA_StoredFileName DEFAULT '' FOR StoredFileName;
+    IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'ProductionAttachments' AND COLUMN_NAME = 'ContentType' AND IS_NULLABLE = 'NO')
+        ALTER TABLE ProductionAttachments ALTER COLUMN ContentType NVARCHAR(100) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.default_constraints WHERE name = 'DF_PA_ContentType')
+        ALTER TABLE ProductionAttachments ADD CONSTRAINT DF_PA_ContentType DEFAULT '' FOR ContentType;
 END
 
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'ProductionWasteRecords')

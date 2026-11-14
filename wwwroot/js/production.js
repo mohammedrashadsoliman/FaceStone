@@ -15,6 +15,17 @@
       this.root = document.getElementById('production-page-root');
       if (!this.root) return;
 
+      if (this.isInitialized) {
+        this.loadShiftInfo();
+        this.loadCatalog();
+        this.loadStats();
+        this.loadSubmissions();
+        this.setDefaultDateAndTimes();
+        this.showSection(this.currentSection || 'process');
+        return;
+      }
+      this.isInitialized = true;
+
       this.currentSection = 'process';
       this.shiftInfo = null;
       this.catalog = [];
@@ -1726,6 +1737,8 @@
     }
 
     static async handleProcessSubmit() {
+      if (this.isSubmittingProcess) return;
+      this.isSubmittingProcess = true;
       if (this.selectedBatches.size === 0) {
         this.notify('يرجى تحديد تشغيلة أو مادة أولية واحدة على الأقل للاستهلاك في عملية الإنتاج', 'error');
         return;
@@ -1817,6 +1830,7 @@
         console.error('Error submitting production process:', err);
         this.notify('حدث خطأ أثناء حفظ وتأكيد عملية الإنتاج', 'error');
       } finally {
+        this.isSubmittingProcess = false;
         if (submitBtn) {
           submitBtn.disabled = false;
           submitBtn.textContent = 'حفظ وتأكيد عملية الإنتاج';
@@ -2232,6 +2246,8 @@
     }
 
     static async handleFinishedSubmit() {
+      if (this.isSubmittingFinished) return;
+      this.isSubmittingFinished = true;
       const procSelect = document.getElementById('prd-fin-process-select');
       const procIdVal = procSelect?.value ? parseInt(procSelect.value, 10) : null;
 
@@ -2351,6 +2367,7 @@
         console.error('Error submitting finished product:', err);
         this.notify('حدث خطأ أثناء اعتماد المنتج النهائي: ' + (err.message || 'خطأ غير معروف'), 'error');
       } finally {
+        this.isSubmittingFinished = false;
         if (submitBtn) {
           submitBtn.disabled = false;
           submitBtn.textContent = 'حفظ واعتماد المنتج النهائي';
