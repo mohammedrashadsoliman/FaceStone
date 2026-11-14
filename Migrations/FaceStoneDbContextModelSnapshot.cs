@@ -920,6 +920,261 @@ namespace FaceStone.Web.Migrations
                     b.ToTable("FormApprovalHistories", (string)null);
                 });
 
+            modelBuilder.Entity("FaceStone.Web.Models.Invoice", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("CompanyAddress")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<int?>("CompanyId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("CompanyName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("CompanyPhone")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("CompanyTaxNumber")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<Guid?>("CreatedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("DiscountAmount")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18, 3)");
+
+                    b.Property<DateTime>("InvoiceDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("InvoiceNumber")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<decimal?>("InvoiceUnitPrice")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18, 3)");
+
+                    b.Property<decimal?>("InvoicedQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18, 3)");
+
+                    b.Property<bool>("IsPrinted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("MaterialName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<decimal?>("OrderedQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18, 3)");
+
+                    b.Property<string>("PONumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<decimal?>("PoUnitPrice")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18, 3)");
+
+                    b.Property<DateTime?>("PriceChangedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("PriceChangedBy")
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<DateTime?>("PrintedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("ProjectCodeId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ProjectCodeValue")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("ProjectName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<int?>("PurchaseOrderId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("RelatedEntityType")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasDefaultValue("COMPANY");
+
+                    b.Property<decimal>("ShippingPrice")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18, 3)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasDefaultValue("ISSUED");
+
+                    b.Property<decimal>("Subtotal")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18, 3)");
+
+                    b.Property<int?>("SupplierId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("SupplierName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<decimal>("TaxAmount")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18, 3)");
+
+                    b.Property<decimal>("TaxRate")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("decimal(5, 2)");
+
+                    b.Property<decimal>("TotalAmount")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18, 3)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyId");
+
+                    b.HasIndex("InvoiceDate");
+
+                    b.HasIndex("InvoiceNumber")
+                        .IsUnique();
+
+                    b.HasIndex("ProjectCodeId");
+
+                    b.HasIndex("PurchaseOrderId");
+
+                    b.HasIndex("Status");
+
+                    b.HasIndex("SupplierId");
+
+                    b.ToTable("Invoices", (string)null);
+                });
+
+            modelBuilder.Entity("FaceStone.Web.Models.InvoiceItem", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("BatchNumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Destination")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<int>("InvoiceId")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("LineTotal")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18, 3)");
+
+                    b.Property<string>("PONumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("ProductName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("ProductionOrderNumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int?>("PurchaseOrderId")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("Quantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18, 3)");
+
+                    b.Property<string>("ReferenceNumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime?>("TransactionDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("TransportationId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("TransportationTransactionNumber")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Unit")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasDefaultValue("طن");
+
+                    b.Property<decimal>("UnitPrice")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18, 3)");
+
+                    b.Property<string>("WarehouseExportNumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InvoiceId");
+
+                    b.HasIndex("PurchaseOrderId");
+
+                    b.HasIndex("TransportationId");
+
+                    b.ToTable("InvoiceItems", (string)null);
+                });
+
             modelBuilder.Entity("FaceStone.Web.Models.LaboratoryFinalConformityCertificate", b =>
                 {
                     b.Property<int>("Id")
@@ -1256,6 +1511,21 @@ namespace FaceStone.Web.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
+                    b.Property<DateTime?>("ChemicalInspectedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ChemicalInspectedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ChemicalInspectionStatus")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ChemicalNotes")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ChemicalResultsJson")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("ComplyStatus")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
@@ -1305,9 +1575,24 @@ namespace FaceStone.Web.Migrations
                     b.Property<string>("Notes")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("OverallStatus")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("PONumber")
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime?>("PhysicalInspectedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("PhysicalInspectedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("PhysicalInspectionStatus")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("PhysicalNotes")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<int>("ProductionReferenceNumber")
                         .HasColumnType("int");
@@ -1415,6 +1700,10 @@ namespace FaceStone.Web.Migrations
 
                     b.Property<int?>("TransportationTransactionNumber")
                         .HasColumnType("int");
+
+                    b.Property<string>("Unit")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
 
                     b.HasKey("Id");
 
@@ -1593,6 +1882,60 @@ namespace FaceStone.Web.Migrations
                     b.ToTable("Management", (string)null);
                 });
 
+            modelBuilder.Entity("FaceStone.Web.Models.ProductionAttachment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AttachmentType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<string>("FilePath")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<long>("FileSize")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("FileType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int?>("FinishedProductId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ProductionProcessId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("UploadedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UploadedBy")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FinishedProductId");
+
+                    b.HasIndex("ProductionProcessId");
+
+                    b.ToTable("ProductionAttachments", (string)null);
+                });
+
             modelBuilder.Entity("FaceStone.Web.Models.ProductionBatch", b =>
                 {
                     b.Property<int>("Id")
@@ -1700,6 +2043,93 @@ namespace FaceStone.Web.Migrations
                     b.ToTable("ProductionBatches", (string)null);
                 });
 
+            modelBuilder.Entity("FaceStone.Web.Models.ProductionFinishedProduct", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<int?>("DestinationStorageLocationId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("DestinationStorageLocationName")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("FinishedProductName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<string>("ManufactureNumber")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<decimal>("ManufacturedQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("ProductionDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("ProductionOrderId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ProductionOrderNumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int>("ProductionProcessId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Unit")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasDefaultValue("طن");
+
+                    b.Property<string>("WeighbridgeAttachmentPath")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("WeighbridgeFileName")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<long>("WeighbridgeFileSize")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("WeighbridgeFileType")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DestinationStorageLocationId");
+
+                    b.HasIndex("ManufactureNumber");
+
+                    b.HasIndex("ProductionOrderId");
+
+                    b.HasIndex("ProductionProcessId");
+
+                    b.ToTable("ProductionFinishedProducts", (string)null);
+                });
+
             modelBuilder.Entity("FaceStone.Web.Models.ProductionOrder", b =>
                 {
                     b.Property<int>("Id")
@@ -1741,8 +2171,25 @@ namespace FaceStone.Web.Migrations
                         .HasColumnType("nvarchar(100)")
                         .HasDefaultValue("الخلط الأولي");
 
+                    b.Property<int>("FormulaVersion")
+                        .HasColumnType("int");
+
                     b.Property<bool>("IsStorageApproved")
                         .HasColumnType("bit");
+
+                    b.Property<Guid?>("LaboratoryManagerId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("LaboratoryManagerName")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<int?>("LinkedProductionProcessId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("LinkedProductionProcessNumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<string>("Notes")
                         .HasColumnType("nvarchar(max)");
@@ -1755,10 +2202,17 @@ namespace FaceStone.Web.Migrations
                     b.Property<DateTime?>("PlannedStartDate")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("ProductDescription")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
                     b.Property<string>("ProductName")
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("ProductionInstructions")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<int?>("ProductionReferenceNumber")
                         .HasColumnType("int");
@@ -1799,6 +2253,14 @@ namespace FaceStone.Web.Migrations
                     b.Property<int?>("StorageOperationId")
                         .HasColumnType("int");
 
+                    b.Property<decimal>("TotalPlannedRawMaterialQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<decimal>("TotalTransferredQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
                     b.Property<string>("Unit")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
@@ -1824,6 +2286,66 @@ namespace FaceStone.Web.Migrations
                     b.ToTable("ProductionOrders", (string)null);
                 });
 
+            modelBuilder.Entity("FaceStone.Web.Models.ProductionOrderFormulaVersion", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<string>("FormulaJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ProductDescription")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("ProductName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<int>("ProductionOrderId")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("TargetOutputQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<decimal>("TotalInputQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<string>("Unit")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasDefaultValue("طن");
+
+                    b.Property<int>("VersionNumber")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductionOrderId");
+
+                    b.HasIndex("ProductionOrderId", "VersionNumber")
+                        .IsUnique();
+
+                    b.ToTable("ProductionOrderFormulaVersions", (string)null);
+                });
+
             modelBuilder.Entity("FaceStone.Web.Models.ProductionOrderItem", b =>
                 {
                     b.Property<int>("Id")
@@ -1831,6 +2353,14 @@ namespace FaceStone.Web.Migrations
                         .HasColumnType("int");
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal>("AvailableQuantityBefore")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<string>("BatchNumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<decimal>("ConsumedQuantity")
                         .HasPrecision(18, 3)
@@ -1848,10 +2378,17 @@ namespace FaceStone.Web.Migrations
                         .HasMaxLength(150)
                         .HasColumnType("nvarchar(150)");
 
+                    b.Property<string>("MaterialType")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
                     b.Property<string>("Notes")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<int>("ProductionOrderId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("ProductionReferenceNumber")
                         .HasColumnType("int");
 
                     b.Property<int>("RawMaterialId")
@@ -1861,8 +2398,16 @@ namespace FaceStone.Web.Migrations
                         .HasPrecision(18, 3)
                         .HasColumnType("decimal(18,3)");
 
+                    b.Property<string>("SampleCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
                     b.Property<int?>("StorageLocationId")
                         .HasColumnType("int");
+
+                    b.Property<string>("StorageLocationName")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
 
                     b.Property<string>("Unit")
                         .IsRequired()
@@ -1871,13 +2416,117 @@ namespace FaceStone.Web.Migrations
                         .HasColumnType("nvarchar(50)")
                         .HasDefaultValue("طن");
 
+                    b.Property<int?>("WarehouseBatchId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BatchNumber");
+
+                    b.HasIndex("ProductionOrderId");
+
+                    b.HasIndex("ProductionReferenceNumber");
+
+                    b.HasIndex("RawMaterialId");
+
+                    b.HasIndex("StorageLocationId");
+
+                    b.HasIndex("WarehouseBatchId");
+
+                    b.ToTable("ProductionOrderItems", (string)null);
+                });
+
+            modelBuilder.Entity("FaceStone.Web.Models.ProductionOrderTransfer", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("BatchNumber")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("ConfirmedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ConfirmedBy")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<Guid?>("ConfirmedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("MaterialName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<int>("ProductionOrderId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ProductionOrderItemId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("ProductionReferenceNumber")
+                        .HasColumnType("int");
+
+                    b.Property<int>("RawMaterialId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("StorageLocationId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("StorageLocationName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<int?>("StorageOperationId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("TransferTransactionNumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<decimal>("TransferredQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<string>("Unit")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasDefaultValue("طن");
+
+                    b.Property<int>("WarehouseBatchId")
+                        .HasColumnType("int");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ProductionOrderId");
 
+                    b.HasIndex("ProductionOrderItemId");
+
                     b.HasIndex("RawMaterialId");
 
-                    b.ToTable("ProductionOrderItems", (string)null);
+                    b.HasIndex("StorageLocationId");
+
+                    b.HasIndex("StorageOperationId");
+
+                    b.HasIndex("TransferTransactionNumber");
+
+                    b.HasIndex("WarehouseBatchId");
+
+                    b.ToTable("ProductionOrderTransfers", (string)null);
                 });
 
             modelBuilder.Entity("FaceStone.Web.Models.ProductionOutput", b =>
@@ -2032,6 +2681,206 @@ namespace FaceStone.Web.Migrations
                     b.ToTable("ProductionOutputs", (string)null);
                 });
 
+            modelBuilder.Entity("FaceStone.Web.Models.ProductionProcess", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<string>("IncomingWeighbridgeFileName")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<long>("IncomingWeighbridgeFileSize")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("IncomingWeighbridgeFileType")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("IncomingWeighbridgePath")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ProcessNumber")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("ProductionDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("ProductionOrderId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ProductionOrderNumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("ResponsibleEmployee")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<Guid?>("ResponsibleUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasDefaultValue("IN_PROGRESS");
+
+                    b.Property<int?>("StorageLocationId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("StorageLocationName")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<decimal>("TotalInputQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<decimal>("TotalOutputQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<decimal>("TotalWasteQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<string>("Unit")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasDefaultValue("طن");
+
+                    b.Property<decimal>("WastePercentage")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProcessNumber")
+                        .IsUnique();
+
+                    b.HasIndex("ProductionDate");
+
+                    b.HasIndex("ProductionOrderId");
+
+                    b.HasIndex("Status");
+
+                    b.HasIndex("StorageLocationId");
+
+                    b.ToTable("ProductionProcesses", (string)null);
+                });
+
+            modelBuilder.Entity("FaceStone.Web.Models.ProductionProcessMaterial", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal>("AvailableQuantityBefore")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<string>("BatchNumber")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<decimal>("ConsumedQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("LaboratoryReportId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("MaterialClassification")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("MaterialName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<int>("ProductionProcessId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ProductionReferenceNumber")
+                        .HasColumnType("int");
+
+                    b.Property<int>("RawMaterialId")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("RemainingQuantityAfter")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<string>("SampleCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int>("StorageLocationId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("StorageLocationName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<string>("Unit")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasDefaultValue("طن");
+
+                    b.Property<int>("WarehouseBatchId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BatchNumber");
+
+                    b.HasIndex("ProductionProcessId");
+
+                    b.HasIndex("ProductionReferenceNumber");
+
+                    b.HasIndex("RawMaterialId");
+
+                    b.HasIndex("StorageLocationId");
+
+                    b.HasIndex("WarehouseBatchId");
+
+                    b.ToTable("ProductionProcessMaterials", (string)null);
+                });
+
             modelBuilder.Entity("FaceStone.Web.Models.ProductionRework", b =>
                 {
                     b.Property<int>("Id")
@@ -2127,6 +2976,55 @@ namespace FaceStone.Web.Migrations
                     b.HasKey("SequenceType");
 
                     b.ToTable("ProductionSequences", (string)null);
+                });
+
+            modelBuilder.Entity("FaceStone.Web.Models.ProductionWasteRecord", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CalculatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CalculatedBy")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<int>("ProductionProcessId")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("TotalInputQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<decimal>("TotalOutputQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<string>("Unit")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasDefaultValue("طن");
+
+                    b.Property<decimal>("WastePercentage")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal>("WasteQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductionProcessId");
+
+                    b.ToTable("ProductionWasteRecords", (string)null);
                 });
 
             modelBuilder.Entity("FaceStone.Web.Models.ProductionWorkInProcess", b =>
@@ -2279,6 +3177,51 @@ namespace FaceStone.Web.Migrations
                     b.ToTable("ProductionWorkInProcess", (string)null);
                 });
 
+            modelBuilder.Entity("FaceStone.Web.Models.ProjectCode", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("ClientName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("ProjectName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<int?>("StorageClientDestinationId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.HasIndex("StorageClientDestinationId");
+
+                    b.ToTable("ProjectCodes", (string)null);
+                });
+
             modelBuilder.Entity("FaceStone.Web.Models.PurchaseOrder", b =>
                 {
                     b.Property<int>("Id")
@@ -2292,6 +3235,12 @@ namespace FaceStone.Web.Migrations
                         .HasColumnType("datetime2")
                         .HasDefaultValueSql("GETUTCDATE()");
 
+                    b.Property<decimal>("DeliveredQuantity")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)")
+                        .HasDefaultValue(0m);
+
                     b.Property<string>("Destination")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
@@ -2299,9 +3248,16 @@ namespace FaceStone.Web.Migrations
                         .HasColumnType("nvarchar(200)")
                         .HasDefaultValue("Cairo Factory");
 
+                    b.Property<DateTime?>("ExpectedDeliveryDate")
+                        .HasColumnType("datetime2");
+
                     b.Property<string>("InvoiceNumber")
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("MaterialName")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Notes")
                         .HasMaxLength(1000)
@@ -2341,10 +3297,17 @@ namespace FaceStone.Web.Migrations
                         .HasPrecision(18, 3)
                         .HasColumnType("decimal(18,3)");
 
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("Supplier")
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
+
+                    b.Property<int?>("SupplierId")
+                        .HasColumnType("int");
 
                     b.Property<decimal>("TonPrice")
                         .ValueGeneratedOnAdd()
@@ -2355,6 +3318,10 @@ namespace FaceStone.Web.Migrations
                     b.Property<decimal>("TotalValue")
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("Unit")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime2");
@@ -2371,6 +3338,8 @@ namespace FaceStone.Web.Migrations
                     b.HasIndex("PaymentStatus");
 
                     b.HasIndex("Supplier");
+
+                    b.HasIndex("SupplierId");
 
                     b.ToTable("PurchaseOrders", (string)null);
                 });
@@ -2798,6 +3767,9 @@ namespace FaceStone.Web.Migrations
                     b.Property<string>("DocumentFileType")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("ExportType")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<decimal?>("ExternalReportedWeight")
                         .HasPrecision(18, 3)
                         .HasColumnType("decimal(18,3)");
@@ -2826,6 +3798,9 @@ namespace FaceStone.Web.Migrations
                     b.Property<bool>("IsInventoryPosted")
                         .HasColumnType("bit");
 
+                    b.Property<string>("ManufactureNumber")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("MaterialType")
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
@@ -2837,6 +3812,12 @@ namespace FaceStone.Web.Migrations
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
+
+                    b.Property<int?>("ProductionOrderId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("ProductionProcessId")
+                        .HasColumnType("int");
 
                     b.Property<int?>("ProductionReferenceNumber")
                         .HasColumnType("int");
@@ -2940,6 +3921,10 @@ namespace FaceStone.Web.Migrations
 
                     b.HasIndex("DestinationId");
 
+                    b.HasIndex("ProductionOrderId");
+
+                    b.HasIndex("ProductionProcessId");
+
                     b.HasIndex("ProductionReferenceNumber");
 
                     b.HasIndex("SampleCode");
@@ -2968,6 +3953,9 @@ namespace FaceStone.Web.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
+                    b.Property<string>("ManufactureNumber")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("MaterialName")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -2975,6 +3963,12 @@ namespace FaceStone.Web.Migrations
 
                     b.Property<string>("Notes")
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<int?>("ProductionOrderId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("ProductionProcessId")
+                        .HasColumnType("int");
 
                     b.Property<int?>("ProductionReferenceNumber")
                         .HasColumnType("int");
@@ -3004,6 +3998,10 @@ namespace FaceStone.Web.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("BatchNumber");
+
+                    b.HasIndex("ProductionOrderId");
+
+                    b.HasIndex("ProductionProcessId");
 
                     b.HasIndex("RawMaterialId");
 
@@ -3279,6 +4277,187 @@ namespace FaceStone.Web.Migrations
                     b.ToTable("StorageTransactionMovements", (string)null);
                 });
 
+            modelBuilder.Entity("FaceStone.Web.Models.Supplier", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Address")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("CommercialRegister")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("ContactPerson")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("Email")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("LastPaymentDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("PhoneNumber")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("PrimaryMaterialName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("PrimaryMaterialType")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("RegistrationDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("RelatedLaboratoryReferenceNumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("RelatedWarehouseImportNumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<decimal>("RemainingBalance")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18, 3)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<string>("SourceDepartment")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasDefaultValue("FINANCE");
+
+                    b.Property<string>("SupplierCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("TaxNumber")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<decimal>("TotalAmountOwed")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18, 3)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<decimal>("TotalAmountPaid")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18, 3)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name");
+
+                    b.HasIndex("SupplierCode");
+
+                    b.ToTable("Suppliers", (string)null);
+                });
+
+            modelBuilder.Entity("FaceStone.Web.Models.SupplierFinancialTransaction", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18, 3)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<Guid?>("CreatedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int?>("InvoiceId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("PaymentMethod")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("ReferenceNumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int>("SupplierId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("TransactionDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("TransactionType")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InvoiceId");
+
+                    b.HasIndex("SupplierId");
+
+                    b.HasIndex("TransactionDate");
+
+                    b.HasIndex("TransactionType");
+
+                    b.ToTable("SupplierFinancialTransactions", (string)null);
+                });
+
             modelBuilder.Entity("FaceStone.Web.Models.Transportation", b =>
                 {
                     b.Property<int>("Id")
@@ -3296,6 +4475,9 @@ namespace FaceStone.Web.Migrations
 
                     b.Property<DateTime?>("ArrivalTime")
                         .HasColumnType("datetime2");
+
+                    b.Property<string>("BatchNumber")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("BillOfLadingAttachmentPath")
                         .HasMaxLength(500)
@@ -3380,6 +4562,12 @@ namespace FaceStone.Web.Migrations
                         .HasPrecision(18, 3)
                         .HasColumnType("decimal(18,3)");
 
+                    b.Property<string>("ExportTransactionNumber")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ExportType")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<decimal>("ExternalEmptyWeight")
                         .ValueGeneratedOnAdd()
                         .HasPrecision(18, 3)
@@ -3447,6 +4635,9 @@ namespace FaceStone.Web.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
 
+                    b.Property<string>("ManufactureNumber")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("MaterialType")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -3465,8 +4656,21 @@ namespace FaceStone.Web.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
+                    b.Property<int?>("ProductionOrderId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("ProductionProcessId")
+                        .HasColumnType("int");
+
                     b.Property<int?>("ProductionReferenceNumber")
                         .HasColumnType("int");
+
+                    b.Property<int?>("ProjectCodeId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ProjectCodeValue")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<int?>("PurchaseOrderId")
                         .HasColumnType("int");
@@ -3501,6 +4705,9 @@ namespace FaceStone.Web.Migrations
                     b.Property<Guid?>("ReviewedByUserId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("SampleCode")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<int?>("ShippingDurationMinutes")
                         .HasColumnType("int");
 
@@ -3515,6 +4722,18 @@ namespace FaceStone.Web.Migrations
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
+
+                    b.Property<int?>("SourceStorageLocationId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("SourceStorageLocationName")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int?>("StorageOperationId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("StorageOperationItemId")
+                        .HasColumnType("int");
 
                     b.Property<string>("SubmittedBy")
                         .HasMaxLength(150)
@@ -3571,9 +4790,19 @@ namespace FaceStone.Web.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ProductionOrderId");
+
+                    b.HasIndex("ProductionProcessId");
+
                     b.HasIndex("ProductionReferenceNumber");
 
+                    b.HasIndex("ProjectCodeId");
+
                     b.HasIndex("PurchaseOrderId");
+
+                    b.HasIndex("StorageOperationId");
+
+                    b.HasIndex("StorageOperationItemId");
 
                     b.HasIndex("PONumber", "TransactionNumber")
                         .IsUnique();
@@ -3700,6 +4929,12 @@ namespace FaceStone.Web.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("nvarchar(1000)");
 
+                    b.Property<int?>("ProductionOrderId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("ProductionProcessId")
+                        .HasColumnType("int");
+
                     b.Property<int>("ProductionReferenceNumber")
                         .HasColumnType("int");
 
@@ -3737,6 +4972,10 @@ namespace FaceStone.Web.Migrations
                         .IsUnique();
 
                     b.HasIndex("LaboratoryReportId");
+
+                    b.HasIndex("ProductionOrderId");
+
+                    b.HasIndex("ProductionProcessId");
 
                     b.HasIndex("ProductionReferenceNumber");
 
@@ -3837,6 +5076,55 @@ namespace FaceStone.Web.Migrations
                     b.Navigation("PurchaseOrder");
                 });
 
+            modelBuilder.Entity("FaceStone.Web.Models.Invoice", b =>
+                {
+                    b.HasOne("FaceStone.Web.Models.StorageClient", "Company")
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("FaceStone.Web.Models.ProjectCode", "ProjectCode")
+                        .WithMany()
+                        .HasForeignKey("ProjectCodeId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("FaceStone.Web.Models.PurchaseOrder", "PurchaseOrder")
+                        .WithMany("Invoices")
+                        .HasForeignKey("PurchaseOrderId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("FaceStone.Web.Models.Supplier", "SupplierEntity")
+                        .WithMany()
+                        .HasForeignKey("SupplierId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Company");
+
+                    b.Navigation("ProjectCode");
+
+                    b.Navigation("PurchaseOrder");
+
+                    b.Navigation("SupplierEntity");
+                });
+
+            modelBuilder.Entity("FaceStone.Web.Models.InvoiceItem", b =>
+                {
+                    b.HasOne("FaceStone.Web.Models.Invoice", "Invoice")
+                        .WithMany("Items")
+                        .HasForeignKey("InvoiceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("FaceStone.Web.Models.Transportation", "Transportation")
+                        .WithMany()
+                        .HasForeignKey("TransportationId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Invoice");
+
+                    b.Navigation("Transportation");
+                });
+
             modelBuilder.Entity("FaceStone.Web.Models.LaboratoryFinalConformityCertificate", b =>
                 {
                     b.HasOne("FaceStone.Web.Models.ProductionWorkInProcess", "ProductionWorkInProcess")
@@ -3895,6 +5183,24 @@ namespace FaceStone.Web.Migrations
                     b.Navigation("SourceTransportation");
                 });
 
+            modelBuilder.Entity("FaceStone.Web.Models.ProductionAttachment", b =>
+                {
+                    b.HasOne("FaceStone.Web.Models.ProductionFinishedProduct", "FinishedProduct")
+                        .WithMany()
+                        .HasForeignKey("FinishedProductId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("FaceStone.Web.Models.ProductionProcess", "ProductionProcess")
+                        .WithMany("Attachments")
+                        .HasForeignKey("ProductionProcessId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("FinishedProduct");
+
+                    b.Navigation("ProductionProcess");
+                });
+
             modelBuilder.Entity("FaceStone.Web.Models.ProductionBatch", b =>
                 {
                     b.HasOne("FaceStone.Web.Models.ProductionOrder", "ProductionOrder")
@@ -3911,6 +5217,30 @@ namespace FaceStone.Web.Migrations
                     b.Navigation("ProductionOrder");
 
                     b.Navigation("ProductionWorkInProcess");
+                });
+
+            modelBuilder.Entity("FaceStone.Web.Models.ProductionFinishedProduct", b =>
+                {
+                    b.HasOne("FaceStone.Web.Models.StorageLocation", "DestinationStorageLocation")
+                        .WithMany()
+                        .HasForeignKey("DestinationStorageLocationId");
+
+                    b.HasOne("FaceStone.Web.Models.ProductionOrder", "ProductionOrder")
+                        .WithMany("FinishedProducts")
+                        .HasForeignKey("ProductionOrderId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("FaceStone.Web.Models.ProductionProcess", "ProductionProcess")
+                        .WithMany("FinishedProducts")
+                        .HasForeignKey("ProductionProcessId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("DestinationStorageLocation");
+
+                    b.Navigation("ProductionOrder");
+
+                    b.Navigation("ProductionProcess");
                 });
 
             modelBuilder.Entity("FaceStone.Web.Models.ProductionOrder", b =>
@@ -3931,6 +5261,17 @@ namespace FaceStone.Web.Migrations
                     b.Navigation("StorageOperation");
                 });
 
+            modelBuilder.Entity("FaceStone.Web.Models.ProductionOrderFormulaVersion", b =>
+                {
+                    b.HasOne("FaceStone.Web.Models.ProductionOrder", "ProductionOrder")
+                        .WithMany("FormulaVersions")
+                        .HasForeignKey("ProductionOrderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ProductionOrder");
+                });
+
             modelBuilder.Entity("FaceStone.Web.Models.ProductionOrderItem", b =>
                 {
                     b.HasOne("FaceStone.Web.Models.ProductionOrder", "ProductionOrder")
@@ -3945,9 +5286,72 @@ namespace FaceStone.Web.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("FaceStone.Web.Models.StorageLocation", "StorageLocation")
+                        .WithMany()
+                        .HasForeignKey("StorageLocationId");
+
+                    b.HasOne("FaceStone.Web.Models.WarehouseBatch", "WarehouseBatch")
+                        .WithMany()
+                        .HasForeignKey("WarehouseBatchId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("ProductionOrder");
 
                     b.Navigation("RawMaterial");
+
+                    b.Navigation("StorageLocation");
+
+                    b.Navigation("WarehouseBatch");
+                });
+
+            modelBuilder.Entity("FaceStone.Web.Models.ProductionOrderTransfer", b =>
+                {
+                    b.HasOne("FaceStone.Web.Models.ProductionOrder", "ProductionOrder")
+                        .WithMany("Transfers")
+                        .HasForeignKey("ProductionOrderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("FaceStone.Web.Models.ProductionOrderItem", "ProductionOrderItem")
+                        .WithMany()
+                        .HasForeignKey("ProductionOrderItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("FaceStone.Web.Models.RawMaterial", "RawMaterial")
+                        .WithMany()
+                        .HasForeignKey("RawMaterialId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("FaceStone.Web.Models.StorageLocation", "StorageLocation")
+                        .WithMany()
+                        .HasForeignKey("StorageLocationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("FaceStone.Web.Models.StorageOperation", "StorageOperation")
+                        .WithMany()
+                        .HasForeignKey("StorageOperationId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("FaceStone.Web.Models.WarehouseBatch", "WarehouseBatch")
+                        .WithMany()
+                        .HasForeignKey("WarehouseBatchId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("ProductionOrder");
+
+                    b.Navigation("ProductionOrderItem");
+
+                    b.Navigation("RawMaterial");
+
+                    b.Navigation("StorageLocation");
+
+                    b.Navigation("StorageOperation");
+
+                    b.Navigation("WarehouseBatch");
                 });
 
             modelBuilder.Entity("FaceStone.Web.Models.ProductionOutput", b =>
@@ -3987,6 +5391,68 @@ namespace FaceStone.Web.Migrations
                     b.Navigation("ProductionOrder");
 
                     b.Navigation("StorageOperation");
+                });
+
+            modelBuilder.Entity("FaceStone.Web.Models.ProductionProcess", b =>
+                {
+                    b.HasOne("FaceStone.Web.Models.ProductionOrder", "ProductionOrder")
+                        .WithMany()
+                        .HasForeignKey("ProductionOrderId");
+
+                    b.HasOne("FaceStone.Web.Models.StorageLocation", "StorageLocation")
+                        .WithMany()
+                        .HasForeignKey("StorageLocationId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("ProductionOrder");
+
+                    b.Navigation("StorageLocation");
+                });
+
+            modelBuilder.Entity("FaceStone.Web.Models.ProductionProcessMaterial", b =>
+                {
+                    b.HasOne("FaceStone.Web.Models.ProductionProcess", "ProductionProcess")
+                        .WithMany("Materials")
+                        .HasForeignKey("ProductionProcessId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("FaceStone.Web.Models.RawMaterial", "RawMaterial")
+                        .WithMany()
+                        .HasForeignKey("RawMaterialId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("FaceStone.Web.Models.StorageLocation", "StorageLocation")
+                        .WithMany()
+                        .HasForeignKey("StorageLocationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("FaceStone.Web.Models.WarehouseBatch", "WarehouseBatch")
+                        .WithMany()
+                        .HasForeignKey("WarehouseBatchId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("ProductionProcess");
+
+                    b.Navigation("RawMaterial");
+
+                    b.Navigation("StorageLocation");
+
+                    b.Navigation("WarehouseBatch");
+                });
+
+            modelBuilder.Entity("FaceStone.Web.Models.ProductionWasteRecord", b =>
+                {
+                    b.HasOne("FaceStone.Web.Models.ProductionProcess", "ProductionProcess")
+                        .WithMany("WasteRecords")
+                        .HasForeignKey("ProductionProcessId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ProductionProcess");
                 });
 
             modelBuilder.Entity("FaceStone.Web.Models.ProductionWorkInProcess", b =>
@@ -4035,6 +5501,26 @@ namespace FaceStone.Web.Migrations
                     b.Navigation("StorageOperationItem");
 
                     b.Navigation("WarehouseBatch");
+                });
+
+            modelBuilder.Entity("FaceStone.Web.Models.ProjectCode", b =>
+                {
+                    b.HasOne("FaceStone.Web.Models.StorageClientDestination", "StorageClientDestination")
+                        .WithMany()
+                        .HasForeignKey("StorageClientDestinationId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("StorageClientDestination");
+                });
+
+            modelBuilder.Entity("FaceStone.Web.Models.PurchaseOrder", b =>
+                {
+                    b.HasOne("FaceStone.Web.Models.Supplier", "SupplierEntity")
+                        .WithMany("PurchaseOrders")
+                        .HasForeignKey("SupplierId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("SupplierEntity");
                 });
 
             modelBuilder.Entity("FaceStone.Web.Models.PurchaseOrderPaymentAudit", b =>
@@ -4128,6 +5614,16 @@ namespace FaceStone.Web.Migrations
                         .HasForeignKey("DestinationId")
                         .OnDelete(DeleteBehavior.NoAction);
 
+                    b.HasOne("FaceStone.Web.Models.ProductionOrder", "ProductionOrder")
+                        .WithMany()
+                        .HasForeignKey("ProductionOrderId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("FaceStone.Web.Models.ProductionProcess", "ProductionProcess")
+                        .WithMany()
+                        .HasForeignKey("ProductionProcessId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("FaceStone.Web.Models.StorageLocation", "StorageLocation")
                         .WithMany()
                         .HasForeignKey("StorageLocationId")
@@ -4143,6 +5639,10 @@ namespace FaceStone.Web.Migrations
 
                     b.Navigation("Destination");
 
+                    b.Navigation("ProductionOrder");
+
+                    b.Navigation("ProductionProcess");
+
                     b.Navigation("StorageLocation");
 
                     b.Navigation("Transportation");
@@ -4150,6 +5650,16 @@ namespace FaceStone.Web.Migrations
 
             modelBuilder.Entity("FaceStone.Web.Models.StorageOperationItem", b =>
                 {
+                    b.HasOne("FaceStone.Web.Models.ProductionOrder", "ProductionOrder")
+                        .WithMany()
+                        .HasForeignKey("ProductionOrderId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("FaceStone.Web.Models.ProductionProcess", "ProductionProcess")
+                        .WithMany()
+                        .HasForeignKey("ProductionProcessId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("FaceStone.Web.Models.RawMaterial", "RawMaterial")
                         .WithMany()
                         .HasForeignKey("RawMaterialId")
@@ -4166,6 +5676,10 @@ namespace FaceStone.Web.Migrations
                         .WithMany("OperationItems")
                         .HasForeignKey("WarehouseBatchId")
                         .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("ProductionOrder");
+
+                    b.Navigation("ProductionProcess");
 
                     b.Navigation("RawMaterial");
 
@@ -4201,14 +5715,67 @@ namespace FaceStone.Web.Migrations
                     b.Navigation("Transportation");
                 });
 
+            modelBuilder.Entity("FaceStone.Web.Models.SupplierFinancialTransaction", b =>
+                {
+                    b.HasOne("FaceStone.Web.Models.Invoice", "Invoice")
+                        .WithMany()
+                        .HasForeignKey("InvoiceId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("FaceStone.Web.Models.Supplier", "Supplier")
+                        .WithMany("FinancialTransactions")
+                        .HasForeignKey("SupplierId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Invoice");
+
+                    b.Navigation("Supplier");
+                });
+
             modelBuilder.Entity("FaceStone.Web.Models.Transportation", b =>
                 {
+                    b.HasOne("FaceStone.Web.Models.ProductionOrder", "ProductionOrder")
+                        .WithMany()
+                        .HasForeignKey("ProductionOrderId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("FaceStone.Web.Models.ProductionProcess", "ProductionProcess")
+                        .WithMany()
+                        .HasForeignKey("ProductionProcessId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("FaceStone.Web.Models.ProjectCode", "ProjectCode")
+                        .WithMany()
+                        .HasForeignKey("ProjectCodeId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("FaceStone.Web.Models.PurchaseOrder", "PurchaseOrder")
                         .WithMany("TransportationTransactions")
                         .HasForeignKey("PurchaseOrderId")
                         .OnDelete(DeleteBehavior.SetNull);
 
+                    b.HasOne("FaceStone.Web.Models.StorageOperation", "StorageOperation")
+                        .WithMany()
+                        .HasForeignKey("StorageOperationId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("FaceStone.Web.Models.StorageOperationItem", "StorageOperationItem")
+                        .WithMany()
+                        .HasForeignKey("StorageOperationItemId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("ProductionOrder");
+
+                    b.Navigation("ProductionProcess");
+
+                    b.Navigation("ProjectCode");
+
                     b.Navigation("PurchaseOrder");
+
+                    b.Navigation("StorageOperation");
+
+                    b.Navigation("StorageOperationItem");
                 });
 
             modelBuilder.Entity("FaceStone.Web.Models.WarehouseBatch", b =>
@@ -4218,6 +5785,16 @@ namespace FaceStone.Web.Migrations
                         .HasForeignKey("LaboratoryReportId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.HasOne("FaceStone.Web.Models.ProductionOrder", "ProductionOrder")
+                        .WithMany()
+                        .HasForeignKey("ProductionOrderId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("FaceStone.Web.Models.ProductionProcess", "ProductionProcess")
+                        .WithMany()
+                        .HasForeignKey("ProductionProcessId")
+                        .OnDelete(DeleteBehavior.SetNull);
 
                     b.HasOne("FaceStone.Web.Models.RawMaterial", "RawMaterial")
                         .WithMany()
@@ -4242,6 +5819,10 @@ namespace FaceStone.Web.Migrations
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("LaboratoryReport");
+
+                    b.Navigation("ProductionOrder");
+
+                    b.Navigation("ProductionProcess");
 
                     b.Navigation("RawMaterial");
 
@@ -4269,6 +5850,11 @@ namespace FaceStone.Web.Migrations
                     b.Navigation("Details");
                 });
 
+            modelBuilder.Entity("FaceStone.Web.Models.Invoice", b =>
+                {
+                    b.Navigation("Items");
+                });
+
             modelBuilder.Entity("FaceStone.Web.Models.LaboratoryRawMaterialReport", b =>
                 {
                     b.Navigation("Batches");
@@ -4287,13 +5873,32 @@ namespace FaceStone.Web.Migrations
                 {
                     b.Navigation("Batches");
 
+                    b.Navigation("FinishedProducts");
+
+                    b.Navigation("FormulaVersions");
+
                     b.Navigation("Items");
 
                     b.Navigation("Outputs");
+
+                    b.Navigation("Transfers");
+                });
+
+            modelBuilder.Entity("FaceStone.Web.Models.ProductionProcess", b =>
+                {
+                    b.Navigation("Attachments");
+
+                    b.Navigation("FinishedProducts");
+
+                    b.Navigation("Materials");
+
+                    b.Navigation("WasteRecords");
                 });
 
             modelBuilder.Entity("FaceStone.Web.Models.PurchaseOrder", b =>
                 {
+                    b.Navigation("Invoices");
+
                     b.Navigation("PaymentAudits");
 
                     b.Navigation("Payments");
@@ -4327,6 +5932,13 @@ namespace FaceStone.Web.Migrations
             modelBuilder.Entity("FaceStone.Web.Models.StorageTransaction", b =>
                 {
                     b.Navigation("TransportationMovements");
+                });
+
+            modelBuilder.Entity("FaceStone.Web.Models.Supplier", b =>
+                {
+                    b.Navigation("FinancialTransactions");
+
+                    b.Navigation("PurchaseOrders");
                 });
 
             modelBuilder.Entity("FaceStone.Web.Models.WarehouseBatch", b =>

@@ -949,6 +949,10 @@ public class FaceStoneDbContext : DbContext
                   .HasPrecision(18, 3)
                   .IsRequired();
 
+            entity.Property(e => e.DeliveredQuantity)
+                  .HasPrecision(18, 3)
+                  .HasDefaultValue(0m);
+
             entity.Property(e => e.PaymentStatus)
                   .HasMaxLength(50)
                   .HasDefaultValue("غير مدفوع")

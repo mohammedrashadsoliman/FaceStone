@@ -956,6 +956,76 @@ BEGIN
     CREATE UNIQUE INDEX IX_AttendanceRecords_UserDate ON AttendanceRecords(UserId, Date);
 END
 
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'ProjectCodes')
+BEGIN
+    CREATE TABLE ProjectCodes (
+        Id INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        Code NVARCHAR(50) NOT NULL,
+        ProjectName NVARCHAR(200) NOT NULL,
+        ClientName NVARCHAR(200) NULL,
+        StorageClientDestinationId INT NULL CONSTRAINT FK_ProjectCodes_Destination REFERENCES StorageClientDestinations(Id) ON DELETE SET NULL,
+        Description NVARCHAR(500) NULL,
+        IsActive BIT NOT NULL CONSTRAINT DF_ProjectCodes_IsActive DEFAULT 1,
+        CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_ProjectCodes_CreatedAt DEFAULT GETUTCDATE()
+    );
+    CREATE UNIQUE INDEX IX_ProjectCodes_Code ON ProjectCodes(Code);
+END
+
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('Transportation') AND name = 'ProjectCodeId')
+BEGIN
+    ALTER TABLE Transportation ADD ProjectCodeId INT NULL CONSTRAINT FK_Transportation_ProjectCode REFERENCES ProjectCodes(Id) ON DELETE SET NULL;
+END
+
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('Transportation') AND name = 'ProjectCodeValue')
+BEGIN
+    ALTER TABLE Transportation ADD ProjectCodeValue NVARCHAR(50) NOT NULL CONSTRAINT DF_Transportation_ProjectCodeValue DEFAULT '';
+END
+
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'Suppliers')
+BEGIN
+    CREATE TABLE Suppliers (
+        Id INT IDENTITY(1,1) PRIMARY KEY,
+        SupplierCode NVARCHAR(50) NOT NULL,
+        Name NVARCHAR(200) NOT NULL,
+        PhoneNumber NVARCHAR(50) NULL,
+        Email NVARCHAR(100) NULL,
+        Address NVARCHAR(300) NULL,
+        TaxNumber NVARCHAR(50) NULL,
+        CommercialRegister NVARCHAR(50) NULL,
+        ContactPerson NVARCHAR(100) NULL,
+        Notes NVARCHAR(MAX) NULL,
+        PrimaryMaterialName NVARCHAR(200) NULL,
+        PrimaryMaterialType NVARCHAR(100) NULL,
+        SourceDepartment NVARCHAR(50) NOT NULL CONSTRAINT DF_Suppliers_SourceDept DEFAULT 'FINANCE',
+        RelatedLaboratoryReferenceNumber NVARCHAR(100) NULL,
+        RelatedWarehouseImportNumber NVARCHAR(100) NULL,
+        RegistrationDate DATETIME2 NOT NULL CONSTRAINT DF_Suppliers_RegDate DEFAULT GETUTCDATE(),
+        TotalAmountOwed DECIMAL(18, 3) NOT NULL CONSTRAINT DF_Suppliers_Owed DEFAULT 0,
+        TotalAmountPaid DECIMAL(18, 3) NOT NULL CONSTRAINT DF_Suppliers_Paid DEFAULT 0,
+        RemainingBalance DECIMAL(18, 3) NOT NULL CONSTRAINT DF_Suppliers_Bal DEFAULT 0,
+        LastPaymentDate DATETIME2 NULL,
+        IsActive BIT NOT NULL CONSTRAINT DF_Suppliers_Active DEFAULT 1,
+        CreatedBy NVARCHAR(150) NOT NULL CONSTRAINT DF_Suppliers_CreatedBy DEFAULT '',
+        CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_Suppliers_CreatedAt DEFAULT GETUTCDATE(),
+        UpdatedAt DATETIME2 NOT NULL CONSTRAINT DF_Suppliers_UpdatedAt DEFAULT GETUTCDATE()
+    );
+    CREATE INDEX IX_Suppliers_SupplierCode ON Suppliers(SupplierCode);
+    CREATE INDEX IX_Suppliers_Name ON Suppliers(Name);
+END;
+
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('PurchaseOrders') AND name = 'SupplierId')
+    ALTER TABLE PurchaseOrders ADD SupplierId INT NULL CONSTRAINT FK_PurchaseOrders_Suppliers REFERENCES Suppliers(Id) ON DELETE SET NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('PurchaseOrders') AND name = 'MaterialName')
+    ALTER TABLE PurchaseOrders ADD MaterialName NVARCHAR(200) NOT NULL CONSTRAINT DF_PO_MatName DEFAULT N'مواد خرسانية / ركام';
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('PurchaseOrders') AND name = 'Unit')
+    ALTER TABLE PurchaseOrders ADD Unit NVARCHAR(50) NOT NULL CONSTRAINT DF_PO_Unit DEFAULT N'طن';
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('PurchaseOrders') AND name = 'DeliveredQuantity')
+    ALTER TABLE PurchaseOrders ADD DeliveredQuantity DECIMAL(18, 3) NOT NULL CONSTRAINT DF_PO_DeliveredQty DEFAULT 0;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('PurchaseOrders') AND name = 'ExpectedDeliveryDate')
+    ALTER TABLE PurchaseOrders ADD ExpectedDeliveryDate DATETIME2 NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('PurchaseOrders') AND name = 'Status')
+    ALTER TABLE PurchaseOrders ADD Status NVARCHAR(50) NOT NULL CONSTRAINT DF_PO_Status DEFAULT N'نشط';
+
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'Invoices')
 BEGIN
     CREATE TABLE Invoices (
@@ -1020,38 +1090,6 @@ BEGIN
     CREATE INDEX IX_InvoiceItems_TransportationId ON InvoiceItems(TransportationId);
 END
 
-IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'Suppliers')
-BEGIN
-    CREATE TABLE Suppliers (
-        Id INT IDENTITY(1,1) PRIMARY KEY,
-        SupplierCode NVARCHAR(50) NOT NULL,
-        Name NVARCHAR(200) NOT NULL,
-        PhoneNumber NVARCHAR(50) NULL,
-        Email NVARCHAR(100) NULL,
-        Address NVARCHAR(300) NULL,
-        TaxNumber NVARCHAR(50) NULL,
-        CommercialRegister NVARCHAR(50) NULL,
-        ContactPerson NVARCHAR(100) NULL,
-        Notes NVARCHAR(MAX) NULL,
-        PrimaryMaterialName NVARCHAR(200) NULL,
-        PrimaryMaterialType NVARCHAR(100) NULL,
-        SourceDepartment NVARCHAR(50) NOT NULL CONSTRAINT DF_Suppliers_SourceDept DEFAULT 'FINANCE',
-        RelatedLaboratoryReferenceNumber NVARCHAR(100) NULL,
-        RelatedWarehouseImportNumber NVARCHAR(100) NULL,
-        RegistrationDate DATETIME2 NOT NULL CONSTRAINT DF_Suppliers_RegDate DEFAULT GETUTCDATE(),
-        TotalAmountOwed DECIMAL(18, 3) NOT NULL CONSTRAINT DF_Suppliers_Owed DEFAULT 0,
-        TotalAmountPaid DECIMAL(18, 3) NOT NULL CONSTRAINT DF_Suppliers_Paid DEFAULT 0,
-        RemainingBalance DECIMAL(18, 3) NOT NULL CONSTRAINT DF_Suppliers_Bal DEFAULT 0,
-        LastPaymentDate DATETIME2 NULL,
-        IsActive BIT NOT NULL CONSTRAINT DF_Suppliers_Active DEFAULT 1,
-        CreatedBy NVARCHAR(150) NOT NULL CONSTRAINT DF_Suppliers_CreatedBy DEFAULT '',
-        CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_Suppliers_CreatedAt DEFAULT GETUTCDATE(),
-        UpdatedAt DATETIME2 NOT NULL CONSTRAINT DF_Suppliers_UpdatedAt DEFAULT GETUTCDATE()
-    );
-    CREATE INDEX IX_Suppliers_SupplierCode ON Suppliers(SupplierCode);
-    CREATE INDEX IX_Suppliers_Name ON Suppliers(Name);
-END;
-
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'SupplierFinancialTransactions')
 BEGIN
     CREATE TABLE SupplierFinancialTransactions (
@@ -1071,19 +1109,6 @@ BEGIN
     CREATE INDEX IX_SupplierFin_Type ON SupplierFinancialTransactions(TransactionType);
     CREATE INDEX IX_SupplierFin_Date ON SupplierFinancialTransactions(TransactionDate);
 END;
-
-IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('PurchaseOrders') AND name = 'SupplierId')
-    ALTER TABLE PurchaseOrders ADD SupplierId INT NULL CONSTRAINT FK_PurchaseOrders_Suppliers REFERENCES Suppliers(Id) ON DELETE SET NULL;
-IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('PurchaseOrders') AND name = 'MaterialName')
-    ALTER TABLE PurchaseOrders ADD MaterialName NVARCHAR(200) NOT NULL CONSTRAINT DF_PO_MatName DEFAULT N'مواد خرسانية / ركام';
-IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('PurchaseOrders') AND name = 'Unit')
-    ALTER TABLE PurchaseOrders ADD Unit NVARCHAR(50) NOT NULL CONSTRAINT DF_PO_Unit DEFAULT N'طن';
-IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('PurchaseOrders') AND name = 'DeliveredQuantity')
-    ALTER TABLE PurchaseOrders ADD DeliveredQuantity DECIMAL(18, 3) NOT NULL CONSTRAINT DF_PO_DeliveredQty DEFAULT 0;
-IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('PurchaseOrders') AND name = 'ExpectedDeliveryDate')
-    ALTER TABLE PurchaseOrders ADD ExpectedDeliveryDate DATETIME2 NULL;
-IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('PurchaseOrders') AND name = 'Status')
-    ALTER TABLE PurchaseOrders ADD Status NVARCHAR(50) NOT NULL CONSTRAINT DF_PO_Status DEFAULT N'نشط';
 
 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('SupplierFinancialTransactions') AND name = 'PaymentMethod')
     ALTER TABLE SupplierFinancialTransactions ADD PaymentMethod NVARCHAR(50) NULL;
@@ -1891,33 +1916,10 @@ IF NOT EXISTS (SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId] = '2026
     INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion]) VALUES ('20261024105637_AddLaboratoryDepartment', '8.0.8');
 IF NOT EXISTS (SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId] = '20261025065700_AddProductionDepartment')
     INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion]) VALUES ('20261025065700_AddProductionDepartment', '8.0.8');
-IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'ProjectCodes')
-BEGIN
-    CREATE TABLE ProjectCodes (
-        Id INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
-        Code NVARCHAR(50) NOT NULL,
-        ProjectName NVARCHAR(200) NOT NULL,
-        ClientName NVARCHAR(200) NULL,
-        StorageClientDestinationId INT NULL CONSTRAINT FK_ProjectCodes_Destination REFERENCES StorageClientDestinations(Id) ON DELETE SET NULL,
-        Description NVARCHAR(500) NULL,
-        IsActive BIT NOT NULL CONSTRAINT DF_ProjectCodes_IsActive DEFAULT 1,
-        CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_ProjectCodes_CreatedAt DEFAULT GETUTCDATE()
-    );
-    CREATE UNIQUE INDEX IX_ProjectCodes_Code ON ProjectCodes(Code);
-END
-
-IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('Transportation') AND name = 'ProjectCodeId')
-BEGIN
-    ALTER TABLE Transportation ADD ProjectCodeId INT NULL CONSTRAINT FK_Transportation_ProjectCode REFERENCES ProjectCodes(Id) ON DELETE SET NULL;
-END
-
-IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('Transportation') AND name = 'ProjectCodeValue')
-BEGIN
-    ALTER TABLE Transportation ADD ProjectCodeValue NVARCHAR(50) NULL;
-END
-
 IF NOT EXISTS (SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId] = '20261026084230_UpdateLaboratoryDepartmentForm')
     INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion]) VALUES ('20261026084230_UpdateLaboratoryDepartmentForm', '8.0.8');
+IF NOT EXISTS (SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId] = '20261114082122_SynchronizeFaceStoneModules')
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion]) VALUES ('20261114082122_SynchronizeFaceStoneModules', '8.0.8');
 ", cts.Token);
                 }
             }
