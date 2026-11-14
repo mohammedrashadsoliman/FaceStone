@@ -3,7 +3,7 @@
    High-performance caching, offline shell resilience, and background sync
    ========================================================================== */
 
-const CACHE_NAME = 'facestone-pwa-v2026.11.07.2';
+const CACHE_NAME = 'facestone-pwa-v2026.11.14.1';
 
 const PRECACHE_ASSETS = [
   '/',
@@ -19,6 +19,11 @@ const PRECACHE_ASSETS = [
   '/css/chat-app.css',
   '/css/finance.css',
   '/css/mobile-app.css',
+  '/css/management.css',
+  '/css/control-monitoring.css',
+  '/css/storage.css',
+  '/css/laboratory.css',
+  '/css/production.css',
   '/js/signalr.min.js',
   '/js/api.js',
   '/js/map.js',
@@ -27,8 +32,12 @@ const PRECACHE_ASSETS = [
   '/js/chat-app.js',
   '/js/transportation.js',
   '/js/storage.js',
+  '/js/laboratory.js',
+  '/js/production.js',
   '/js/management.js',
   '/js/finance.js',
+  '/js/control-monitoring.js',
+  '/js/attendance.js',
   '/js/mobile-app.js'
 ];
 

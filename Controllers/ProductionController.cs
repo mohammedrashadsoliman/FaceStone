@@ -2787,12 +2787,13 @@ public class ProductionController : ControllerBase
 
         if (!string.IsNullOrWhiteSpace(search))
         {
-            var s = search.Trim().ToLowerInvariant();
+            var s = search.Trim();
+            var isNum = int.TryParse(s, out var num);
             query = query.Where(p =>
-                p.ProcessNumber.ToLower().Contains(s) ||
-                p.ResponsibleEmployee.ToLower().Contains(s) ||
-                p.Materials.Any(m => m.BatchNumber.ToLower().Contains(s) || m.SampleCode.ToLower().Contains(s) || m.ProductionReferenceNumber.ToString().Contains(s)) ||
-                p.FinishedProducts.Any(f => f.ManufactureNumber.ToLower().Contains(s) || f.FinishedProductName.ToLower().Contains(s)));
+                p.ProcessNumber.Contains(s) ||
+                p.ResponsibleEmployee.Contains(s) ||
+                p.Materials.Any(m => m.BatchNumber.Contains(s) || m.SampleCode.Contains(s) || (isNum && m.ProductionReferenceNumber == num)) ||
+                p.FinishedProducts.Any(f => f.ManufactureNumber.Contains(s) || f.FinishedProductName.Contains(s)));
         }
 
         var processes = await query

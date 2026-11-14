@@ -302,15 +302,9 @@ public class DepartmentController : ControllerBase
     [HttpGet("/departments/storage")]
     public IActionResult HandleStorageDirect()
     {
-        // 1. If this is a browser navigation request for HTML:
-        if (Request.Headers.Accept.Any(a => a != null && a.Contains("text/html")))
+        if (ShouldServeSpaHtml())
         {
-            var indexPath = Path.Combine(_env.WebRootPath, "index.html");
-            if (System.IO.File.Exists(indexPath))
-            {
-                SetNoCacheHeaders();
-                return PhysicalFile(indexPath, "text/html");
-            }
+            return ServeSpaIndex();
         }
 
         // 2. If caller is not authenticated:
@@ -338,15 +332,9 @@ public class DepartmentController : ControllerBase
     [HttpGet("/management")]
     public IActionResult HandleManagementDirect()
     {
-        // 1. If this is a browser navigation request for HTML:
-        if (Request.Headers.Accept.Any(a => a != null && a.Contains("text/html")))
+        if (ShouldServeSpaHtml())
         {
-            var indexPath = Path.Combine(_env.WebRootPath, "index.html");
-            if (System.IO.File.Exists(indexPath))
-            {
-                SetNoCacheHeaders();
-                return PhysicalFile(indexPath, "text/html");
-            }
+            return ServeSpaIndex();
         }
 
         // 2. If caller is not authenticated:
@@ -373,14 +361,9 @@ public class DepartmentController : ControllerBase
     [HttpGet("/departments")]
     public IActionResult HandleDepartmentsDirect()
     {
-        if (Request.Headers.Accept.Any(a => a != null && a.Contains("text/html")))
+        if (ShouldServeSpaHtml())
         {
-            var indexPath = Path.Combine(_env.WebRootPath, "index.html");
-            if (System.IO.File.Exists(indexPath))
-            {
-                SetNoCacheHeaders();
-                return PhysicalFile(indexPath, "text/html");
-            }
+            return ServeSpaIndex();
         }
         return Ok(ApiResponse.Ok("FaceStone Department Portal."));
     }
@@ -404,15 +387,9 @@ public class DepartmentController : ControllerBase
     [HttpGet("/finance/employees/{id}")]
     public IActionResult HandleFinanceDirect()
     {
-        // 1. If this is a browser navigation request for HTML:
-        if (Request.Headers.Accept.Any(a => a != null && a.Contains("text/html")))
+        if (ShouldServeSpaHtml())
         {
-            var indexPath = Path.Combine(_env.WebRootPath, "index.html");
-            if (System.IO.File.Exists(indexPath))
-            {
-                SetNoCacheHeaders();
-                return PhysicalFile(indexPath, "text/html");
-            }
+            return ServeSpaIndex();
         }
 
         // 2. If caller is not authenticated:
@@ -453,14 +430,9 @@ public class DepartmentController : ControllerBase
     [HttpGet("attendance")]
     public IActionResult HandleAttendanceDirect()
     {
-        if (Request.Headers.Accept.Any(a => a != null && a.Contains("text/html")))
+        if (ShouldServeSpaHtml())
         {
-            var indexPath = Path.Combine(_env.WebRootPath, "index.html");
-            if (System.IO.File.Exists(indexPath))
-            {
-                SetNoCacheHeaders();
-                return PhysicalFile(indexPath, "text/html");
-            }
+            return ServeSpaIndex();
         }
 
         if (!User.Identity?.IsAuthenticated ?? true)
@@ -541,14 +513,9 @@ public class DepartmentController : ControllerBase
     [HttpGet("/chemical")]
     public IActionResult HandleLaboratoryDirect(string? subpath = null)
     {
-        if (Request.Headers.Accept.Any(a => a != null && a.Contains("text/html")))
+        if (ShouldServeSpaHtml())
         {
-            var indexPath = Path.Combine(_env.WebRootPath, "index.html");
-            if (System.IO.File.Exists(indexPath))
-            {
-                SetNoCacheHeaders();
-                return PhysicalFile(indexPath, "text/html");
-            }
+            return ServeSpaIndex();
         }
 
         if (!User.Identity?.IsAuthenticated ?? true)
@@ -620,14 +587,9 @@ public class DepartmentController : ControllerBase
     [HttpGet("/production/{*subpath}")]
     public IActionResult HandleProductionDirect(string? subpath = null)
     {
-        if (Request.Headers.Accept.Any(a => a != null && a.Contains("text/html")))
+        if (ShouldServeSpaHtml())
         {
-            var indexPath = Path.Combine(_env.WebRootPath, "index.html");
-            if (System.IO.File.Exists(indexPath))
-            {
-                SetNoCacheHeaders();
-                return PhysicalFile(indexPath, "text/html");
-            }
+            return ServeSpaIndex();
         }
 
         if (!User.Identity?.IsAuthenticated ?? true)
@@ -644,6 +606,24 @@ public class DepartmentController : ControllerBase
         }
 
         return Ok(ApiResponse.Ok("FaceStone Production Department."));
+    }
+
+    private IActionResult ServeSpaIndex()
+    {
+        var webRoot = _env.WebRootPath ?? Path.Combine(_env.ContentRootPath ?? Directory.GetCurrentDirectory(), "wwwroot");
+        var indexPath = Path.Combine(webRoot, "index.html");
+        if (System.IO.File.Exists(indexPath))
+        {
+            SetNoCacheHeaders();
+            return PhysicalFile(indexPath, "text/html");
+        }
+        return NotFound();
+    }
+
+    private bool ShouldServeSpaHtml()
+    {
+        var acceptsJsonOnly = Request.Headers.Accept.Any(a => a != null && a.Contains("application/json") && !a.Contains("text/html"));
+        return !acceptsJsonOnly || Request.Headers.Accept.Any(a => a != null && a.Contains("text/html"));
     }
 
     private void SetNoCacheHeaders()
