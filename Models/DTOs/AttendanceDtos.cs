@@ -12,10 +12,11 @@ public class AttendanceEmployeeItemDto
     public string Role { get; set; } = string.Empty;
     public string Department { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty; // "Present", "Absent", or ""
-    public bool IsTestData { get; set; } = true;
+    public bool IsTestData { get; set; } = false;
     public DateTime? AttendanceDateTime { get; set; }
     public DateTime? CheckInTime { get; set; }
     public DateTime? CheckOutTime { get; set; }
+    public decimal? WorkingHours { get; set; }
     public string? Notes { get; set; }
     public string ApprovalStatus { get; set; } = "PENDING";
     public string? ReviewedBy { get; set; }
@@ -30,10 +31,11 @@ public class AttendanceRecordItemDto
     public string FullName { get; set; } = string.Empty;
     public string Role { get; set; } = string.Empty;
     public string Status { get; set; } = "Present"; // "Present" or "Absent"
-    public bool IsTestData { get; set; } = true;
+    public bool IsTestData { get; set; } = false;
     public DateTime? AttendanceDateTime { get; set; }
     public DateTime? CheckInTime { get; set; }
     public DateTime? CheckOutTime { get; set; }
+    public decimal? WorkingHours { get; set; }
     public string? Notes { get; set; }
     public string ApprovalStatus { get; set; } = "PENDING"; // "PENDING", "APPROVED", "REJECTED"
     public string? ReviewedBy { get; set; }
@@ -47,6 +49,45 @@ public class SubmitAttendanceRequestDto
     public DateTime AttendanceDate { get; set; }
     public string? Notes { get; set; }
     public List<AttendanceRecordItemDto> Records { get; set; } = new();
+}
+
+public class CheckInRequestDto
+{
+    public Guid UserId { get; set; }
+    public DateTime? Date { get; set; }
+    public DateTime? CheckInTime { get; set; }
+    public string? Notes { get; set; }
+}
+
+public class CheckOutRequestDto
+{
+    public Guid UserId { get; set; }
+    public DateTime? Date { get; set; }
+    public DateTime? CheckOutTime { get; set; }
+    public string? Notes { get; set; }
+}
+
+public class SaveAttendanceRecordDto
+{
+    public int? Id { get; set; }
+    public Guid UserId { get; set; }
+    public DateTime? Date { get; set; }
+    public string Status { get; set; } = "Present";
+    public DateTime? CheckInTime { get; set; }
+    public DateTime? CheckOutTime { get; set; }
+    public decimal? WorkingHours { get; set; }
+    public string? Notes { get; set; }
+}
+
+public class AttendanceStatsDto
+{
+    public string Date { get; set; } = string.Empty;
+    public int TotalEmployees { get; set; }
+    public int PresentCount { get; set; }
+    public int AbsentCount { get; set; }
+    public int UnmarkedCount { get; set; }
+    public decimal TotalWorkingHours { get; set; }
+    public decimal AttendanceRate { get; set; }
 }
 
 public class AttendanceAttachmentDto

@@ -257,11 +257,20 @@ public class TransportationConfigDto
     public List<string> DepartmentSupervisors { get; set; } = new();
     public List<string> RecipientTitles { get; set; } = new();
     public List<string> Drivers { get; set; } = new();
+    public List<PredefinedDriverDto> PredefinedDrivers { get; set; } = new();
     public int NextTransactionNumber { get; set; }
     public string NextInternalWeighbridgeCode { get; set; } = string.Empty;
     public string NextExternalWeighbridgeCode { get; set; } = string.Empty;
     public string FixedSource { get; set; } = "Face stone (Full Concrete Solutions)";
     public List<ProjectCodeDto> ProjectCodes { get; set; } = new();
+}
+
+public class PredefinedDriverDto
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string NameArabic { get; set; } = string.Empty;
+    public string DisplayText { get; set; } = string.Empty;
 }
 
 public class ProjectCodeDto

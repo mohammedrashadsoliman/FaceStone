@@ -197,7 +197,32 @@ public class AttendanceController : ControllerBase
 
     private async Task<List<AttendanceEmployeeItemDto>> GetEmployeesListAsync()
     {
-        // First retrieve active system users from the database
+        // First retrieve registered employees (Role == Employee or matching the 4 designated employees)
+        var dbEmployees = await _db.Users.AsNoTracking()
+            .Where(u => u.Role == AppRoles.Employee || 
+                        u.Role == "Employee" || 
+                        u.Username == "mohammed_nageh" || 
+                        u.Username == "abdelkader" || 
+                        u.Username == "hassan" || 
+                        u.Username == "ashraf")
+            .OrderBy(u => u.FullName)
+            .ToListAsync();
+
+        if (dbEmployees.Any())
+        {
+            return dbEmployees.Select(u => new AttendanceEmployeeItemDto
+            {
+                UserId = u.Id,
+                FullName = u.FullName,
+                Username = u.Username,
+                Role = u.Role,
+                Department = "Operations",
+                IsTestData = false,
+                Status = string.Empty
+            }).ToList();
+        }
+
+        // Fallback: All active system users
         var dbUsers = await _db.Users.AsNoTracking().OrderBy(u => u.FullName).ToListAsync();
         if (dbUsers.Any())
         {
@@ -221,7 +246,7 @@ public class AttendanceController : ControllerBase
             Username = e.Username,
             Role = e.Role,
             Department = e.Department,
-            IsTestData = true,
+            IsTestData = false,
             Status = string.Empty
         }).ToList();
     }
@@ -244,13 +269,13 @@ public class AttendanceController : ControllerBase
     }
 
     /// <summary>
-    /// Retrieve daily attendance sheet for today (Requirement 3: strictly today's date).
+    /// Retrieve daily attendance sheet for today or specified date.
     /// </summary>
     [HttpGet("date/{date:datetime}")]
     [HttpGet("sheet")]
     [HttpGet("today")]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
-    public async Task<IActionResult> GetSheetByDate([FromRoute] DateTime? date)
+    public async Task<IActionResult> GetSheetByDate([FromRoute] DateTime? date, [FromQuery] DateTime? queryDate)
     {
         var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
         if (!AppRoles.HasAttendanceAccess(role) && !AppRoles.HasControlMonitoringAccess(role))
@@ -258,13 +283,12 @@ public class AttendanceController : ControllerBase
             return StatusCode(StatusCodes.Status403Forbidden, ApiResponse.Fail("Access Denied: Attendance records are restricted."));
         }
 
-        // Strictly enforce today's date in local business timezone (Requirement 3)
-        var targetDate = GetBusinessToday();
+        var targetDate = (date ?? queryDate ?? GetBusinessToday()).Date;
 
         // Fetch configured employees list
         var employees = await GetEmployeesListAsync();
 
-        // Check if there is an existing submission for today's date (most recent first)
+        // Check if there is an existing submission for this date
         var submission = await _db.AttendanceSubmissions
             .AsNoTracking()
             .Include(s => s.Records)
@@ -272,12 +296,22 @@ public class AttendanceController : ControllerBase
             .OrderByDescending(s => s.Id)
             .FirstOrDefaultAsync(s => s.AttendanceDate.Date == targetDate);
 
-        var employeeDtos = new List<AttendanceEmployeeItemDto>();
-        var recordsMapByUserId = submission?.Records.Where(r => r.UserId.HasValue).ToDictionary(r => r.UserId!.Value, r => r) 
-            ?? new Dictionary<Guid, AttendanceRecord>();
-        var recordsMapByName = submission?.Records.Where(r => !string.IsNullOrWhiteSpace(r.EmployeeName)).ToDictionary(r => r.EmployeeName, r => r, StringComparer.OrdinalIgnoreCase) 
-            ?? new Dictionary<string, AttendanceRecord>(StringComparer.OrdinalIgnoreCase);
+        // Fetch ALL attendance records for this date (submitted individually or via batch)
+        var dayRecords = await _db.AttendanceRecords
+            .AsNoTracking()
+            .Where(r => r.Date.Date == targetDate)
+            .OrderByDescending(r => r.Id)
+            .ToListAsync();
 
+        var recordsMapByUserId = dayRecords.Where(r => r.UserId.HasValue)
+            .GroupBy(r => r.UserId!.Value)
+            .ToDictionary(g => g.Key, g => g.First());
+
+        var recordsMapByName = dayRecords.Where(r => !string.IsNullOrWhiteSpace(r.EmployeeName))
+            .GroupBy(r => r.EmployeeName!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+        var employeeDtos = new List<AttendanceEmployeeItemDto>();
         foreach (var emp in employees)
         {
             var dto = new AttendanceEmployeeItemDto
@@ -287,7 +321,7 @@ public class AttendanceController : ControllerBase
                 Username = emp.Username,
                 Role = emp.Role,
                 Department = emp.Department,
-                IsTestData = emp.IsTestData,
+                IsTestData = false,
                 Status = string.Empty
             };
 
@@ -308,15 +342,24 @@ public class AttendanceController : ControllerBase
                 dto.AttendanceDateTime = rec.CheckInTime;
                 dto.CheckInTime = rec.CheckInTime;
                 dto.CheckOutTime = rec.CheckOutTime;
+                dto.WorkingHours = rec.WorkingHours;
                 dto.Notes = rec.Notes;
                 dto.ApprovalStatus = rec.ApprovalStatus;
                 dto.ReviewedBy = rec.ReviewedBy;
                 dto.ReviewedAt = rec.ReviewedAt;
                 dto.RejectionReason = rec.RejectionReason;
+                dto.IsTestData = rec.IsTestData;
             }
 
             employeeDtos.Add(dto);
         }
+
+        // Calculate real day statistics
+        var presentCount = employeeDtos.Count(e => e.Status.Equals("Present", StringComparison.OrdinalIgnoreCase));
+        var absentCount = employeeDtos.Count(e => e.Status.Equals("Absent", StringComparison.OrdinalIgnoreCase));
+        var unmarkedCount = Math.Max(0, employeeDtos.Count - (presentCount + absentCount));
+        var totalWorkingHours = dayRecords.Sum(r => r.WorkingHours ?? 0m);
+        var attendanceRate = employeeDtos.Count > 0 ? Math.Round(((decimal)presentCount / employeeDtos.Count) * 100m, 1) : 0m;
 
         AttendanceSubmissionDetailDto? subDto = null;
         if (submission != null)
@@ -367,6 +410,7 @@ public class AttendanceController : ControllerBase
                     AttendanceDateTime = r.CheckInTime,
                     CheckInTime = r.CheckInTime,
                     CheckOutTime = r.CheckOutTime,
+                    WorkingHours = r.WorkingHours,
                     Notes = r.Notes,
                     IsTestData = r.IsTestData,
                     ApprovalStatus = r.ApprovalStatus,
@@ -397,7 +441,16 @@ public class AttendanceController : ControllerBase
             submissionId = submission?.Id,
             approvalStatus = submission?.ApprovalStatus ?? "DRAFT",
             submission = subDto,
-            employees = employeeDtos
+            employees = employeeDtos,
+            stats = new
+            {
+                totalEmployees = employeeDtos.Count,
+                presentCount = presentCount,
+                absentCount = absentCount,
+                unmarkedCount = unmarkedCount,
+                totalWorkingHours = totalWorkingHours,
+                attendanceRate = attendanceRate
+            }
         }));
     }
 
@@ -490,6 +543,315 @@ public class AttendanceController : ControllerBase
         };
 
         return Ok(ApiResponse<AttendanceSubmissionDetailDto>.Ok(dto));
+    }
+
+    /// <summary>
+    /// Quick check-in for an employee (تسجيل حضور فردي سريع).
+    /// </summary>
+    [HttpPost("check-in")]
+    [ProducesResponseType(typeof(ApiResponse<AttendanceRecordItemDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> CheckIn([FromBody] CheckInRequestDto request)
+    {
+        var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+        if (!AppRoles.HasAttendanceAccess(role))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponse.Fail("Access Denied"));
+        }
+
+        if (request.UserId == Guid.Empty)
+        {
+            return BadRequest(ApiResponse.Fail("معرف الموظف مطلوب / Employee User ID is required."));
+        }
+
+        var emp = await _db.Users.FirstOrDefaultAsync(u => u.Id == request.UserId);
+        if (emp == null)
+        {
+            return NotFound(ApiResponse.Fail("الموظف غير موجود بالنظام / Employee not found."));
+        }
+
+        var targetDate = (request.Date ?? GetBusinessToday()).Date;
+        var checkInTime = request.CheckInTime ?? DateTime.UtcNow;
+
+        var record = await _db.AttendanceRecords
+            .FirstOrDefaultAsync(r => r.UserId == request.UserId && r.Date.Date == targetDate);
+
+        if (record == null)
+        {
+            record = new AttendanceRecord
+            {
+                UserId = emp.Id,
+                EmployeeName = emp.FullName,
+                EmployeeRole = emp.Role,
+                Date = targetDate,
+                Status = "Present",
+                CheckInTime = checkInTime,
+                Notes = request.Notes,
+                IsTestData = false,
+                ApprovalStatus = "APPROVED",
+                ReviewedBy = "System (Auto-Approved)",
+                ReviewedAt = DateTime.UtcNow,
+                CreatedAt = DateTime.UtcNow
+            };
+            await _db.AttendanceRecords.AddAsync(record);
+        }
+        else
+        {
+            record.Status = "Present";
+            record.CheckInTime = checkInTime;
+            if (!string.IsNullOrWhiteSpace(request.Notes))
+                record.Notes = request.Notes;
+            if (record.CheckOutTime.HasValue && record.CheckOutTime.Value > checkInTime)
+            {
+                record.WorkingHours = Math.Round((decimal)(record.CheckOutTime.Value - checkInTime).TotalHours, 2);
+            }
+            record.IsTestData = false;
+        }
+
+        await _db.SaveChangesAsync();
+
+        return Ok(ApiResponse<AttendanceRecordItemDto>.Ok(new AttendanceRecordItemDto
+        {
+            Id = record.Id,
+            UserId = record.UserId,
+            FullName = record.EmployeeName,
+            Role = record.EmployeeRole,
+            Status = record.Status,
+            CheckInTime = record.CheckInTime,
+            CheckOutTime = record.CheckOutTime,
+            WorkingHours = record.WorkingHours,
+            Notes = record.Notes,
+            ApprovalStatus = record.ApprovalStatus,
+            IsTestData = record.IsTestData
+        }));
+    }
+
+    /// <summary>
+    /// Quick check-out for an employee (تسجيل انصراف فردي سريع وحساب ساعات العمل).
+    /// </summary>
+    [HttpPost("check-out")]
+    [ProducesResponseType(typeof(ApiResponse<AttendanceRecordItemDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> CheckOut([FromBody] CheckOutRequestDto request)
+    {
+        var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+        if (!AppRoles.HasAttendanceAccess(role))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponse.Fail("Access Denied"));
+        }
+
+        if (request.UserId == Guid.Empty)
+        {
+            return BadRequest(ApiResponse.Fail("معرف الموظف مطلوب / Employee User ID is required."));
+        }
+
+        var emp = await _db.Users.FirstOrDefaultAsync(u => u.Id == request.UserId);
+        if (emp == null)
+        {
+            return NotFound(ApiResponse.Fail("الموظف غير موجود بالنظام / Employee not found."));
+        }
+
+        var targetDate = (request.Date ?? GetBusinessToday()).Date;
+        var checkOutTime = request.CheckOutTime ?? DateTime.UtcNow;
+
+        var record = await _db.AttendanceRecords
+            .FirstOrDefaultAsync(r => r.UserId == request.UserId && r.Date.Date == targetDate);
+
+        if (record == null)
+        {
+            record = new AttendanceRecord
+            {
+                UserId = emp.Id,
+                EmployeeName = emp.FullName,
+                EmployeeRole = emp.Role,
+                Date = targetDate,
+                Status = "Present",
+                CheckOutTime = checkOutTime,
+                Notes = request.Notes,
+                IsTestData = false,
+                ApprovalStatus = "APPROVED",
+                ReviewedBy = "System (Auto-Approved)",
+                ReviewedAt = DateTime.UtcNow,
+                CreatedAt = DateTime.UtcNow
+            };
+            await _db.AttendanceRecords.AddAsync(record);
+        }
+        else
+        {
+            record.CheckOutTime = checkOutTime;
+            if (!string.IsNullOrWhiteSpace(request.Notes))
+                record.Notes = request.Notes;
+            if (record.CheckInTime.HasValue && checkOutTime > record.CheckInTime.Value)
+            {
+                record.WorkingHours = Math.Round((decimal)(checkOutTime - record.CheckInTime.Value).TotalHours, 2);
+            }
+            record.IsTestData = false;
+        }
+
+        await _db.SaveChangesAsync();
+
+        return Ok(ApiResponse<AttendanceRecordItemDto>.Ok(new AttendanceRecordItemDto
+        {
+            Id = record.Id,
+            UserId = record.UserId,
+            FullName = record.EmployeeName,
+            Role = record.EmployeeRole,
+            Status = record.Status,
+            CheckInTime = record.CheckInTime,
+            CheckOutTime = record.CheckOutTime,
+            WorkingHours = record.WorkingHours,
+            Notes = record.Notes,
+            ApprovalStatus = record.ApprovalStatus,
+            IsTestData = record.IsTestData
+        }));
+    }
+
+    /// <summary>
+    /// Save or update an individual attendance record.
+    /// </summary>
+    [HttpPost("record")]
+    [HttpPut("records/{id:int}")]
+    [ProducesResponseType(typeof(ApiResponse<AttendanceRecordItemDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> SaveOrUpdateRecord([FromRoute] int? id, [FromBody] SaveAttendanceRecordDto dto)
+    {
+        var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+        if (!AppRoles.HasAttendanceAccess(role))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponse.Fail("Access Denied"));
+        }
+
+        AttendanceRecord? record = null;
+        var targetDate = (dto.Date ?? GetBusinessToday()).Date;
+
+        if (id.HasValue && id.Value > 0)
+        {
+            record = await _db.AttendanceRecords.FirstOrDefaultAsync(r => r.Id == id.Value);
+        }
+        else if (dto.Id.HasValue && dto.Id.Value > 0)
+        {
+            record = await _db.AttendanceRecords.FirstOrDefaultAsync(r => r.Id == dto.Id.Value);
+        }
+        else if (dto.UserId != Guid.Empty)
+        {
+            record = await _db.AttendanceRecords.FirstOrDefaultAsync(r => r.UserId == dto.UserId && r.Date.Date == targetDate);
+        }
+
+        var emp = await _db.Users.FirstOrDefaultAsync(u => u.Id == dto.UserId);
+
+        decimal? calculatedHours = dto.WorkingHours;
+        if (dto.CheckInTime.HasValue && dto.CheckOutTime.HasValue && dto.CheckOutTime.Value > dto.CheckInTime.Value)
+        {
+            calculatedHours = Math.Round((decimal)(dto.CheckOutTime.Value - dto.CheckInTime.Value).TotalHours, 2);
+        }
+
+        if (record == null)
+        {
+            record = new AttendanceRecord
+            {
+                UserId = dto.UserId != Guid.Empty ? dto.UserId : null,
+                EmployeeName = emp?.FullName ?? "Employee",
+                EmployeeRole = emp?.Role ?? "Employee",
+                Date = targetDate,
+                Status = dto.Status ?? "Present",
+                CheckInTime = dto.CheckInTime,
+                CheckOutTime = dto.CheckOutTime,
+                WorkingHours = calculatedHours,
+                Notes = dto.Notes,
+                IsTestData = false,
+                ApprovalStatus = "APPROVED",
+                ReviewedBy = "System (Auto-Approved)",
+                ReviewedAt = DateTime.UtcNow,
+                CreatedAt = DateTime.UtcNow
+            };
+            await _db.AttendanceRecords.AddAsync(record);
+        }
+        else
+        {
+            record.Status = dto.Status ?? record.Status;
+            record.CheckInTime = dto.CheckInTime ?? record.CheckInTime;
+            record.CheckOutTime = dto.CheckOutTime ?? record.CheckOutTime;
+            record.WorkingHours = calculatedHours ?? record.WorkingHours;
+            if (dto.Notes != null) record.Notes = dto.Notes;
+            record.IsTestData = false;
+        }
+
+        await _db.SaveChangesAsync();
+
+        return Ok(ApiResponse<AttendanceRecordItemDto>.Ok(new AttendanceRecordItemDto
+        {
+            Id = record.Id,
+            UserId = record.UserId,
+            FullName = record.EmployeeName,
+            Role = record.EmployeeRole,
+            Status = record.Status,
+            CheckInTime = record.CheckInTime,
+            CheckOutTime = record.CheckOutTime,
+            WorkingHours = record.WorkingHours,
+            Notes = record.Notes,
+            ApprovalStatus = record.ApprovalStatus,
+            IsTestData = record.IsTestData
+        }));
+    }
+
+    /// <summary>
+    /// Delete / cancel an attendance record.
+    /// </summary>
+    [HttpDelete("records/{id:int}")]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status200OK)]
+    public async Task<IActionResult> DeleteRecord([FromRoute] int id)
+    {
+        var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+        if (!AppRoles.HasAttendanceAccess(role))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponse.Fail("Access Denied"));
+        }
+
+        var record = await _db.AttendanceRecords.FirstOrDefaultAsync(r => r.Id == id);
+        if (record == null)
+        {
+            return NotFound(ApiResponse.Fail("Record not found."));
+        }
+
+        _db.AttendanceRecords.Remove(record);
+        await _db.SaveChangesAsync();
+
+        return Ok(ApiResponse.Ok("تم حذف سجل الحضور بنجاح."));
+    }
+
+    /// <summary>
+    /// Retrieve real database attendance statistics for a given date.
+    /// </summary>
+    [HttpGet("stats")]
+    [ProducesResponseType(typeof(ApiResponse<AttendanceStatsDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetStats([FromQuery] DateTime? date)
+    {
+        var targetDate = (date ?? GetBusinessToday()).Date;
+
+        var employees = await GetEmployeesListAsync();
+        var totalEmployees = employees.Count;
+
+        var dayRecords = await _db.AttendanceRecords
+            .AsNoTracking()
+            .Where(r => r.Date.Date == targetDate)
+            .ToListAsync();
+
+        var presentCount = dayRecords.Count(r => r.Status.Equals("Present", StringComparison.OrdinalIgnoreCase));
+        var absentCount = dayRecords.Count(r => r.Status.Equals("Absent", StringComparison.OrdinalIgnoreCase));
+        var unmarkedCount = Math.Max(0, totalEmployees - (presentCount + absentCount));
+
+        var totalWorkingHours = dayRecords.Sum(r => r.WorkingHours ?? 0m);
+        var attendanceRate = totalEmployees > 0 ? Math.Round(((decimal)presentCount / totalEmployees) * 100m, 1) : 0m;
+
+        var stats = new AttendanceStatsDto
+        {
+            Date = targetDate.ToString("yyyy-MM-dd"),
+            TotalEmployees = totalEmployees,
+            PresentCount = presentCount,
+            AbsentCount = absentCount,
+            UnmarkedCount = unmarkedCount,
+            TotalWorkingHours = totalWorkingHours,
+            AttendanceRate = attendanceRate
+        };
+
+        return Ok(ApiResponse<AttendanceStatsDto>.Ok(stats));
     }
 
     /// <summary>
@@ -627,84 +989,77 @@ public class AttendanceController : ControllerBase
             }
         }
 
-        // 4. CRITICAL REQUIREMENT: MANDATORY ATTACHMENT UPLOAD (ONE supporting document at the end)
-        if (attachments == null || attachments.Count == 0)
-        {
-            return BadRequest(ApiResponse.Fail("مرفق إثبات الحضور اليومي (Attendance Evidence) مطلوب وإلزامي في نهاية النموذج قبل الإرسال."));
-        }
-
-        // Validate each attachment (extension, size, magic bytes)
+        // 4. Optional Attachment Upload
         var validatedFiles = new List<(IFormFile file, string uniqueFileName, string origName, string ext, long size)>();
-        foreach (var file in attachments)
+        if (attachments != null && attachments.Count > 0)
         {
-            if (file.Length == 0) continue;
-
-            if (file.Length > 20 * 1024 * 1024)
+            foreach (var file in attachments)
             {
-                return BadRequest(ApiResponse.Fail($"حجم الملف '{file.FileName}' يتجاوز الحد الأقصى المسموح (20 ميجابايت)."));
-            }
+                if (file.Length == 0) continue;
 
-            var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
-            if (!AllowedExtensions.Contains(ext))
-            {
-                return BadRequest(ApiResponse.Fail($"نوع الملف '{file.FileName}' غير مدعوم. الأنواع المسموحة: PDF, JPG, PNG."));
-            }
-
-            // Magic bytes verification
-            byte[] magic = new byte[8];
-            using (var stream = file.OpenReadStream())
-            {
-                var bytesRead = await stream.ReadAsync(magic, 0, magic.Length);
-                if (bytesRead < 4)
+                if (file.Length > 20 * 1024 * 1024)
                 {
-                    return BadRequest(ApiResponse.Fail($"محتوى الملف '{file.FileName}' تالف أو غير صالح."));
+                    return BadRequest(ApiResponse.Fail($"حجم الملف '{file.FileName}' يتجاوز الحد الأقصى المسموح (20 ميجابايت)."));
                 }
 
-                if (ext == ".pdf")
+                var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+                if (!AllowedExtensions.Contains(ext))
                 {
-                    if (magic[0] != 0x25 || magic[1] != 0x50 || magic[2] != 0x44 || magic[3] != 0x46) // %PDF
+                    return BadRequest(ApiResponse.Fail($"نوع الملف '{file.FileName}' غير مدعوم. الأنواع المسموحة: PDF, JPG, PNG."));
+                }
+
+                // Magic bytes verification
+                byte[] magic = new byte[8];
+                using (var stream = file.OpenReadStream())
+                {
+                    var bytesRead = await stream.ReadAsync(magic, 0, magic.Length);
+                    if (bytesRead >= 4)
                     {
-                        return BadRequest(ApiResponse.Fail($"الملف '{file.FileName}' ليس ملف PDF صالحاً."));
+                        if (ext == ".pdf")
+                        {
+                            if (magic[0] != 0x25 || magic[1] != 0x50 || magic[2] != 0x44 || magic[3] != 0x46) // %PDF
+                            {
+                                return BadRequest(ApiResponse.Fail($"الملف '{file.FileName}' ليس ملف PDF صالحاً."));
+                            }
+                        }
+                        else if (ext == ".jpg" || ext == ".jpeg")
+                        {
+                            if (magic[0] != 0xFF || magic[1] != 0xD8 || magic[2] != 0xFF)
+                            {
+                                return BadRequest(ApiResponse.Fail($"الملف '{file.FileName}' ليس صورة JPG صالحة."));
+                            }
+                        }
+                        else if (ext == ".png")
+                        {
+                            if (magic[0] != 0x89 || magic[1] != 0x50 || magic[2] != 0x4E || magic[3] != 0x47)
+                            {
+                                return BadRequest(ApiResponse.Fail($"الملف '{file.FileName}' ليس صورة PNG صالحة."));
+                            }
+                        }
                     }
                 }
-                else if (ext == ".jpg" || ext == ".jpeg")
-                {
-                    if (magic[0] != 0xFF || magic[1] != 0xD8 || magic[2] != 0xFF)
-                    {
-                        return BadRequest(ApiResponse.Fail($"الملف '{file.FileName}' ليس صورة JPG صالحة."));
-                    }
-                }
-                else if (ext == ".png")
-                {
-                    if (magic[0] != 0x89 || magic[1] != 0x50 || magic[2] != 0x4E || magic[3] != 0x47)
-                    {
-                        return BadRequest(ApiResponse.Fail($"الملف '{file.FileName}' ليس صورة PNG صالحة."));
-                    }
-                }
+
+                var uniqueName = $"{Guid.NewGuid():N}{ext}";
+                validatedFiles.Add((file, uniqueName, Path.GetFileName(file.FileName), ext, file.Length));
             }
-
-            var uniqueName = $"{Guid.NewGuid():N}{ext}";
-            validatedFiles.Add((file, uniqueName, Path.GetFileName(file.FileName), ext, file.Length));
-        }
-
-        if (validatedFiles.Count == 0)
-        {
-            return BadRequest(ApiResponse.Fail("لم يتم العثور على ملفات صالحة في المرفقات المرفوعة."));
         }
 
         // Save files to disk in wwwroot/uploads/attendance/
-        var webRoot = _env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
-        var uploadsDir = Path.Combine(webRoot, "uploads", "attendance");
-        if (!Directory.Exists(uploadsDir))
+        if (validatedFiles.Count > 0)
         {
-            Directory.CreateDirectory(uploadsDir);
-        }
+            var webRoot = _env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
+            var uploadsDir = Path.Combine(webRoot, "uploads", "attendance");
+            if (!Directory.Exists(uploadsDir))
+            {
+                Directory.CreateDirectory(uploadsDir);
+            }
 
-        foreach (var vf in validatedFiles)
-        {
-            var destPath = Path.Combine(uploadsDir, vf.uniqueFileName);
-            using var destStream = new FileStream(destPath, FileMode.Create);
-            await vf.file.CopyToAsync(destStream);
+            foreach (var vf in validatedFiles)
+            {
+                var destPath = Path.Combine(uploadsDir, vf.uniqueFileName);
+                using var destStream = new FileStream(destPath, FileMode.Create);
+                await vf.file.CopyToAsync(destStream);
+            }
         }
 
         using var dbTransaction = await _db.Database.BeginTransactionAsync();
@@ -732,7 +1087,7 @@ public class AttendanceController : ControllerBase
             await _db.AttendanceSubmissions.AddAsync(submission);
             await _db.SaveChangesAsync();
 
-            // Insert individual records (isolated test data marked with IsTestData = true)
+            // Insert or update individual records
             foreach (var r in records)
             {
                 var rawTimestamp = r.AttendanceDateTime ?? r.CheckInTime;
@@ -740,26 +1095,63 @@ public class AttendanceController : ControllerBase
                     ? ConvertToUtcFromBusiness(rawTimestamp.Value)
                     : null;
 
-                var record = new AttendanceRecord
+                DateTime? checkOutUtc = r.CheckOutTime.HasValue && r.CheckOutTime.Value != default
+                    ? ConvertToUtcFromBusiness(r.CheckOutTime.Value)
+                    : null;
+
+                decimal? workingHours = r.WorkingHours;
+                if (timestampUtc.HasValue && checkOutUtc.HasValue && checkOutUtc.Value > timestampUtc.Value)
                 {
-                    UserId = r.UserId,
-                    EmployeeName = r.FullName,
-                    EmployeeRole = r.Role,
-                    IsTestData = r.IsTestData,
-                    Date = timestampUtc?.Date ?? targetDate,
-                    Status = r.Status,
-                    CheckInTime = r.Status.Equals("Present", StringComparison.OrdinalIgnoreCase)
-                        ? timestampUtc
-                        : timestampUtc,
-                    CheckOutTime = r.CheckOutTime,
-                    Notes = r.Notes,
-                    AttendanceSubmissionId = submission.Id,
-                    ApprovalStatus = "APPROVED",
-                    ReviewedBy = "System (Auto-Approved)",
-                    ReviewedAt = DateTime.UtcNow,
-                    CreatedAt = DateTime.UtcNow
-                };
-                await _db.AttendanceRecords.AddAsync(record);
+                    workingHours = Math.Round((decimal)(checkOutUtc.Value - timestampUtc.Value).TotalHours, 2);
+                }
+
+                AttendanceRecord? existing = null;
+                if (r.UserId.HasValue)
+                {
+                    existing = await _db.AttendanceRecords.FirstOrDefaultAsync(ar => ar.UserId == r.UserId.Value && ar.Date.Date == targetDate);
+                }
+                if (existing == null && !string.IsNullOrWhiteSpace(r.FullName))
+                {
+                    existing = await _db.AttendanceRecords.FirstOrDefaultAsync(ar => ar.EmployeeName == r.FullName && ar.Date.Date == targetDate);
+                }
+
+                if (existing != null)
+                {
+                    existing.EmployeeName = r.FullName;
+                    existing.EmployeeRole = r.Role;
+                    existing.Status = r.Status;
+                    existing.CheckInTime = timestampUtc ?? existing.CheckInTime;
+                    existing.CheckOutTime = checkOutUtc ?? existing.CheckOutTime;
+                    existing.WorkingHours = workingHours ?? existing.WorkingHours;
+                    existing.Notes = r.Notes;
+                    existing.AttendanceSubmissionId = submission.Id;
+                    existing.ApprovalStatus = "APPROVED";
+                    existing.ReviewedBy = "System (Auto-Approved)";
+                    existing.ReviewedAt = DateTime.UtcNow;
+                    existing.IsTestData = false;
+                }
+                else
+                {
+                    var record = new AttendanceRecord
+                    {
+                        UserId = r.UserId,
+                        EmployeeName = r.FullName,
+                        EmployeeRole = r.Role,
+                        IsTestData = false,
+                        Date = timestampUtc?.Date ?? targetDate,
+                        Status = r.Status,
+                        CheckInTime = timestampUtc,
+                        CheckOutTime = checkOutUtc,
+                        WorkingHours = workingHours,
+                        Notes = r.Notes,
+                        AttendanceSubmissionId = submission.Id,
+                        ApprovalStatus = "APPROVED",
+                        ReviewedBy = "System (Auto-Approved)",
+                        ReviewedAt = DateTime.UtcNow,
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    await _db.AttendanceRecords.AddAsync(record);
+                }
             }
 
             // Create attachment records
@@ -974,22 +1366,19 @@ public class AttendanceController : ControllerBase
             }
         }
 
-        // Verify that there is at least one attachment (either existing or newly uploaded)
-        if (submission.Attachments.Count == 0 && validatedFiles.Count == 0)
+        // Save new files to disk if any
+        if (validatedFiles.Count > 0)
         {
-            return BadRequest(ApiResponse.Fail("مرفقات إثبات الحضور إلزامية لإعادة التقديم."));
-        }
+            var webRoot = _env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
+            var uploadsDir = Path.Combine(webRoot, "uploads", "attendance");
+            if (!Directory.Exists(uploadsDir)) Directory.CreateDirectory(uploadsDir);
 
-        // Save new files to disk
-        var webRoot = _env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
-        var uploadsDir = Path.Combine(webRoot, "uploads", "attendance");
-        if (!Directory.Exists(uploadsDir)) Directory.CreateDirectory(uploadsDir);
-
-        foreach (var vf in validatedFiles)
-        {
-            var destPath = Path.Combine(uploadsDir, vf.uniqueFileName);
-            using var destStream = new FileStream(destPath, FileMode.Create);
-            await vf.file.CopyToAsync(destStream);
+            foreach (var vf in validatedFiles)
+            {
+                var destPath = Path.Combine(uploadsDir, vf.uniqueFileName);
+                using var destStream = new FileStream(destPath, FileMode.Create);
+                await vf.file.CopyToAsync(destStream);
+            }
         }
 
         using var dbTransaction = await _db.Database.BeginTransactionAsync();
@@ -1035,6 +1424,16 @@ public class AttendanceController : ControllerBase
                     ? ConvertToUtcFromBusiness(rawTimestamp.Value)
                     : null;
 
+                DateTime? checkOutUtc = r.CheckOutTime.HasValue && r.CheckOutTime.Value != default
+                    ? ConvertToUtcFromBusiness(r.CheckOutTime.Value)
+                    : null;
+
+                decimal? workingHours = r.WorkingHours;
+                if (timestampUtc.HasValue && checkOutUtc.HasValue && checkOutUtc.Value > timestampUtc.Value)
+                {
+                    workingHours = Math.Round((decimal)(checkOutUtc.Value - timestampUtc.Value).TotalHours, 2);
+                }
+
                 if (existingRec != null)
                 {
                     existingRec.Status = r.Status;
@@ -1049,11 +1448,12 @@ public class AttendanceController : ControllerBase
                         existingRec.ReviewedAt = null;
                     }
 
-                    existingRec.CheckInTime = r.Status.Equals("Present", StringComparison.OrdinalIgnoreCase)
-                        ? timestampUtc
-                        : timestampUtc;
+                    existingRec.CheckInTime = timestampUtc ?? existingRec.CheckInTime;
+                    existingRec.CheckOutTime = checkOutUtc ?? existingRec.CheckOutTime;
+                    existingRec.WorkingHours = workingHours ?? existingRec.WorkingHours;
                     existingRec.Date = timestampUtc?.Date ?? existingRec.Date;
                     existingRec.Notes = r.Notes;
+                    existingRec.IsTestData = false;
                     if (string.IsNullOrWhiteSpace(existingRec.EmployeeName) && !string.IsNullOrWhiteSpace(r.FullName))
                     {
                         existingRec.EmployeeName = r.FullName;
@@ -1061,10 +1461,6 @@ public class AttendanceController : ControllerBase
                     if (string.IsNullOrWhiteSpace(existingRec.EmployeeRole) && !string.IsNullOrWhiteSpace(r.Role))
                     {
                         existingRec.EmployeeRole = r.Role;
-                    }
-                    if (r.IsTestData)
-                    {
-                        existingRec.IsTestData = true;
                     }
                 }
                 else
@@ -1074,12 +1470,12 @@ public class AttendanceController : ControllerBase
                         UserId = r.UserId,
                         EmployeeName = r.FullName,
                         EmployeeRole = r.Role,
-                        IsTestData = r.IsTestData || !r.UserId.HasValue,
+                        IsTestData = false,
                         Date = timestampUtc?.Date ?? submission.AttendanceDate,
                         Status = r.Status,
-                        CheckInTime = r.Status.Equals("Present", StringComparison.OrdinalIgnoreCase)
-                            ? timestampUtc
-                            : timestampUtc,
+                        CheckInTime = timestampUtc,
+                        CheckOutTime = checkOutUtc,
+                        WorkingHours = workingHours,
                         Notes = r.Notes,
                         AttendanceSubmissionId = submission.Id,
                         ApprovalStatus = "PENDING",

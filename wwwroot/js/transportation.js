@@ -189,6 +189,12 @@
       this.deptSupSelect = document.getElementById('trans-dept-sup-select');
       this.carInput = document.getElementById('trans-car-input');
       this.driverSelect = document.getElementById('trans-driver-select');
+      this.driverCombo = document.getElementById('trans-driver-combo');
+      this.driverComboTrigger = document.getElementById('trans-driver-combo-trigger');
+      this.driverComboLabel = document.getElementById('trans-driver-combo-label');
+      this.driverComboPanel = document.getElementById('trans-driver-combo-panel');
+      this.driverComboSearch = document.getElementById('trans-driver-combo-search');
+      this.driverComboList = document.getElementById('trans-driver-combo-list');
       this.recNameInput = document.getElementById('trans-rec-name-input');
       this.recTitleSelect = document.getElementById('trans-rec-title-select');
       this.statusSafeCheckbox = document.getElementById('trans-status-safe');
@@ -291,6 +297,30 @@
         if (window.ChatApp?.showView) {
           window.ChatApp.showView('departments');
         }
+      });
+
+      // Searchable Driver Combo Events
+      this.driverComboTrigger?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.toggleDriverCombo();
+      });
+
+      this.driverComboSearch?.addEventListener('click', (e) => {
+        e.stopPropagation();
+      });
+
+      this.driverComboSearch?.addEventListener('input', (e) => {
+        this.renderDriverComboList(e.target.value);
+      });
+
+      document.addEventListener('click', (e) => {
+        if (this.driverCombo && !this.driverCombo.contains(e.target)) {
+          this.toggleDriverCombo(false);
+        }
+      });
+
+      this.driverSelect?.addEventListener('change', () => {
+        this.syncDriverComboFromSelect();
       });
 
       // Weight inputs in Section 1 (ONLY location for weight input)
@@ -516,16 +546,202 @@
       if (this.driverSelect) {
         const currentVal = this.driverSelect.value;
         this.driverSelect.innerHTML = '<option value="" disabled selected>-- اختر السائق من السجلات المعتمدة --</option>';
-        if (cfg.drivers && cfg.drivers.length > 0) {
-          cfg.drivers.forEach(d => {
+
+        // Predefined test drivers from config or built-in fallback
+        const predefined = (cfg && Array.isArray(cfg.predefinedDrivers) && cfg.predefinedDrivers.length > 0)
+          ? cfg.predefinedDrivers
+          : [
+            { id: 1, name: "Ahmed Mohamed", nameArabic: "أحمد محمد", displayText: "Ahmed Mohamed (أحمد محمد)" },
+            { id: 2, name: "Mohamed Ahmed", nameArabic: "محمد أحمد", displayText: "Mohamed Ahmed (محمد أحمد)" },
+            { id: 3, name: "Mahmoud Hassan", nameArabic: "محمود حسن", displayText: "Mahmoud Hassan (محمود حسن)" },
+            { id: 4, name: "Mostafa Ali", nameArabic: "مصطفى علي", displayText: "Mostafa Ali (مصطفى علي)" },
+            { id: 5, name: "Omar Khaled", nameArabic: "عمر خالد", displayText: "Omar Khaled (عمر خالد)" },
+            { id: 6, name: "Amr Ibrahim", nameArabic: "عمرو إبراهيم", displayText: "Amr Ibrahim (عمرو إبراهيم)" },
+            { id: 7, name: "Hassan Mahmoud", nameArabic: "حسن محمود", displayText: "Hassan Mahmoud (حسن محمود)" },
+            { id: 8, name: "Youssef Mohamed", nameArabic: "يوسف محمد", displayText: "Youssef Mohamed (يوسف محمد)" },
+            { id: 9, name: "Ali Mostafa", nameArabic: "علي مصطفى", displayText: "Ali Mostafa (علي مصطفى)" },
+            { id: 10, name: "Karim Ahmed", nameArabic: "كريم أحمد", displayText: "Karim Ahmed (كريم أحمد)" }
+          ];
+
+        this.cachedPredefinedDrivers = predefined;
+        this.cachedAllDrivers = (cfg && Array.isArray(cfg.drivers)) ? cfg.drivers : predefined.map(d => d.name);
+
+        // 1. Group for Predefined Test Drivers
+        const groupPredefined = document.createElement('optgroup');
+        groupPredefined.label = 'السائقين التجريبيين المعتمدين (Predefined Test Drivers)';
+        predefined.forEach(d => {
+          const opt = document.createElement('option');
+          opt.value = d.name;
+          opt.textContent = d.displayText || `${d.name} (${d.nameArabic})`;
+          groupPredefined.appendChild(opt);
+        });
+        this.driverSelect.appendChild(groupPredefined);
+
+        // 2. Group for Historical DB Drivers (not matching any predefined)
+        const extraDrivers = this.cachedAllDrivers.filter(d =>
+          !predefined.some(p => p.name.toLowerCase() === d.toLowerCase())
+        );
+
+        if (extraDrivers.length > 0) {
+          const groupExtra = document.createElement('optgroup');
+          groupExtra.label = 'سائقين مسجلين مسبقاً في النظام (سجلات تاريخية)';
+          extraDrivers.forEach(d => {
             const opt = document.createElement('option');
             opt.value = d;
             opt.textContent = d;
-            this.driverSelect.appendChild(opt);
+            groupExtra.appendChild(opt);
           });
+          this.driverSelect.appendChild(groupExtra);
         }
-        if (currentVal) this.driverSelect.value = currentVal;
+
+        if (currentVal) {
+          this.driverSelect.value = currentVal;
+        }
+        this.syncDriverComboFromSelect();
+        this.renderDriverComboList('');
       }
+    }
+
+    toggleDriverCombo(show) {
+      if (!this.driverComboPanel) return;
+      const willShow = (typeof show === 'boolean') ? show : (this.driverComboPanel.style.display === 'none');
+      if (willShow) {
+        this.driverComboPanel.style.display = 'block';
+        if (this.driverComboSearch) {
+          this.driverComboSearch.value = '';
+          this.renderDriverComboList('');
+          setTimeout(() => this.driverComboSearch.focus(), 60);
+        }
+      } else {
+        this.driverComboPanel.style.display = 'none';
+      }
+    }
+
+    selectDriver(driverName, displayText) {
+      if (this.driverSelect) {
+        // Ensure option exists in select
+        if (!Array.from(this.driverSelect.options).some(o => o.value === driverName)) {
+          const opt = document.createElement('option');
+          opt.value = driverName;
+          opt.textContent = displayText || driverName;
+          this.driverSelect.appendChild(opt);
+        }
+        this.driverSelect.value = driverName;
+        this.driverSelect.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+
+      this.syncDriverComboFromSelect();
+
+      if (this.driverComboTrigger) {
+        this.driverComboTrigger.classList.remove('error');
+      }
+      const errEl = document.getElementById('trans-driver-error');
+      if (errEl) {
+        errEl.textContent = '';
+        errEl.style.display = 'none';
+      }
+      this.toggleDriverCombo(false);
+    }
+
+    syncDriverComboFromSelect() {
+      if (!this.driverSelect || !this.driverComboLabel) return;
+      const selVal = this.driverSelect.value;
+      if (!selVal) {
+        this.driverComboLabel.textContent = '-- اختر السائق من السجلات المعتمدة --';
+        this.driverComboLabel.style.color = '#64748B';
+        this.driverComboLabel.style.fontWeight = 'normal';
+        return;
+      }
+
+      const predefined = this.cachedPredefinedDrivers || [];
+      const match = predefined.find(p => p.name.toLowerCase() === selVal.toLowerCase());
+      const display = match ? (match.displayText || `${match.name} (${match.nameArabic})`) : selVal;
+
+      this.driverComboLabel.textContent = display;
+      this.driverComboLabel.style.color = '#0F172A';
+      this.driverComboLabel.style.fontWeight = '700';
+    }
+
+    renderDriverComboList(searchQuery) {
+      if (!this.driverComboList) return;
+      const q = (searchQuery || '').trim().toLowerCase();
+
+      const predefined = this.cachedPredefinedDrivers || [];
+      const allDrivers = this.cachedAllDrivers || [];
+
+      // Filter predefined drivers
+      const filteredPredefined = predefined.filter(d => {
+        if (!q) return true;
+        return (d.name || '').toLowerCase().includes(q)
+          || (d.nameArabic || '').toLowerCase().includes(q)
+          || (d.displayText || '').toLowerCase().includes(q);
+      });
+
+      // Filter historical drivers (not in predefined)
+      const historical = allDrivers.filter(d =>
+        !predefined.some(p => p.name.toLowerCase() === d.toLowerCase())
+      ).filter(d => {
+        if (!q) return true;
+        return d.toLowerCase().includes(q);
+      });
+
+      if (filteredPredefined.length === 0 && historical.length === 0) {
+        this.driverComboList.innerHTML = '<div style="padding: 12px; text-align: center; color: #64748B; font-size: 0.85rem;">لا يوجد سائق مطابق لنتيجة البحث.</div>';
+        return;
+      }
+
+      let html = '';
+
+      if (filteredPredefined.length > 0) {
+        html += '<div style="padding: 6px 10px; font-size: 0.75rem; font-weight: 800; color: #0284C7; background: #F0F9FF; border-bottom: 1px solid #BAE6FD; border-radius: 4px; margin-bottom: 4px;">السائقين التجريبيين المعتمدين (Test Drivers)</div>';
+        filteredPredefined.forEach(d => {
+          const isSelected = (this.driverSelect?.value || '').toLowerCase() === d.name.toLowerCase();
+          const disp = d.displayText || `${d.name} (${d.nameArabic})`;
+          html += `
+            <button type="button" class="trans-driver-option" data-driver-name="${this.escapeHtml(d.name)}" data-display-text="${this.escapeHtml(disp)}" style="width: 100%; text-align: right; background: ${isSelected ? '#EFF6FF' : 'transparent'}; border: none; border-bottom: 1px solid #F1F5F9; padding: 8px 10px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; border-radius: 6px; transition: background 0.15s ease;">
+              <div>
+                <span dir="ltr" style="font-weight: 700; color: #0F172A; display: inline-block;">${this.escapeHtml(d.name)}</span>
+                <span style="font-weight: 600; color: #475569; margin-right: 8px;">${this.escapeHtml(d.nameArabic)}</span>
+              </div>
+              <span style="font-size: 0.72rem; font-weight: 700; color: #0369A1; background: #E0F2FE; padding: 2px 8px; border-radius: 12px;">معتمد</span>
+            </button>
+          `;
+        });
+      }
+
+      if (historical.length > 0) {
+        html += '<div style="padding: 6px 10px; font-size: 0.75rem; font-weight: 800; color: #475569; background: #F8FAFC; border-bottom: 1px solid #E2E8F0; border-radius: 4px; margin: 6px 0 4px 0;">سائقين سابقين مسجلين في النظام</div>';
+        historical.forEach(d => {
+          const isSelected = (this.driverSelect?.value || '').toLowerCase() === d.toLowerCase();
+          html += `
+            <button type="button" class="trans-driver-option" data-driver-name="${this.escapeHtml(d)}" data-display-text="${this.escapeHtml(d)}" style="width: 100%; text-align: right; background: ${isSelected ? '#EFF6FF' : 'transparent'}; border: none; border-bottom: 1px solid #F1F5F9; padding: 8px 10px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; border-radius: 6px; transition: background 0.15s ease;">
+              <div>
+                <span style="font-weight: 700; color: #0F172A;">${this.escapeHtml(d)}</span>
+              </div>
+              <span style="font-size: 0.72rem; color: #64748B;">سجل سابق</span>
+            </button>
+          `;
+        });
+      }
+
+      this.driverComboList.innerHTML = html;
+
+      // Attach click listeners to options
+      this.driverComboList.querySelectorAll('.trans-driver-option').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const dName = btn.getAttribute('data-driver-name');
+          const dText = btn.getAttribute('data-display-text');
+          this.selectDriver(dName, dText);
+        });
+        btn.addEventListener('mouseenter', () => {
+          btn.style.background = '#F1F5F9';
+        });
+        btn.addEventListener('mouseleave', () => {
+          const isSel = (this.driverSelect?.value || '').toLowerCase() === (btn.getAttribute('data-driver-name') || '').toLowerCase();
+          btn.style.background = isSel ? '#EFF6FF' : 'transparent';
+        });
+      });
     }
 
     populateProjectCodes(codes) {
@@ -1706,6 +1922,7 @@
             this.driverSelect.appendChild(opt);
           }
           this.driverSelect.value = tx.driverName || '';
+          this.syncDriverComboFromSelect();
         }
         if (this.driverPhoneInput) this.driverPhoneInput.value = tx.driverPhone || '';
         if (this.materialSelect) this.materialSelect.value = tx.materialType || 'powder';
@@ -1796,6 +2013,9 @@
       if (this.driverPhoneInput) this.driverPhoneInput.value = '';
       if (this.carInput) this.carInput.value = '';
       if (this.driverSelect) this.driverSelect.selectedIndex = 0;
+      this.syncDriverComboFromSelect();
+      if (this.driverComboSearch) this.driverComboSearch.value = '';
+      this.renderDriverComboList('');
       if (this.materialSelect) this.materialSelect.selectedIndex = 0;
       if (this.recNameInput) this.recNameInput.value = '';
       if (this.recTitleSelect) this.recTitleSelect.selectedIndex = 0;
@@ -1816,6 +2036,9 @@
     setFieldError(inputEl, msg) {
       if (!inputEl) return;
       inputEl.classList.add('error');
+      if (inputEl === this.driverSelect && this.driverComboTrigger) {
+        this.driverComboTrigger.classList.add('error');
+      }
       const group = inputEl.closest('.trans-form-group');
       if (group) {
         let errEl = group.querySelector('.trans-field-error');
@@ -1827,7 +2050,10 @@
     }
 
     clearAllFieldErrors() {
-      document.querySelectorAll('.trans-input.error').forEach(el => el.classList.remove('error'));
+      document.querySelectorAll('.trans-input.error, .trans-select.error').forEach(el => el.classList.remove('error'));
+      if (this.driverComboTrigger) {
+        this.driverComboTrigger.classList.remove('error');
+      }
       document.querySelectorAll('.trans-field-error').forEach(el => {
         el.textContent = '';
         el.style.display = 'none';

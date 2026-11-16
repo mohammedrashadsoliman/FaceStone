@@ -27,7 +27,7 @@ public class AttendanceRecord
     /// <summary>
     /// علامة تمييز البيانات التجريبية
     /// </summary>
-    public bool IsTestData { get; set; } = true;
+    public bool IsTestData { get; set; } = false;
 
     /// <summary>
     /// تاريخ اليوم
@@ -48,6 +48,11 @@ public class AttendanceRecord
     /// وقت الانصراف
     /// </summary>
     public DateTime? CheckOutTime { get; set; }
+
+    /// <summary>
+    /// ساعات العمل المحتسبة
+    /// </summary>
+    public decimal? WorkingHours { get; set; }
 
     /// <summary>
     /// ملاحظات إضافية (تأخير، إذن، إلخ)

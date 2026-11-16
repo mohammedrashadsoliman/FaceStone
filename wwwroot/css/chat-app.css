@@ -3522,9 +3522,37 @@ a {
 .trans-form-group.has-error .trans-input,
 .trans-form-group.has-error .trans-select,
 .trans-form-group.has-error .trans-textarea,
-.trans-input.input-invalid {
+.trans-input.input-invalid,
+.trans-input.error,
+.trans-select.error {
   border-color: #DC2626 !important;
   background-color: #FEF2F2 !important;
+}
+
+.trans-driver-combo-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.trans-driver-combo-wrap button.trans-select {
+  text-align: right;
+  background-image: none !important;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.trans-combo-panel {
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.16);
+}
+
+.trans-driver-option:hover {
+  background-color: #F1F5F9 !important;
+}
+
+.trans-driver-option:focus {
+  outline: 2px solid #0284C7;
+  outline-offset: -2px;
 }
 
 /* Weight Calculations Display Grid */

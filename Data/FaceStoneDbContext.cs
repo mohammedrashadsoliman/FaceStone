@@ -1256,7 +1256,11 @@ public class FaceStoneDbContext : DbContext
                   .IsRequired(false);
 
             entity.Property(e => e.IsTestData)
-                  .HasDefaultValue(true);
+                  .HasDefaultValue(false);
+
+            entity.Property(e => e.WorkingHours)
+                  .HasPrecision(5, 2)
+                  .IsRequired(false);
 
             entity.Property(e => e.Notes)
                   .HasMaxLength(500)

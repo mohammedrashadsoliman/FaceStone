@@ -1241,7 +1241,12 @@ BEGIN
         ALTER TABLE AttendanceRecords ADD EmployeeRole NVARCHAR(100) NULL;
 
     IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('AttendanceRecords') AND name = 'IsTestData')
-        ALTER TABLE AttendanceRecords ADD IsTestData BIT NOT NULL CONSTRAINT DF_AttRec_IsTest DEFAULT 1;
+        ALTER TABLE AttendanceRecords ADD IsTestData BIT NOT NULL CONSTRAINT DF_AttRec_IsTest DEFAULT 0;
+
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('AttendanceRecords') AND name = 'WorkingHours')
+    BEGIN
+        ALTER TABLE AttendanceRecords ADD WorkingHours DECIMAL(5,2) NULL;
+    END
 
     IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('AttendanceRecords') AND name = 'AttendanceSubmissionId')
     BEGIN
@@ -2367,6 +2372,40 @@ IF NOT EXISTS (SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId] = '2026
                 prodEmployeeUser.Role = AppRoles.ProductionManager;
             }
 
+            await db.SaveChangesAsync(cts.Token);
+
+            // Ensure the 4 Attendance Employees exist
+            var attEmployeesToSeed = new[]
+            {
+                new { Id = Guid.Parse("4d921788-cae2-4dc4-ada2-ed6941fc2357"), FullName = "Mohammed Nageh", Username = "mohammed_nageh", Email = "mohammed.nageh@facestone.com" },
+                new { Id = Guid.Parse("c48ab326-6023-4de8-8bc6-9f37cde04841"), FullName = "Abdelkader", Username = "abdelkader", Email = "abdelkader@facestone.com" },
+                new { Id = Guid.Parse("344d322d-b33a-4a8a-aae0-659a2b85ff21"), FullName = "Hassan", Username = "hassan", Email = "hassan@facestone.com" },
+                new { Id = Guid.Parse("0bec6ac6-0eec-429c-acbd-dfc952acbc4e"), FullName = "Ashraf", Username = "ashraf", Email = "ashraf@facestone.com" }
+            };
+
+            foreach (var emp in attEmployeesToSeed)
+            {
+                var existing = await db.Users.FirstOrDefaultAsync(u => u.Id == emp.Id || u.Username == emp.Username || u.FullName == emp.FullName, cts.Token);
+                if (existing == null)
+                {
+                    await db.Users.AddAsync(new UserAccount
+                    {
+                        Id = emp.Id,
+                        FullName = emp.FullName,
+                        Username = emp.Username,
+                        Email = emp.Email,
+                        Role = AppRoles.Employee,
+                        PhoneNumber = "+20 10 0000 0000",
+                        CountryCode = "+20",
+                        PasswordHash = HashPassword("Employee123!"),
+                        CreatedAt = DateTime.UtcNow
+                    }, cts.Token);
+                }
+                else if (string.IsNullOrWhiteSpace(existing.Role) || existing.Role != AppRoles.Employee)
+                {
+                    existing.Role = AppRoles.Employee;
+                }
+            }
             await db.SaveChangesAsync(cts.Token);
 
             // Initialize Production Sequences if needed

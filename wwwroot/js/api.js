@@ -763,6 +763,40 @@ class ChatApi {
     }
   }
 
+  static async checkInAttendance(userId, checkInTime, notes, date) {
+    return await this.request('/api/attendance/check-in', {
+      method: 'POST',
+      body: JSON.stringify({ userId, checkInTime, notes, date })
+    });
+  }
+
+  static async checkOutAttendance(userId, checkOutTime, notes, date) {
+    return await this.request('/api/attendance/check-out', {
+      method: 'POST',
+      body: JSON.stringify({ userId, checkOutTime, notes, date })
+    });
+  }
+
+  static async saveAttendanceRecord(data) {
+    return await this.request('/api/attendance/record', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  }
+
+  static async deleteAttendanceRecord(id) {
+    return await this.request(`/api/attendance/records/${encodeURIComponent(id)}`, {
+      method: 'DELETE'
+    });
+  }
+
+  static async getAttendanceStats(dateStr) {
+    const qs = dateStr ? `?date=${encodeURIComponent(dateStr)}` : '';
+    return await this.request(`/api/attendance/stats${qs}`, {
+      method: 'GET'
+    });
+  }
+
   static async getTransportationById(id) {
     return await this.request(`/api/transportation/${encodeURIComponent(id)}`, {
       method: 'GET'

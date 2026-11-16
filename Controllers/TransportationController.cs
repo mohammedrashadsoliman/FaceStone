@@ -97,6 +97,14 @@ public class TransportationController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse<TransportationConfigDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetConfig()
     {
+        var predefinedDrivers = PredefinedDrivers.List.Select(d => new PredefinedDriverDto
+        {
+            Id = d.Id,
+            Name = d.Name,
+            NameArabic = d.NameArabic,
+            DisplayText = d.DisplayText
+        }).ToList();
+
         var existingDrivers = await _db.Transportations
             .AsNoTracking()
             .Where(t => !string.IsNullOrEmpty(t.DriverName))
@@ -104,6 +112,11 @@ public class TransportationController : ControllerBase
             .Distinct()
             .OrderBy(d => d)
             .ToListAsync();
+
+        var predefinedNames = PredefinedDrivers.Names;
+        var allDrivers = predefinedNames
+            .Concat(existingDrivers.Where(ed => !predefinedNames.Contains(ed, StringComparer.OrdinalIgnoreCase)))
+            .ToList();
 
         var projectCodes = await _db.ProjectCodes
             .AsNoTracking()
@@ -132,7 +145,8 @@ public class TransportationController : ControllerBase
             ShippingSupervisors = new() { DefaultShippingSupervisor },
             DepartmentSupervisors = new() { DefaultDepartmentSupervisor },
             RecipientTitles = RecipientTitles,
-            Drivers = existingDrivers,
+            Drivers = allDrivers,
+            PredefinedDrivers = predefinedDrivers,
             NextTransactionNumber = nextTxNum,
             NextInternalWeighbridgeCode = string.Empty, // Manual entry strictly required
             NextExternalWeighbridgeCode = string.Empty, // Manual entry strictly required
@@ -1298,7 +1312,7 @@ public class TransportationController : ControllerBase
                 TransactionNumber = finalTxNumber,
                 TransactionDate = dto.TransactionDate ?? DateTime.UtcNow,
                 CarNumber = dto.CarNumber.Trim(),
-                DriverName = dto.DriverName.Trim(),
+                DriverName = PredefinedDrivers.NormalizeDriverName(dto.DriverName),
                 Source = autoSource,
                 PONumber = trimmedPo,
                 CompanyName = autoCompanyName,
@@ -1315,7 +1329,7 @@ public class TransportationController : ControllerBase
                 SourceStorageLocationId = exportOp?.StorageLocationId ?? dto.SourceStorageLocationId,
                 SourceStorageLocationName = exportOp?.StorageLocationName ?? dto.SourceStorageLocationName,
                 ProjectCodeId = resolvedProjectCodeId,
-                ProjectCodeValue = resolvedProjectCodeValue,
+                ProjectCodeValue = resolvedProjectCodeValue ?? string.Empty,
                 MaterialType = selectedExportItem?.MaterialName ?? matType,
                 WeightBeforeLoading = Math.Round(dto.WeightBeforeLoading, 3),
                 WeightWhenEnteringFactory = Math.Round(dto.WeightWhenEnteringFactory > 0 ? dto.WeightWhenEnteringFactory : dto.WeightBeforeLoading, 3),
@@ -1637,7 +1651,7 @@ public class TransportationController : ControllerBase
 
         // Update fields
         entity.CarNumber = dto.CarNumber.Trim();
-        entity.DriverName = dto.DriverName.Trim();
+        entity.DriverName = PredefinedDrivers.NormalizeDriverName(dto.DriverName);
         entity.DriverPhone = string.IsNullOrWhiteSpace(dto.DriverPhone) ? null : dto.DriverPhone.Trim();
         entity.MaterialType = material;
         entity.WeightBeforeLoading = Math.Round(dto.InternalEmptyWeight, 3);
@@ -1699,7 +1713,7 @@ public class TransportationController : ControllerBase
         else
         {
             entity.ProjectCodeId = null;
-            entity.ProjectCodeValue = null;
+            entity.ProjectCodeValue = string.Empty;
         }
 
         // Update attachments if new ones saved
