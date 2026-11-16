@@ -1761,10 +1761,13 @@ BEGIN
         CREATE INDEX IX_ProductionFinishedProducts_ProductionOrderId ON ProductionFinishedProducts (ProductionOrderId);
     IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'ProductionFinishedProducts' AND COLUMN_NAME = 'StorageLocationId' AND IS_NULLABLE = 'NO')
         ALTER TABLE ProductionFinishedProducts ALTER COLUMN StorageLocationId INT NULL;
-    IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'ProductionFinishedProducts' AND COLUMN_NAME = 'ProducedQuantity' AND IS_NULLABLE = 'NO')
-        ALTER TABLE ProductionFinishedProducts ALTER COLUMN ProducedQuantity DECIMAL(18,2) NULL;
-    IF NOT EXISTS (SELECT * FROM sys.default_constraints WHERE name = 'DF_PFP_ProducedQty')
-        ALTER TABLE ProductionFinishedProducts ADD CONSTRAINT DF_PFP_ProducedQty DEFAULT 0 FOR ProducedQuantity;
+    IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionFinishedProducts') AND name = 'ProducedQuantity')
+    BEGIN
+        IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'ProductionFinishedProducts' AND COLUMN_NAME = 'ProducedQuantity' AND IS_NULLABLE = 'NO')
+            ALTER TABLE ProductionFinishedProducts ALTER COLUMN ProducedQuantity DECIMAL(18,2) NULL;
+        IF NOT EXISTS (SELECT * FROM sys.default_constraints WHERE name = 'DF_PFP_ProducedQty')
+            ALTER TABLE ProductionFinishedProducts ADD CONSTRAINT DF_PFP_ProducedQty DEFAULT 0 FOR ProducedQuantity;
+    END
 END
 
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'ProductionAttachments')

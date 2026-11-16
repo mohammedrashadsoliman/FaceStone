@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -275,7 +275,10 @@ public class AttendanceController : ControllerBase
     [HttpGet("sheet")]
     [HttpGet("today")]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
-    public async Task<IActionResult> GetSheetByDate([FromRoute] DateTime? date, [FromQuery] DateTime? queryDate)
+    public async Task<IActionResult> GetSheetByDate(
+        [FromRoute] DateTime? date, 
+        [FromQuery(Name = "date")] DateTime? queryDate,
+        [FromQuery(Name = "queryDate")] DateTime? queryDateFallback)
     {
         var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
         if (!AppRoles.HasAttendanceAccess(role) && !AppRoles.HasControlMonitoringAccess(role))
@@ -283,7 +286,7 @@ public class AttendanceController : ControllerBase
             return StatusCode(StatusCodes.Status403Forbidden, ApiResponse.Fail("Access Denied: Attendance records are restricted."));
         }
 
-        var targetDate = (date ?? queryDate ?? GetBusinessToday()).Date;
+        var targetDate = (date ?? queryDate ?? queryDateFallback ?? GetBusinessToday()).Date;
 
         // Fetch configured employees list
         var employees = await GetEmployeesListAsync();

@@ -1100,206 +1100,278 @@ class ChatApp {
   static async enterDepartment(dept, subRoute = null) {
     if (dept === 'finance') {
       // Backend authorization check for Finance Department
-      const res = await ChatApi.verifyFinanceAccess();
-      if (res.success && res.status !== 403) {
-        this.showView('finance-management');
-        const user = chatState.currentUser || ChatApi.getCurrentUser();
-        if (window.FinanceManagementApp) {
-          window.FinanceManagementApp.init();
-          window.FinanceManagementApp.updateUserBadge(user);
+      try {
+        const res = await ChatApi.verifyFinanceAccess();
+        if (res && res.success && res.status !== 403) {
+          this.showView('finance-management');
+          const user = chatState.currentUser || ChatApi.getCurrentUser();
+          if (window.FinanceManagementApp) {
+            window.FinanceManagementApp.init();
+            window.FinanceManagementApp.updateUserBadge(user);
+            if (subRoute && subRoute !== '/finance' && subRoute !== '/finance/management' && subRoute !== '/finance/hub') {
+              window.FinanceManagementApp.handleRoute(subRoute);
+            } else {
+              window.FinanceManagementApp.showHubCardsView();
+            }
+          }
           if (subRoute && subRoute !== '/finance' && subRoute !== '/finance/management' && subRoute !== '/finance/hub') {
-            window.FinanceManagementApp.handleRoute(subRoute);
-          } else {
-            window.FinanceManagementApp.showHubCardsView();
+            if (window.location.pathname !== subRoute) {
+              history.pushState({ view: 'finance-management', subRoute }, '', subRoute);
+            }
+          } else if (window.location.pathname !== '/finance') {
+            history.pushState({ view: 'finance-management' }, '', '/finance');
           }
-        }
-        if (subRoute && subRoute !== '/finance' && subRoute !== '/finance/management' && subRoute !== '/finance/hub') {
-          if (window.location.pathname !== subRoute) {
-            history.pushState({ view: 'finance-management', subRoute }, '', subRoute);
+        } else if (res && res.status === 403) {
+          // 403 Forbidden: Render Access Denied screen
+          this.setAccessDeniedDept('Finance', 'Accountants, IT, and CEO');
+          this.showView('access-denied');
+          if (window.location.pathname !== '/finance') {
+            history.pushState({ view: 'access-denied' }, '', '/finance');
           }
-        } else if (window.location.pathname !== '/finance') {
-          history.pushState({ view: 'finance-management' }, '', '/finance');
+        } else if (res && res.status === 401) {
+          // Handled by handleSessionExpired
+        } else {
+          this.showToast(res?.message || 'تعذر التحقق من صلاحية الوصول للإدارة المالية.', 'error');
         }
-      } else {
-        // 403 Forbidden: Render Access Denied screen
-        this.setAccessDeniedDept('Finance', 'Accountants, IT, and CEO');
-        this.showView('access-denied');
-        if (window.location.pathname !== '/finance') {
-          history.pushState({ view: 'access-denied' }, '', '/finance');
-        }
+      } catch (err) {
+        console.error('Error entering Finance department:', err);
+        this.showToast('حدث خطأ أثناء فتح الإدارة المالية.', 'error');
       }
     } else if (dept === 'transportation') {
       // Backend authorization check
-      const res = await ChatApi.verifyTransportationAccess();
-      if (res.success && res.status !== 403) {
-        this.showView('transportation');
-        if (window.location.pathname !== '/transportation') {
-          history.pushState({ view: 'transportation' }, '', '/transportation');
+      try {
+        const res = await ChatApi.verifyTransportationAccess();
+        if (res && res.success && res.status !== 403) {
+          this.showView('transportation');
+          if (window.location.pathname !== '/transportation') {
+            history.pushState({ view: 'transportation' }, '', '/transportation');
+          }
+        } else if (res && res.status === 403) {
+          // 403 Forbidden: Render Access Denied screen
+          this.setAccessDeniedDept('Transportation', 'CEO, IT, and Transportation Manager');
+          this.showView('access-denied');
+          if (window.location.pathname !== '/transportation') {
+            history.pushState({ view: 'access-denied' }, '', '/transportation');
+          }
+        } else if (res && res.status === 401) {
+          // Handled by handleSessionExpired
+        } else {
+          this.showToast(res?.message || 'تعذر التحقق من صلاحية الوصول لإدارة النقل.', 'error');
         }
-      } else {
-        // 403 Forbidden: Render Access Denied screen
-        this.setAccessDeniedDept('Transportation', 'CEO, IT, and Transportation Manager');
-        this.showView('access-denied');
-        if (window.location.pathname !== '/transportation') {
-          history.pushState({ view: 'access-denied' }, '', '/transportation');
-        }
+      } catch (err) {
+        console.error('Error entering Transportation department:', err);
+        this.showToast('حدث خطأ أثناء فتح إدارة النقل.', 'error');
       }
     } else if (dept === 'storage') {
       // Backend authorization check
-      const res = await ChatApi.verifyStorageAccess();
-      if (res.success && res.status !== 403) {
-        this.showView('storage');
-        const user = chatState.currentUser || ChatApi.getCurrentUser();
-        if (window.StorageApp) {
-          window.StorageApp.init();
-          window.StorageApp.updateUserBadge(user);
+      try {
+        const res = await ChatApi.verifyStorageAccess();
+        if (res && res.success && res.status !== 403) {
+          this.showView('storage');
+          const user = chatState.currentUser || ChatApi.getCurrentUser();
+          if (window.StorageApp) {
+            window.StorageApp.init();
+            window.StorageApp.updateUserBadge(user);
+            if (subRoute && subRoute !== '/storage' && subRoute !== '/departments/storage') {
+              window.StorageApp.handleRoute(subRoute);
+            } else {
+              window.StorageApp.showDashboardHub();
+            }
+          }
           if (subRoute && subRoute !== '/storage' && subRoute !== '/departments/storage') {
-            window.StorageApp.handleRoute(subRoute);
-          } else {
-            window.StorageApp.showDashboardHub();
+            if (window.location.pathname !== subRoute) {
+              history.pushState({ view: 'storage', subRoute }, '', subRoute);
+            }
+          } else if (window.location.pathname !== '/storage') {
+            history.pushState({ view: 'storage' }, '', '/storage');
           }
-        }
-        if (subRoute && subRoute !== '/storage' && subRoute !== '/departments/storage') {
-          if (window.location.pathname !== subRoute) {
-            history.pushState({ view: 'storage', subRoute }, '', subRoute);
+        } else if (res && res.status === 403) {
+          // 403 Forbidden: Render Access Denied screen
+          this.setAccessDeniedDept('Storage', 'CEO, IT, and Storage Manager');
+          this.showView('access-denied');
+          if (window.location.pathname !== '/storage') {
+            history.pushState({ view: 'access-denied' }, '', '/storage');
           }
-        } else if (window.location.pathname !== '/storage') {
-          history.pushState({ view: 'storage' }, '', '/storage');
+        } else if (res && res.status === 401) {
+          // Handled by handleSessionExpired
+        } else {
+          this.showToast(res?.message || 'تعذر التحقق من صلاحية الوصول لإدارة المستودعات.', 'error');
         }
-      } else {
-        // 403 Forbidden: Render Access Denied screen
-        this.setAccessDeniedDept('Storage', 'CEO, IT, and Storage Manager');
-        this.showView('access-denied');
-        if (window.location.pathname !== '/storage') {
-          history.pushState({ view: 'access-denied' }, '', '/storage');
-        }
+      } catch (err) {
+        console.error('Error entering Storage department:', err);
+        this.showToast('حدث خطأ أثناء فتح إدارة المستودعات.', 'error');
       }
     } else if (dept === 'management') {
       // Backend authorization check
-      const res = await ChatApi.verifyManagementAccess();
-      if (res.success && res.status !== 403) {
-        this.showView('management');
-        const user = chatState.currentUser || ChatApi.getCurrentUser();
-        if (window.ManagementApp) {
-          window.ManagementApp.init();
-          window.ManagementApp.updateUserBadge(user);
+      try {
+        const res = await ChatApi.verifyManagementAccess();
+        if (res && res.success && res.status !== 403) {
+          this.showView('management');
+          const user = chatState.currentUser || ChatApi.getCurrentUser();
+          if (window.ManagementApp) {
+            window.ManagementApp.init();
+            window.ManagementApp.updateUserBadge(user);
+            if (subRoute && subRoute !== '/management') {
+              window.ManagementApp.handleRoute(subRoute);
+            } else {
+              window.ManagementApp.showLandingHub();
+            }
+          }
           if (subRoute && subRoute !== '/management') {
-            window.ManagementApp.handleRoute(subRoute);
-          } else {
-            window.ManagementApp.showLandingHub();
+            if (window.location.pathname !== subRoute) {
+              history.pushState({ view: 'management', subRoute }, '', subRoute);
+            }
+          } else if (window.location.pathname !== '/management') {
+            history.pushState({ view: 'management' }, '', '/management');
           }
-        }
-        if (subRoute && subRoute !== '/management') {
-          if (window.location.pathname !== subRoute) {
-            history.pushState({ view: 'management', subRoute }, '', subRoute);
+        } else if (res && res.status === 403) {
+          // 403 Forbidden: Render Access Denied screen
+          this.setAccessDeniedDept('Management', 'CEO, IT, and Factory Manager');
+          this.showView('access-denied');
+          if (window.location.pathname !== '/management') {
+            history.pushState({ view: 'access-denied' }, '', '/management');
           }
-        } else if (window.location.pathname !== '/management') {
-          history.pushState({ view: 'management' }, '', '/management');
+        } else if (res && res.status === 401) {
+          // Handled by handleSessionExpired
+        } else {
+          this.showToast(res?.message || 'تعذر التحقق من صلاحية الوصول للإدارة العامة.', 'error');
         }
-      } else {
-        // 403 Forbidden: Render Access Denied screen
-        this.setAccessDeniedDept('Management', 'CEO, IT, and Factory Manager');
-        this.showView('access-denied');
-        if (window.location.pathname !== '/management') {
-          history.pushState({ view: 'access-denied' }, '', '/management');
-        }
+      } catch (err) {
+        console.error('Error entering Management department:', err);
+        this.showToast('حدث خطأ أثناء فتح الإدارة العامة.', 'error');
       }
     } else if (dept === 'control-monitoring') {
-      const res = await ChatApi.verifyControlMonitoringAccess();
-      if (res.success && res.status !== 403) {
-        this.showView('control-monitoring');
-        const user = chatState.currentUser || ChatApi.getCurrentUser();
-        if (window.ControlMonitoringApp) {
-          window.ControlMonitoringApp.init();
-          window.ControlMonitoringApp.updateUserBadge(user);
+      try {
+        const res = await ChatApi.verifyControlMonitoringAccess();
+        if (res && res.success && res.status !== 403) {
+          this.showView('control-monitoring');
+          const user = chatState.currentUser || ChatApi.getCurrentUser();
+          if (window.ControlMonitoringApp) {
+            window.ControlMonitoringApp.init();
+            window.ControlMonitoringApp.updateUserBadge(user);
+            if (subRoute && subRoute !== '/control-monitoring') {
+              window.ControlMonitoringApp.handleRoute(subRoute);
+            } else {
+              window.ControlMonitoringApp.showMainPage();
+              window.ControlMonitoringApp.loadStats();
+              window.ControlMonitoringApp.loadForms();
+            }
+          }
           if (subRoute && subRoute !== '/control-monitoring') {
-            window.ControlMonitoringApp.handleRoute(subRoute);
-          } else {
-            window.ControlMonitoringApp.showMainPage();
-            window.ControlMonitoringApp.loadStats();
-            window.ControlMonitoringApp.loadForms();
+            if (window.location.pathname !== subRoute) {
+              history.pushState({ view: 'control-monitoring', subRoute }, '', subRoute);
+            }
+          } else if (window.location.pathname !== '/control-monitoring') {
+            history.pushState({ view: 'control-monitoring' }, '', '/control-monitoring');
           }
-        }
-        if (subRoute && subRoute !== '/control-monitoring') {
-          if (window.location.pathname !== subRoute) {
-            history.pushState({ view: 'control-monitoring', subRoute }, '', subRoute);
+        } else if (res && res.status === 403) {
+          this.setAccessDeniedDept('ControlMonitoring', 'Control & Monitoring Employees, IT, and CEO');
+          this.showView('access-denied');
+          if (window.location.pathname !== '/control-monitoring') {
+            history.pushState({ view: 'access-denied' }, '', '/control-monitoring');
           }
-        } else if (window.location.pathname !== '/control-monitoring') {
-          history.pushState({ view: 'control-monitoring' }, '', '/control-monitoring');
+        } else if (res && res.status === 401) {
+          // Handled by handleSessionExpired
+        } else {
+          this.showToast(res?.message || 'تعذر التحقق من صلاحية الوصول لقسم التحكم والمراقبة.', 'error');
         }
-      } else {
-        this.setAccessDeniedDept('ControlMonitoring', 'Control & Monitoring Employees, IT, and CEO');
-        this.showView('access-denied');
-        if (window.location.pathname !== '/control-monitoring') {
-          history.pushState({ view: 'access-denied' }, '', '/control-monitoring');
-        }
+      } catch (err) {
+        console.error('Error entering Control & Monitoring department:', err);
+        this.showToast('حدث خطأ أثناء فتح قسم التحكم والمراقبة.', 'error');
       }
     } else if (dept === 'attendance') {
-      const res = await ChatApi.verifyAttendanceAccess();
-      if (res.success && res.status !== 403) {
-        this.showView('attendance');
-        const user = chatState.currentUser || ChatApi.getCurrentUser();
-        if (window.AttendanceApp) {
-          window.AttendanceApp.init();
-          window.AttendanceApp.updateUserBadge(user);
-          window.AttendanceApp.loadAttendanceData();
+      try {
+        const res = await ChatApi.verifyAttendanceAccess();
+        if (res && res.success && res.status !== 403) {
+          this.showView('attendance');
+          const user = chatState.currentUser || ChatApi.getCurrentUser();
+          if (window.AttendanceApp) {
+            window.AttendanceApp.init();
+            window.AttendanceApp.updateUserBadge(user);
+            window.AttendanceApp.loadAttendanceData();
+          }
+          if (window.location.pathname !== '/attendance') {
+            history.pushState({ view: 'attendance' }, '', '/attendance');
+          }
+        } else if (res && res.status === 403) {
+          this.setAccessDeniedDept('Attendance', 'Authorized Personnel');
+          this.showView('access-denied');
+          if (window.location.pathname !== '/attendance') {
+            history.pushState({ view: 'access-denied' }, '', '/attendance');
+          }
+        } else if (res && res.status === 401) {
+          // Handled by handleSessionExpired
+        } else {
+          this.showToast(res?.message || 'تعذر التحقق من صلاحية الوصول لقسم الحضور والانصراف.', 'error');
         }
-        if (window.location.pathname !== '/attendance') {
-          history.pushState({ view: 'attendance' }, '', '/attendance');
-        }
-      } else {
-        this.setAccessDeniedDept('Attendance', 'Authorized Personnel');
-        this.showView('access-denied');
-        if (window.location.pathname !== '/attendance') {
-          history.pushState({ view: 'access-denied' }, '', '/attendance');
-        }
+      } catch (err) {
+        console.error('Error entering Attendance department:', err);
+        this.showToast('حدث خطأ أثناء فتح قسم الحضور والانصراف.', 'error');
       }
     } else if (dept === 'laboratory') {
-      const res = await ChatApi.verifyLaboratoryAccess();
-      if (res.success && res.status !== 403) {
-        this.showView('laboratory');
-        const user = chatState.currentUser || ChatApi.getCurrentUser();
-        if (window.LaboratoryApp) {
-          window.LaboratoryApp.init();
-          window.LaboratoryApp.updateUserBadge(user);
-          await window.LaboratoryApp.resolveAccessAndRedirect(subRoute);
+      try {
+        const res = await ChatApi.verifyLaboratoryAccess();
+        if (res && res.success && res.status !== 403) {
+          this.showView('laboratory');
+          const user = chatState.currentUser || ChatApi.getCurrentUser();
+          if (window.LaboratoryApp) {
+            window.LaboratoryApp.init();
+            window.LaboratoryApp.updateUserBadge(user);
+            await window.LaboratoryApp.resolveAccessAndRedirect(subRoute);
+          }
+          const defaultSec = res.data && res.data.defaultSection ? res.data.defaultSection : 'PHYSICAL';
+          const targetPath = subRoute || (defaultSec === 'CHEMICAL' ? '/laboratory/chemical' : '/laboratory/physical');
+          if (window.location.pathname !== targetPath) {
+            history.pushState({ view: 'laboratory', subRoute: targetPath }, '', targetPath);
+          }
+        } else if (res && res.status === 403) {
+          this.setAccessDeniedDept('Laboratory', 'Physical / Chemical Laboratory Personnel, IT, and CEO');
+          this.showView('access-denied');
+          if (window.location.pathname !== '/laboratory') {
+            history.pushState({ view: 'access-denied' }, '', '/laboratory');
+          }
+        } else if (res && res.status === 401) {
+          // Handled by handleSessionExpired
+        } else {
+          this.showToast(res?.message || 'تعذر التحقق من صلاحية الوصول للمعمل.', 'error');
         }
-        const defaultSec = res.data && res.data.defaultSection ? res.data.defaultSection : 'PHYSICAL';
-        const targetPath = subRoute || (defaultSec === 'CHEMICAL' ? '/laboratory/chemical' : '/laboratory/physical');
-        if (window.location.pathname !== targetPath) {
-          history.pushState({ view: 'laboratory', subRoute: targetPath }, '', targetPath);
-        }
-      } else {
-        this.setAccessDeniedDept('Laboratory', 'Physical / Chemical Laboratory Personnel, IT, and CEO');
-        this.showView('access-denied');
-        if (window.location.pathname !== '/laboratory') {
-          history.pushState({ view: 'access-denied' }, '', '/laboratory');
-        }
+      } catch (err) {
+        console.error('Error entering Laboratory department:', err);
+        this.showToast('حدث خطأ أثناء فتح قسم المعمل.', 'error');
       }
     } else if (dept === 'production') {
-      const res = await ChatApi.verifyProductionAccess();
-      if (res.success && res.status !== 403) {
-        this.showView('production');
-        const user = chatState.currentUser || ChatApi.getCurrentUser();
-        if (window.ProductionApp) {
-          window.ProductionApp.init();
-          window.ProductionApp.updateUserBadge(user);
-          if (subRoute && subRoute !== '/production') {
-            window.ProductionApp.handleRoute(subRoute);
-          } else {
-            window.ProductionApp.loadStats();
-            window.ProductionApp.showSection('inventory');
+      try {
+        const res = await ChatApi.verifyProductionAccess();
+        if (res && res.success && res.status !== 403) {
+          this.showView('production');
+          const user = chatState.currentUser || ChatApi.getCurrentUser();
+          if (window.ProductionApp) {
+            window.ProductionApp.init();
+            window.ProductionApp.updateUserBadge(user);
+            if (subRoute && subRoute !== '/production') {
+              window.ProductionApp.handleRoute(subRoute);
+            } else {
+              window.ProductionApp.loadStats();
+              window.ProductionApp.showSection('inventory');
+            }
           }
+          if (window.location.pathname !== '/production') {
+            history.pushState({ view: 'production' }, '', '/production');
+          }
+        } else if (res && res.status === 403) {
+          this.setAccessDeniedDept('Production', 'Production Manager, Production Employees, IT, and CEO');
+          this.showView('access-denied');
+          if (window.location.pathname !== '/production') {
+            history.pushState({ view: 'access-denied' }, '', '/production');
+          }
+        } else if (res && res.status === 401) {
+          // Handled by handleSessionExpired
+        } else {
+          this.showToast(res?.message || 'تعذر التحقق من صلاحية الوصول لإدارة الإنتاج.', 'error');
         }
-        if (window.location.pathname !== '/production') {
-          history.pushState({ view: 'production' }, '', '/production');
-        }
-      } else {
-        this.setAccessDeniedDept('Production', 'Production Manager, Production Employees, IT, and CEO');
-        this.showView('access-denied');
-        if (window.location.pathname !== '/production') {
-          history.pushState({ view: 'access-denied' }, '', '/production');
-        }
+      } catch (err) {
+        console.error('Error entering Production department:', err);
+        this.showToast('حدث خطأ أثناء فتح إدارة الإنتاج.', 'error');
       }
     }
   }
@@ -1321,6 +1393,7 @@ class ChatApp {
     else if (deptName === 'ControlMonitoring') deptAr = 'قسم التحكم والمراقبة';
     else if (deptName === 'Laboratory') deptAr = 'قسم المعمل (الفيزيائي / الكيميائي)';
     else if (deptName === 'Production') deptAr = 'إدارة وقسم الإنتاج';
+    else if (deptName === 'Attendance') deptAr = 'قسم الحضور والانصراف';
 
     let rolesAr = allowedRoles;
     if (allowedRoles.includes('Accountants')) rolesAr = 'المحاسبون، تقنية المعلومات، والرئيس التنفيذي';
@@ -1329,6 +1402,8 @@ class ChatApp {
     else if (allowedRoles.includes('Factory Manager')) rolesAr = 'الرئيس التنفيذي، تقنية المعلومات، ومدير المصنع';
     else if (allowedRoles.includes('Control & Monitoring Employees')) rolesAr = 'الرئيس التنفيذي، تقنية المعلومات، وموظفو قسم التحكم والمراقبة';
     else if (allowedRoles.includes('Laboratory')) rolesAr = 'الرئيس التنفيذي، تقنية المعلومات، وموظفو المعمل الفيزيائي والكيميائي';
+    else if (allowedRoles.includes('Production')) rolesAr = 'الرئيس التنفيذي، تقنية المعلومات، مدير الإنتاج، وموظفو الإنتاج';
+    else if (allowedRoles.includes('Attendance') || allowedRoles.includes('Authorized Personnel')) rolesAr = 'الرئيس التنفيذي، تقنية المعلومات، ومسؤول الحضور والانصراف';
 
     if (this.accessDeniedMsg) {
       this.accessDeniedMsg.innerHTML = `ليس لديك صلاحية للوصول إلى <strong>${deptAr}</strong>.`;

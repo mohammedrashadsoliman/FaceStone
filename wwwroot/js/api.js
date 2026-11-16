@@ -118,6 +118,10 @@ class ChatApi {
       ...(options.headers || {})
     };
 
+    if (!headers['Accept']) {
+      headers['Accept'] = 'application/json';
+    }
+
     if (!(options.body instanceof FormData) && !headers['Content-Type']) {
       headers['Content-Type'] = 'application/json';
     }
@@ -143,6 +147,24 @@ class ChatApi {
 
       const data = await response.json().catch(() => null);
 
+      if (data === null) {
+        if (response.ok) {
+          return {
+            success: true,
+            status: response.status,
+            data: null,
+            message: response.statusText || 'Success'
+          };
+        } else {
+          return {
+            success: false,
+            status: response.status,
+            message: `Request failed (${response.status})`,
+            errors: []
+          };
+        }
+      }
+
       if (!response.ok) {
         return {
           success: false,
@@ -150,6 +172,10 @@ class ChatApi {
           message: data?.message || data?.errors?.[0] || `Request failed (${response.status})`,
           errors: data?.errors || []
         };
+      }
+
+      if (typeof data === 'object' && data !== null && !('status' in data)) {
+        data.status = response.status;
       }
 
       return data;

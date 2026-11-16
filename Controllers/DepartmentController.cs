@@ -253,6 +253,24 @@ public class DepartmentController : ControllerBase
     }
 
     /// <summary>
+    /// Backend authorization guard for Attendance department.
+    /// Returns 200 OK for CEO, IT, and ATTENDANCE_EMPLOYEE.
+    /// Returns 403 Forbidden for any other authenticated role.
+    /// </summary>
+    [HttpGet("attendance")]
+    [HttpGet("/api/departments/attendance")]
+    [Authorize(Policy = "AttendanceAccess")]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public IActionResult VerifyAttendanceAccess()
+    {
+        var role = User.FindFirst(ClaimTypes.Role)?.Value ?? "Unknown";
+        _logger.LogInformation("Attendance department access verified for role: {Role}", role);
+        return Ok(ApiResponse.Ok("Access Granted: Authorized for Attendance Department."));
+    }
+
+    /// <summary>
     /// Direct route protection for /transportation endpoint.
     /// Supports both direct API callers (returns 200 / 403 / 401) and browser navigation.
     /// </summary>
@@ -427,7 +445,6 @@ public class DepartmentController : ControllerBase
     /// </summary>
     [HttpGet("/attendance")]
     [HttpGet("/attendance/{*subpath}")]
-    [HttpGet("attendance")]
     public IActionResult HandleAttendanceDirect()
     {
         if (ShouldServeSpaHtml())
@@ -554,7 +571,6 @@ public class DepartmentController : ControllerBase
     /// Returns 403 Forbidden for unauthorized roles.
     /// </summary>
     [HttpGet("/api/departments/production")]
-    [HttpGet("/api/department/production")]
     [HttpGet("production")]
     [Authorize]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status200OK)]
