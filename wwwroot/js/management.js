@@ -68,8 +68,21 @@
       this.viewSuppliers = document.getElementById('mgmt-view-suppliers');
       this.viewSupplierDetails = document.getElementById('mgmt-view-supplier-details');
       this.viewLaboratory = document.getElementById('mgmt-view-laboratory');
+      this.viewProduction = document.getElementById('mgmt-view-production');
+      this.viewAttendance = document.getElementById('mgmt-view-attendance');
+      this.viewActivityFeed = document.getElementById('mgmt-view-activity-feed');
+      this.viewAlerts = document.getElementById('mgmt-view-alerts');
 
-      // Subview Back Buttons
+      // Executive Dashboard Elements
+      this.tabAlertsCount = document.getElementById('tab-alerts-count');
+      this.mgmtExecAlertsSection = document.getElementById('mgmt-exec-alerts-section');
+      this.mgmtBtnViewAllAlerts = document.getElementById('mgmt-btn-view-all-alerts');
+      this.mgmtExecAlertsList = document.getElementById('mgmt-exec-alerts-list');
+      this.mgmtDeptStatusGrid = document.getElementById('mgmt-dept-status-grid');
+      this.mgmtBtnViewAllActivity = document.getElementById('mgmt-btn-view-all-activity');
+      this.mgmtExecActivitiesList = document.getElementById('mgmt-exec-activities-list');
+
+      // Subview Back & Refresh Buttons
       this.btnTransBack = document.getElementById('mgmt-trans-back-btn');
       this.btnStorageBack = document.getElementById('mgmt-storage-back-btn');
       this.btnFinBack = document.getElementById('mgmt-fin-back-btn');
@@ -77,6 +90,48 @@
       this.btnSupBack = document.getElementById('mgmt-sup-back-btn');
       this.btnSupDetailBack = document.getElementById('mgmt-supdetail-back-btn');
       this.btnLabBack = document.getElementById('mgmt-lab-back-btn');
+      this.btnLabRefresh = document.getElementById('mgmt-lab-btn-refresh');
+      this.btnProdBack = document.getElementById('mgmt-prod-back-btn');
+      this.btnProdRefresh = document.getElementById('mgmt-prod-btn-refresh');
+      this.btnAttBack = document.getElementById('mgmt-att-back-btn');
+      this.btnAttRefresh = document.getElementById('mgmt-att-btn-refresh');
+      this.btnActivityBack = document.getElementById('mgmt-activity-back-btn');
+      this.btnActivityRefresh = document.getElementById('mgmt-activity-btn-refresh');
+      this.btnAlertsBack = document.getElementById('mgmt-alerts-back-btn');
+      this.btnAlertsRefresh = document.getElementById('mgmt-alerts-btn-refresh');
+
+      // Laboratory Subview Elements
+      this.labReportsTbody = document.getElementById('mgmt-lab-reports-tbody');
+      this.labReportsBadge = document.getElementById('mgmt-lab-reports-badge');
+      this.labCertsTbody = document.getElementById('mgmt-lab-certs-tbody');
+      this.labCertsBadge = document.getElementById('mgmt-lab-certs-badge');
+
+      // Production Subview Elements
+      this.prodProcessesBadge = document.getElementById('mgmt-prod-processes-badge');
+      this.prodProcessesTbody = document.getElementById('mgmt-prod-processes-tbody');
+      this.prodOrdersBadge = document.getElementById('mgmt-prod-orders-badge');
+      this.prodOrdersTbody = document.getElementById('mgmt-prod-orders-tbody');
+
+      // Attendance Subview Elements
+      this.attDatePicker = document.getElementById('mgmt-att-date-picker');
+      this.attBtnApply = document.getElementById('mgmt-att-btn-apply');
+      this.attSubmissionStatus = document.getElementById('mgmt-att-submission-status');
+      this.attEmployeesBadge = document.getElementById('mgmt-att-employees-badge');
+      this.attendanceTbody = document.getElementById('mgmt-attendance-tbody');
+
+      // Activity Feed Subview Elements
+      this.feedFilterDept = document.getElementById('mgmt-feed-filter-dept');
+      this.feedDateFrom = document.getElementById('mgmt-feed-date-from');
+      this.feedDateTo = document.getElementById('mgmt-feed-date-to');
+      this.feedSearchInput = document.getElementById('mgmt-feed-search-input');
+      this.feedBtnApply = document.getElementById('mgmt-feed-btn-apply');
+      this.feedBtnReset = document.getElementById('mgmt-feed-btn-reset');
+      this.feedCountBadge = document.getElementById('mgmt-feed-count-badge');
+      this.activityFeedTbody = document.getElementById('mgmt-activity-feed-tbody');
+
+      // Alerts Subview Elements
+      this.alertsViewBadge = document.getElementById('mgmt-alerts-view-badge');
+      this.fullAlertsContainer = document.getElementById('mgmt-full-alerts-container');
 
       // Laboratory Traceability Elements
       this.labTraceInput = document.getElementById('mgmt-lab-trace-input');
@@ -173,14 +228,25 @@
         this.cardLaboratory.addEventListener('click', () => this.navigateTo('/management/laboratory'));
       }
       if (this.cardProduction) {
-        this.cardProduction.addEventListener('click', () => {
-          if (window.chatApp) {
-            window.chatApp.enterDepartment('production');
-          } else {
-            window.location.href = '/production';
-          }
-        });
+        this.cardProduction.addEventListener('click', () => this.navigateTo('/management/production'));
       }
+
+      // Top Navigation Tabs
+      document.querySelectorAll('.mgmt-nav-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+          const tabName = tab.getAttribute('data-tab');
+          if (tabName === 'hub') this.navigateTo('/management');
+          else if (tabName === 'transportation') this.navigateTo('/management/transportation');
+          else if (tabName === 'storage') this.navigateTo('/management/storage');
+          else if (tabName === 'laboratory') this.navigateTo('/management/laboratory');
+          else if (tabName === 'production') this.navigateTo('/management/production');
+          else if (tabName === 'finance') this.navigateTo('/management/finance');
+          else if (tabName === 'attendance') this.navigateTo('/management/attendance');
+          else if (tabName === 'suppliers') this.navigateTo('/management/suppliers');
+          else if (tabName === 'activity') this.navigateTo('/management/activity');
+          else if (tabName === 'alerts') this.navigateTo('/management/alerts');
+        });
+      });
 
       // Subview Back Buttons
       if (this.btnTransBack) this.btnTransBack.addEventListener('click', () => this.navigateTo('/management'));
@@ -190,6 +256,43 @@
       if (this.btnSupBack) this.btnSupBack.addEventListener('click', () => this.navigateTo('/management'));
       if (this.btnSupDetailBack) this.btnSupDetailBack.addEventListener('click', () => this.navigateTo('/management/suppliers'));
       if (this.btnLabBack) this.btnLabBack.addEventListener('click', () => this.navigateTo('/management'));
+      if (this.btnProdBack) this.btnProdBack.addEventListener('click', () => this.navigateTo('/management'));
+      if (this.btnAttBack) this.btnAttBack.addEventListener('click', () => this.navigateTo('/management'));
+      if (this.btnActivityBack) this.btnActivityBack.addEventListener('click', () => this.navigateTo('/management'));
+      if (this.btnAlertsBack) this.btnAlertsBack.addEventListener('click', () => this.navigateTo('/management'));
+
+      // Subview Refresh Buttons
+      if (this.btnLabRefresh) this.btnLabRefresh.addEventListener('click', () => this.loadLaboratoryData());
+      if (this.btnProdRefresh) this.btnProdRefresh.addEventListener('click', () => this.loadProductionData());
+      if (this.btnAttRefresh) this.btnAttRefresh.addEventListener('click', () => this.loadAttendanceData());
+      if (this.btnActivityRefresh) this.btnActivityRefresh.addEventListener('click', () => this.loadActivityFeed());
+      if (this.btnAlertsRefresh) this.btnAlertsRefresh.addEventListener('click', () => this.loadAlertsData());
+
+      // Landing Hub Section Navigation Buttons
+      if (this.mgmtBtnViewAllAlerts) this.mgmtBtnViewAllAlerts.addEventListener('click', () => this.navigateTo('/management/alerts'));
+      if (this.mgmtBtnViewAllActivity) this.mgmtBtnViewAllActivity.addEventListener('click', () => this.navigateTo('/management/activity'));
+
+      // Attendance Filter Event
+      if (this.attBtnApply) {
+        this.attBtnApply.addEventListener('click', () => {
+          const d = this.attDatePicker ? this.attDatePicker.value : null;
+          this.loadAttendanceData(d);
+        });
+      }
+
+      // Activity Feed Filters Events
+      if (this.feedBtnApply) {
+        this.feedBtnApply.addEventListener('click', () => this.loadActivityFeed());
+      }
+      if (this.feedBtnReset) {
+        this.feedBtnReset.addEventListener('click', () => {
+          if (this.feedFilterDept) this.feedFilterDept.value = '';
+          if (this.feedDateFrom) this.feedDateFrom.value = '';
+          if (this.feedDateTo) this.feedDateTo.value = '';
+          if (this.feedSearchInput) this.feedSearchInput.value = '';
+          this.loadActivityFeed();
+        });
+      }
 
       // Laboratory Traceability Events
       if (this.labTraceBtn) {
@@ -402,13 +505,25 @@
       });
 
       // Inter-department domestic event listeners
-      ['transportation:updated', 'storage:updated', 'finance:updated', 'facestone:po:updated'].forEach(evtName => {
+      [
+        'transportation:updated',
+        'storage:updated',
+        'finance:updated',
+        'facestone:po:updated',
+        'facestone:production-order-changed',
+        'facestone:warehouse-inventory-changed',
+        'facestone:realtime:form-approved',
+        'facestone:realtime:form-rejected',
+        'attendance:updated',
+        'laboratory:updated',
+        'production:updated'
+      ].forEach(evtName => {
         document.addEventListener(evtName, () => {
           this.handleRealtimeUpdate('all');
         });
       });
 
-      // Background periodic polling (every 6 seconds while Management page is visible)
+      // Background periodic polling (every 10 seconds while Management page is visible)
       this.startRealtimePolling();
     }
 
@@ -423,12 +538,15 @@
 
     handleRealtimeUpdate(dept) {
       if (!this.isManagementPageVisible()) return;
-      // Always refresh overview metrics so cards stay fresh
-      this.loadOverview();
-      // Silently refresh active subview without loading flicker
-      if (this.currentView !== 'hub') {
-        this.loadData(true);
-      }
+      if (this.debounceUpdateTimer) clearTimeout(this.debounceUpdateTimer);
+      this.debounceUpdateTimer = setTimeout(() => {
+        // Always refresh overview and executive metrics so cards stay fresh
+        this.loadOverview();
+        // Silently refresh active subview without loading flicker
+        if (this.currentView !== 'hub') {
+          this.loadData(true);
+        }
+      }, 350);
     }
 
     startRealtimePolling() {
@@ -437,7 +555,7 @@
         if (this.isManagementPageVisible()) {
           this.handleRealtimeUpdate('poll');
         }
-      }, 6000);
+      }, 10000);
     }
 
     /* ------------------------------------------------------------------------
@@ -469,6 +587,14 @@
         this.showSuppliersView(filterQuery);
       } else if (route === '/management/laboratory') {
         this.showLaboratoryView(filterQuery);
+      } else if (route === '/management/production') {
+        this.showProductionView(filterQuery);
+      } else if (route === '/management/attendance') {
+        this.showAttendanceView(filterQuery);
+      } else if (route === '/management/activity') {
+        this.showActivityFeedView(filterQuery);
+      } else if (route === '/management/alerts') {
+        this.showAlertsView();
       } else if (route.startsWith('/management/suppliers/')) {
         const supplierId = decodeURIComponent(route.replace('/management/suppliers/', ''));
         this.showSupplierDetailsView(supplierId);
@@ -510,11 +636,39 @@
         this.viewLaboratory.classList.remove('active');
         this.viewLaboratory.style.display = 'none';
       }
+      if (this.viewProduction) {
+        this.viewProduction.classList.remove('active');
+        this.viewProduction.style.display = 'none';
+      }
+      if (this.viewAttendance) {
+        this.viewAttendance.classList.remove('active');
+        this.viewAttendance.style.display = 'none';
+      }
+      if (this.viewActivityFeed) {
+        this.viewActivityFeed.classList.remove('active');
+        this.viewActivityFeed.style.display = 'none';
+      }
+      if (this.viewAlerts) {
+        this.viewAlerts.classList.remove('active');
+        this.viewAlerts.style.display = 'none';
+      }
+    }
+
+    updateActiveTab(tabName) {
+      const tabs = document.querySelectorAll('.mgmt-nav-tab');
+      tabs.forEach(tab => {
+        if (tab.getAttribute('data-tab') === tabName) {
+          tab.classList.add('active');
+        } else {
+          tab.classList.remove('active');
+        }
+      });
     }
 
     showLandingHub() {
       this.currentView = 'hub';
       this.hideAllViews();
+      this.updateActiveTab('hub');
       if (this.hubView) {
         this.hubView.classList.add('active');
         this.hubView.style.display = 'block';
@@ -526,6 +680,7 @@
     showTransportationView(filterQuery = null) {
       this.currentView = 'transportation';
       this.hideAllViews();
+      this.updateActiveTab('transportation');
       if (this.viewTransportation) {
         this.viewTransportation.classList.add('active');
         this.viewTransportation.style.display = 'block';
@@ -541,6 +696,7 @@
     showStorageView(filterQuery = null) {
       this.currentView = 'storage';
       this.hideAllViews();
+      this.updateActiveTab('storage');
       if (this.viewStorage) {
         this.viewStorage.classList.add('active');
         this.viewStorage.style.display = 'block';
@@ -556,6 +712,7 @@
     showFinanceView(filterQuery = null) {
       this.currentView = 'finance';
       this.hideAllViews();
+      this.updateActiveTab('finance');
       if (this.viewFinance) {
         this.viewFinance.classList.add('active');
         this.viewFinance.style.display = 'block';
@@ -571,6 +728,7 @@
     showEmployeesView(filterQuery = null) {
       this.currentView = 'employees';
       this.hideAllViews();
+      this.updateActiveTab('employees');
       if (this.viewEmployees) {
         this.viewEmployees.classList.add('active');
         this.viewEmployees.style.display = 'block';
@@ -586,6 +744,7 @@
     showSuppliersView(filterQuery = null) {
       this.currentView = 'suppliers';
       this.hideAllViews();
+      this.updateActiveTab('suppliers');
       if (this.viewSuppliers) {
         this.viewSuppliers.classList.add('active');
         this.viewSuppliers.style.display = 'block';
@@ -602,6 +761,7 @@
       this.currentView = 'supplier-details';
       this.currentSupplierId = supplierId;
       this.hideAllViews();
+      this.updateActiveTab('suppliers');
       if (this.viewSupplierDetails) {
         this.viewSupplierDetails.classList.add('active');
         this.viewSupplierDetails.style.display = 'block';
@@ -613,6 +773,7 @@
     showLaboratoryView(filterQuery = null) {
       this.currentView = 'laboratory';
       this.hideAllViews();
+      this.updateActiveTab('laboratory');
       if (this.viewLaboratory) {
         this.viewLaboratory.classList.add('active');
         this.viewLaboratory.style.display = 'block';
@@ -621,6 +782,62 @@
         this.labTraceInput.value = filterQuery;
         this.executeLaboratoryTrace(filterQuery);
       }
+      this.loadLaboratoryData();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    showProductionView(filterQuery = null) {
+      this.currentView = 'production';
+      this.hideAllViews();
+      this.updateActiveTab('production');
+      if (this.viewProduction) {
+        this.viewProduction.classList.add('active');
+        this.viewProduction.style.display = 'block';
+      }
+      this.loadProductionData();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    showAttendanceView(filterQuery = null) {
+      this.currentView = 'attendance';
+      this.hideAllViews();
+      this.updateActiveTab('attendance');
+      if (this.viewAttendance) {
+        this.viewAttendance.classList.add('active');
+        this.viewAttendance.style.display = 'block';
+      }
+      if (this.attDatePicker && !this.attDatePicker.value) {
+        this.attDatePicker.value = new Date().toISOString().split('T')[0];
+      }
+      const chosenDate = this.attDatePicker ? this.attDatePicker.value : null;
+      this.loadAttendanceData(chosenDate);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    showActivityFeedView(filterQuery = null) {
+      this.currentView = 'activity';
+      this.hideAllViews();
+      this.updateActiveTab('activity');
+      if (this.viewActivityFeed) {
+        this.viewActivityFeed.classList.add('active');
+        this.viewActivityFeed.style.display = 'block';
+      }
+      if (filterQuery !== null && this.feedSearchInput) {
+        this.feedSearchInput.value = filterQuery;
+      }
+      this.loadActivityFeed();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    showAlertsView() {
+      this.currentView = 'alerts';
+      this.hideAllViews();
+      this.updateActiveTab('alerts');
+      if (this.viewAlerts) {
+        this.viewAlerts.classList.add('active');
+        this.viewAlerts.style.display = 'block';
+      }
+      this.loadAlertsData();
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
@@ -644,8 +861,16 @@
       } else if (this.currentView === 'supplier-details' && this.currentSupplierId) {
         await this.loadSupplierDetail(this.currentSupplierId, silent);
       } else if (this.currentView === 'laboratory') {
-        const refVal = this.labTraceInput ? this.labTraceInput.value.trim() : '';
-        if (refVal) await this.executeLaboratoryTrace(refVal);
+        await this.loadLaboratoryData(silent);
+      } else if (this.currentView === 'production') {
+        await this.loadProductionData(silent);
+      } else if (this.currentView === 'attendance') {
+        const d = this.attDatePicker ? this.attDatePicker.value : null;
+        await this.loadAttendanceData(d, silent);
+      } else if (this.currentView === 'activity') {
+        await this.loadActivityFeed(silent);
+      } else if (this.currentView === 'alerts') {
+        await this.loadAlertsData(silent);
       }
     }
 
@@ -708,9 +933,443 @@
           } catch (e) {
             console.warn('Could not load production stats in overview:', e);
           }
+
+          // Centralized Executive Monitoring Dashboard
+          await this.loadExecutiveDashboard();
         }
       } catch (err) {
         console.error('Error loading management overview:', err);
+      }
+    }
+
+    /**
+     * 1.1 Executive Centralized Monitoring Oversight
+     */
+    async loadExecutiveDashboard() {
+      try {
+        const res = await window.ChatApi.getManagementExecutiveDashboard();
+        if (res && res.success && res.data) {
+          const d = res.data;
+
+          // 1. Top 4 Executive Company KPIs
+          this.setElText('exec-total-tx', this.formatNumber(d.totalCompanyTransactions, 0));
+          this.setElText('exec-pending-tx', this.formatNumber(d.totalPendingApprovals, 0));
+          this.setElText('exec-approved-tx', this.formatNumber(d.totalApprovedTransactions, 0));
+          this.setElText('exec-alerts-count', this.formatNumber(d.activeAlertsCount, 0));
+
+          if (this.tabAlertsCount) {
+            if (d.activeAlertsCount > 0) {
+              this.tabAlertsCount.textContent = d.activeAlertsCount;
+              this.tabAlertsCount.style.display = 'inline-flex';
+            } else {
+              this.tabAlertsCount.style.display = 'none';
+            }
+          }
+
+          // 2. Today's Cross-Department Operational Snapshot Strip
+          if (d.todayProduction) {
+            const tp = d.todayProduction;
+            this.setElText('today-prod-output', `${this.formatNumber(tp.todayOutputQuantity, 2)} طن`);
+            this.setElText('today-prod-input', this.formatNumber(tp.todayInputQuantity, 2));
+            this.setElText('today-prod-waste', this.formatNumber(tp.todayWasteQuantity, 2));
+            this.setElText('today-prod-wastepct', `${(tp.todayWastePercentage || 0).toFixed(2)}%`);
+            this.setElText('today-prod-status', tp.activeProcessesCount > 0 ? `${tp.activeProcessesCount} تشغيل جاري` : 'مكتمل');
+          }
+
+          if (d.warehouseInventory) {
+            const wi = d.warehouseInventory;
+            this.setElText('today-storage-stock', `${this.formatNumber(wi.totalRawMaterialStock, 2)} طن`);
+            this.setElText('today-storage-batches', `${wi.activeBatchesCount || 0} دفعة نشطة`);
+            this.setElText('today-storage-deposit', this.formatNumber(wi.todayDepositQuantity, 2));
+            this.setElText('today-storage-issue', this.formatNumber(wi.todayIssueQuantity, 2));
+          }
+
+          if (d.todayTransportation) {
+            const tt = d.todayTransportation;
+            this.setElText('today-trans-net', `${this.formatNumber(tt.todayReceivedQuantity, 2)} طن`);
+            this.setElText('today-trans-trucks', `${tt.activeCarsToday || 0} شاحنة`);
+            this.setElText('today-trans-trips', this.formatNumber(tt.todayTripsCount, 0));
+            this.setElText('today-trans-waste', this.formatNumber(tt.todayWasteQuantity, 2));
+          }
+
+          if (d.attendanceSummary) {
+            const at = d.attendanceSummary;
+            this.setElText('today-att-rate', `${(at.attendanceRateToday || 0).toFixed(1)}%`);
+            this.setElText('today-att-present', `${at.presentToday || 0} حاضر`);
+            this.setElText('today-att-absent', `${at.absentToday || 0}`);
+            this.setElText('today-att-hours', this.formatNumber(at.totalWorkingHoursToday, 1));
+          }
+
+          if (d.financialOverview) {
+            const fo = d.financialOverview;
+            this.setElText('today-fin-contracts', this.formatCurrency(fo.totalPoContractValue));
+            this.setElText('today-fin-perf', `${(fo.contractPerformancePercentage || 0).toFixed(1)}% إنجاز`);
+            this.setElText('today-fin-delivered', this.formatCurrency(fo.totalDeliveredPoValue));
+            this.setElText('today-fin-expenses', this.formatCurrency(fo.totalExpenses));
+          }
+
+          // 3. Operational Alerts Banner in Hub
+          if (this.mgmtExecAlertsSection && this.mgmtExecAlertsList) {
+            if (d.topAlerts && d.topAlerts.length > 0) {
+              this.mgmtExecAlertsSection.style.display = 'block';
+              this.mgmtExecAlertsList.innerHTML = d.topAlerts.map(a => this.renderAlertCard(a)).join('');
+            } else {
+              this.mgmtExecAlertsSection.style.display = 'none';
+            }
+          }
+
+          // 4. Department Status Grid
+          if (this.mgmtDeptStatusGrid && d.departmentStatuses && d.departmentStatuses.length > 0) {
+            this.mgmtDeptStatusGrid.innerHTML = d.departmentStatuses.map(dept => this.renderDeptStatusCard(dept)).join('');
+          }
+
+          // 5. Recent Chronological Activities List
+          if (this.mgmtExecActivitiesList && d.recentActivities && d.recentActivities.length > 0) {
+            this.mgmtExecActivitiesList.innerHTML = d.recentActivities.slice(0, 10).map(act => this.renderActivityItem(act)).join('');
+          }
+        }
+      } catch (err) {
+        console.error('Error loading executive dashboard:', err);
+      }
+    }
+
+    renderAlertCard(a) {
+      const sevClass = (a.severity || 'WARNING').toLowerCase();
+      const icon = sevClass === 'critical' ? '🚨' : (sevClass === 'warning' ? '⚠️' : 'ℹ️');
+      return `
+        <div class="mgmt-alert-card ${sevClass}">
+          <span class="mgmt-alert-icon">${icon}</span>
+          <div class="mgmt-alert-content">
+            <div class="mgmt-alert-title">
+              <span>${this.escapeHtml(a.title)}</span>
+              <span class="mgmt-alert-dept-badge">${this.escapeHtml(a.departmentAr || a.department)}</span>
+              ${a.relatedReference ? `<span class="mgmt-code-pill" style="font-size:0.7rem;">${this.escapeHtml(a.relatedReference)}</span>` : ''}
+            </div>
+            <div class="mgmt-alert-msg">${this.escapeHtml(a.message)}</div>
+          </div>
+        </div>
+      `;
+    }
+
+    renderDeptStatusCard(dept) {
+      const stClass = dept.operationalStatus === 'CRITICAL' ? 'status-critical' : (dept.operationalStatus === 'WARNING' ? 'status-warning' : 'status-normal');
+      const stText = dept.operationalStatus === 'CRITICAL' ? 'حرج' : (dept.operationalStatus === 'WARNING' ? 'تحذير' : 'طبيعي');
+      const route = dept.route || '/management';
+      return `
+        <div class="mgmt-dept-card" onclick="window.ManagementApp.navigateTo('${route}')">
+          <div class="mgmt-dept-card-header">
+            <span class="mgmt-dept-name">${this.escapeHtml(dept.departmentNameAr)}</span>
+            <span class="mgmt-dept-status-pill ${stClass}">
+              <span class="mgmt-dept-status-dot"></span>
+              <span>${stText}</span>
+            </span>
+          </div>
+          <div class="mgmt-dept-metrics">
+            <div class="mgmt-dept-metric">
+              <span class="mgmt-dept-metric-lbl">${this.escapeHtml(dept.primaryMetricLabel || 'المؤشر الرئيسي')}</span>
+              <span class="mgmt-dept-metric-val">${this.escapeHtml(dept.primaryMetric || '-')}</span>
+            </div>
+            <div class="mgmt-dept-metric">
+              <span class="mgmt-dept-metric-lbl">${this.escapeHtml(dept.secondaryMetricLabel || 'المؤشر الثانوي')}</span>
+              <span class="mgmt-dept-metric-val">${this.escapeHtml(dept.secondaryMetric || '-')}</span>
+            </div>
+          </div>
+          <div class="mgmt-dept-footer">
+            <span>إجمالي العمليات: <b>${this.formatNumber(dept.totalTransactions, 0)}</b></span>
+            ${dept.pendingCount > 0 ? `<span class="pending-tag">معلق: ${dept.pendingCount}</span>` : `<span style="color:#059669;">معتمد: ${dept.approvedCount}</span>`}
+          </div>
+        </div>
+      `;
+    }
+
+    renderActivityItem(act) {
+      const deptAr = act.departmentAr || act.department;
+      const statusClass = act.status === 'APPROVED' || act.status === 'COMPLETED' ? 'badge-green' : (act.status === 'REJECTED' ? 'badge-red' : 'badge-gold');
+      const timeStr = this.formatDate(act.timestamp);
+      return `
+        <div class="mgmt-activity-item">
+          <div class="mgmt-activity-item-left">
+            <span class="mgmt-activity-dept-pill">${this.escapeHtml(deptAr)}</span>
+            <div>
+              <span class="mgmt-activity-desc">${this.escapeHtml(act.actionAr || act.action)}: ${this.escapeHtml(act.description || '')}</span>
+              <div class="mgmt-activity-actor">بواسطة: <b>${this.escapeHtml(act.actorName || '-')}</b> | المرجع: <code>${this.escapeHtml(act.referenceNumber || '-')}</code></div>
+            </div>
+          </div>
+          <div style="display:flex; align-items:center; gap: 8px;">
+            <span class="finance-badge-pill ${statusClass}" style="font-size:0.75rem; padding: 2px 8px;">${this.escapeHtml(act.statusAr || act.status)}</span>
+            <span class="mgmt-activity-time">${timeStr}</span>
+          </div>
+        </div>
+      `;
+    }
+
+    formatTimeOnly(dateStr) {
+      if (!dateStr) return '-';
+      try {
+        const d = new Date(dateStr);
+        return d.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
+      } catch {
+        return dateStr;
+      }
+    }
+
+    /**
+     * Laboratory Monitoring View Loader
+     */
+    async loadLaboratoryData(silent = false) {
+      if (this.labReportsTbody && !silent) this.labReportsTbody.innerHTML = this.renderLoadingRow(13);
+      if (this.labCertsTbody && !silent) this.labCertsTbody.innerHTML = this.renderLoadingRow(10);
+      try {
+        const res = await window.ChatApi.getManagementLaboratoryOverview();
+        if (res && res.success && res.data) {
+          const d = res.data;
+          this.setElText('mgmt-kpi-lab-reports', this.formatNumber(d.totalRawMaterialReports, 0));
+          this.setElText('mgmt-kpi-lab-compliance', `${(d.complianceRate || 0).toFixed(1)}%`);
+          this.setElText('mgmt-kpi-lab-accepted', `${this.formatNumber(d.totalRawMaterialAcceptedQuantity, 2)} طن`);
+          this.setElText('mgmt-kpi-lab-certs', this.formatNumber(d.totalFinalCertificates, 0));
+
+          if (this.labReportsBadge) this.labReportsBadge.textContent = `${(d.recentReports || []).length} تقرير`;
+          if (this.labCertsBadge) this.labCertsBadge.textContent = `${(d.recentCertificates || []).length} شهادة`;
+
+          if (this.labReportsTbody) {
+            if (!d.recentReports || d.recentReports.length === 0) {
+              this.labReportsTbody.innerHTML = this.renderEmptyRow(13, 'لا توجد تقارير فحص مواد خام مسجلة حتى الآن.');
+            } else {
+              this.labReportsTbody.innerHTML = d.recentReports.map(r => `
+                <tr>
+                  <td><code>${this.escapeHtml(r.sampleCode)}</code></td>
+                  <td><span class="mgmt-code-pill">${r.laboratorySection === 'CHEMICAL' ? 'كيميائي' : 'فيزيائي'}</span></td>
+                  <td><b>${this.escapeHtml(r.sampleName)}</b></td>
+                  <td>${this.escapeHtml(r.supplierName || '-')}</td>
+                  <td><code>${this.escapeHtml(r.batchNumber || '-')}</code></td>
+                  <td>${this.formatNumber(r.receivedQuantity, 2)}</td>
+                  <td style="color:#059669; font-weight:700;">${this.formatNumber(r.acceptedQuantity, 2)}</td>
+                  <td style="${r.rejectedQuantity > 0 ? 'color:#DC2626; font-weight:700;' : ''}">${this.formatNumber(r.rejectedQuantity, 2)}</td>
+                  <td>${r.complyStatus === 'COMPLY' ? '<span class="finance-badge-pill badge-green">مطابق</span>' : '<span class="finance-badge-pill badge-red">غير مطابق</span>'}</td>
+                  <td>${r.inspectionDecision === 'ACCEPTED' ? '<span class="finance-badge-pill badge-green">مقبول</span>' : '<span class="finance-badge-pill badge-red">مرفوض</span>'}</td>
+                  <td>${this.renderStatusBadge(r.approvalStatus)}</td>
+                  <td>${this.escapeHtml(r.responsibleEmployee || '-')}</td>
+                  <td>${this.formatDate(r.createdAt)}</td>
+                </tr>
+              `).join('');
+            }
+          }
+
+          if (this.labCertsTbody) {
+            if (!d.recentCertificates || d.recentCertificates.length === 0) {
+              this.labCertsTbody.innerHTML = this.renderEmptyRow(10, 'لا توجد شهادات مطابقة نهائية مسجلة حتى الآن.');
+            } else {
+              this.labCertsTbody.innerHTML = d.recentCertificates.map(c => `
+                <tr>
+                  <td><code>${this.escapeHtml(c.certificateNumber)}</code></td>
+                  <td><span class="mgmt-code-pill">REF-${c.productionReferenceNumber}</span></td>
+                  <td><b>${this.escapeHtml(c.finalProductName)}</b></td>
+                  <td style="color:#059669; font-weight:700;">${this.formatNumber(c.actualFinalProductQuantity, 2)}</td>
+                  <td>${this.formatNumber(c.actualRawMaterialInputQuantity, 2)}</td>
+                  <td>${this.formatNumber(c.calculatedDifference, 2)}</td>
+                  <td>${c.conformityDecision === 'CONFORMING' ? '<span class="finance-badge-pill badge-green">مطابق للمواصفة</span>' : '<span class="finance-badge-pill badge-red">غير مطابق</span>'}</td>
+                  <td>${this.renderStatusBadge(c.approvalStatus)}</td>
+                  <td>${this.escapeHtml(c.responsibleEmployee || '-')}</td>
+                  <td>${this.formatDate(c.productionCompletionDateTime)}</td>
+                </tr>
+              `).join('');
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Error loading laboratory data:', err);
+      }
+    }
+
+    /**
+     * Production Operations View Loader
+     */
+    async loadProductionData(silent = false) {
+      if (this.prodProcessesTbody && !silent) this.prodProcessesTbody.innerHTML = this.renderLoadingRow(10);
+      if (this.prodOrdersTbody && !silent) this.prodOrdersTbody.innerHTML = this.renderLoadingRow(9);
+      try {
+        const res = await window.ChatApi.getManagementProductionOverview();
+        if (res && res.success && res.data) {
+          const d = res.data;
+          this.setElText('mgmt-kpi-prod-orders', this.formatNumber(d.totalProductionOrders, 0));
+          this.setElText('mgmt-kpi-prod-activeorders', this.formatNumber(d.activeProductionOrders, 0));
+          this.setElText('mgmt-kpi-prod-processes', this.formatNumber(d.totalProcessesCount, 0));
+          this.setElText('mgmt-kpi-prod-output', `${this.formatNumber(d.totalOutputQuantity, 2)} طن`);
+          this.setElText('mgmt-kpi-prod-waste', `${(d.overallWastePercentage || 0).toFixed(2)}%`);
+          this.setElText('mgmt-kpi-prod-wasteqty', `${this.formatNumber(d.totalWasteQuantity, 2)} طن`);
+
+          if (this.prodProcessesBadge) this.prodProcessesBadge.textContent = `${(d.recentProcesses || []).length} عملية`;
+          if (this.prodOrdersBadge) this.prodOrdersBadge.textContent = `${(d.recentOrders || []).length} أمر`;
+
+          if (this.prodProcessesTbody) {
+            if (!d.recentProcesses || d.recentProcesses.length === 0) {
+              this.prodProcessesTbody.innerHTML = this.renderEmptyRow(10, 'لا توجد عمليات تشغيل وإنتاج مسجلة حالياً.');
+            } else {
+              this.prodProcessesTbody.innerHTML = d.recentProcesses.map(p => `
+                <tr>
+                  <td><code>${this.escapeHtml(p.processNumber)}</code></td>
+                  <td>${p.productionOrderNumber ? `<code>${this.escapeHtml(p.productionOrderNumber)}</code>` : '<span class="text-muted">-</span>'}</td>
+                  <td>${this.formatDate(p.productionDate)}</td>
+                  <td>${this.escapeHtml(p.storageLocationName || '-')}</td>
+                  <td>${this.formatNumber(p.totalInputQuantity, 2)}</td>
+                  <td style="color:#059669; font-weight:700;">${this.formatNumber(p.totalOutputQuantity, 2)}</td>
+                  <td style="${p.totalWasteQuantity > 0 ? 'color:#DC2626; font-weight:700;' : ''}">${this.formatNumber(p.totalWasteQuantity, 2)}</td>
+                  <td><span class="finance-badge-pill ${p.wastePercentage > 5 ? 'badge-red' : 'badge-blue'}">${(p.wastePercentage || 0).toFixed(2)}%</span></td>
+                  <td>${p.status === 'COMPLETED' ? '<span class="finance-badge-pill badge-green">مكتمل</span>' : '<span class="finance-badge-pill badge-gold">قيد التشغيل</span>'}</td>
+                  <td>${this.escapeHtml(p.responsibleEmployee || '-')}</td>
+                </tr>
+              `).join('');
+            }
+          }
+
+          if (this.prodOrdersTbody) {
+            if (!d.recentOrders || d.recentOrders.length === 0) {
+              this.prodOrdersTbody.innerHTML = this.renderEmptyRow(9, 'لا توجد أوامر إنتاج مسجلة حالياً.');
+            } else {
+              this.prodOrdersTbody.innerHTML = d.recentOrders.map(o => `
+                <tr>
+                  <td><code>${this.escapeHtml(o.orderNumber)}</code></td>
+                  <td><b>${this.escapeHtml(o.productName)}</b></td>
+                  <td>${this.formatNumber(o.targetQuantity, 2)} طن</td>
+                  <td style="color:#059669; font-weight:700;">${this.formatNumber(o.producedQuantity, 2)} طن</td>
+                  <td>${this.formatNumber(o.totalPlannedRawMaterialQuantity, 2)} طن</td>
+                  <td>${this.formatNumber(o.totalTransferredQuantity, 2)} طن</td>
+                  <td>
+                    <div style="display:flex; align-items:center; gap: 6px;">
+                      <div class="mgmt-progress-bar-wrap" style="flex:1;">
+                        <div class="mgmt-progress-bar-fill" style="width: ${Math.min(100, o.progressPercentage || 0)}%; background: #059669;"></div>
+                      </div>
+                      <span style="font-size:0.75rem; font-weight:700;">${(o.progressPercentage || 0).toFixed(1)}%</span>
+                    </div>
+                  </td>
+                  <td><span class="finance-badge-pill ${o.status === 'COMPLETED' ? 'badge-green' : 'badge-blue'}">${this.escapeHtml(o.status)}</span></td>
+                  <td>${this.formatDate(o.targetStartDate)}</td>
+                </tr>
+              `).join('');
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Error loading production data:', err);
+      }
+    }
+
+    /**
+     * Attendance Monitoring View Loader
+     */
+    async loadAttendanceData(date = null, silent = false) {
+      if (this.attendanceTbody && !silent) this.attendanceTbody.innerHTML = this.renderLoadingRow(9);
+      try {
+        const res = await window.ChatApi.getManagementAttendanceOverview(date);
+        if (res && res.success && res.data) {
+          const d = res.data;
+          this.setElText('mgmt-kpi-att-rate', `${(d.attendanceRate || 0).toFixed(1)}%`);
+          this.setElText('mgmt-kpi-att-present', this.formatNumber(d.presentCount, 0));
+          this.setElText('mgmt-kpi-att-absent', this.formatNumber(d.absentCount, 0));
+          this.setElText('mgmt-kpi-att-hours', `${this.formatNumber(d.totalWorkingHours, 1)} ساعة`);
+
+          if (this.attEmployeesBadge) this.attEmployeesBadge.textContent = `${(d.employees || []).length} موظف`;
+          if (this.attSubmissionStatus) {
+            const st = d.submissionStatus;
+            this.attSubmissionStatus.textContent = `حالة الكشف: ${st === 'APPROVED' ? 'معتمد' : (st === 'PENDING' ? 'قيد المراجعة' : (st === 'RECORDED' ? 'مسجل' : 'غير مرسل'))}`;
+          }
+
+          if (this.attendanceTbody) {
+            if (!d.employees || d.employees.length === 0) {
+              this.attendanceTbody.innerHTML = this.renderEmptyRow(9, 'لا توجد سجلات حضور لهذا التاريخ.');
+            } else {
+              this.attendanceTbody.innerHTML = d.employees.map(e => {
+                const st = (e.status || 'Unmarked').toLowerCase();
+                const badgeClass = st === 'present' ? 'badge-green' : (st === 'absent' ? 'badge-red' : 'badge-gray');
+                const stText = st === 'present' ? 'حاضر' : (st === 'absent' ? 'غائب' : 'لم يسجل');
+                return `
+                  <tr>
+                    <td><b>${this.escapeHtml(e.fullName)}</b></td>
+                    <td>${this.escapeHtml(e.role || '-')}</td>
+                    <td><span class="mgmt-code-pill">${this.escapeHtml(e.department || '-')}</span></td>
+                    <td><span class="finance-badge-pill ${badgeClass}">${stText}</span></td>
+                    <td>${e.checkInTime ? this.formatTimeOnly(e.checkInTime) : '-'}</td>
+                    <td>${e.checkOutTime ? this.formatTimeOnly(e.checkOutTime) : '-'}</td>
+                    <td style="font-weight:700;">${e.workingHours != null ? `${e.workingHours} س` : '-'}</td>
+                    <td>${this.renderStatusBadge(e.approvalStatus)}</td>
+                    <td style="color:#64748B;">${this.escapeHtml(e.notes || '-')}</td>
+                  </tr>
+                `;
+              }).join('');
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Error loading attendance data:', err);
+      }
+    }
+
+    /**
+     * Activity Feed View Loader
+     */
+    async loadActivityFeed(silent = false) {
+      if (this.activityFeedTbody && !silent) this.activityFeedTbody.innerHTML = this.renderLoadingRow(8);
+      const params = {
+        department: this.feedFilterDept ? this.feedFilterDept.value : '',
+        fromDate: this.feedDateFrom ? this.feedDateFrom.value : '',
+        toDate: this.feedDateTo ? this.feedDateTo.value : '',
+        search: this.feedSearchInput ? this.feedSearchInput.value.trim() : '',
+        limit: 100
+      };
+      try {
+        const res = await window.ChatApi.getManagementActivityFeed(params);
+        if (res && res.success && res.data) {
+          const items = res.data;
+          if (this.feedCountBadge) this.feedCountBadge.textContent = `${items.length} حركة`;
+          if (this.activityFeedTbody) {
+            if (!items || items.length === 0) {
+              this.activityFeedTbody.innerHTML = this.renderEmptyRow(8, 'لا توجد أنشطة مسجلة مطابقة للفلتر.');
+            } else {
+              this.activityFeedTbody.innerHTML = items.map(act => {
+                const statusClass = act.status === 'APPROVED' || act.status === 'COMPLETED' ? 'badge-green' : (act.status === 'REJECTED' ? 'badge-red' : 'badge-gold');
+                return `
+                  <tr>
+                    <td style="white-space:nowrap; font-size:0.8rem; color:#64748B;">${this.formatDate(act.timestamp)}</td>
+                    <td><span class="mgmt-activity-dept-pill">${this.escapeHtml(act.departmentAr || act.department)}</span></td>
+                    <td><b>${this.escapeHtml(act.actionAr || act.action)}</b></td>
+                    <td><code>${this.escapeHtml(act.referenceNumber || '-')}</code></td>
+                    <td>${this.escapeHtml(act.actorName || '-')}</td>
+                    <td>${this.escapeHtml(act.description || '-')}</td>
+                    <td style="font-weight:700;">${act.amountOrQuantity != null ? `${this.formatNumber(act.amountOrQuantity, 2)} ${this.escapeHtml(act.unit || '')}` : '-'}</td>
+                    <td><span class="finance-badge-pill ${statusClass}">${this.escapeHtml(act.statusAr || act.status)}</span></td>
+                  </tr>
+                `;
+              }).join('');
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Error loading activity feed:', err);
+      }
+    }
+
+    /**
+     * Alerts View Loader
+     */
+    async loadAlertsData(silent = false) {
+      if (this.fullAlertsContainer && !silent) {
+        this.fullAlertsContainer.innerHTML = '<div style="text-align:center; padding: 2rem; color: #64748B;">جاري تحميل التنبيهات التشغيلية...</div>';
+      }
+      try {
+        const res = await window.ChatApi.getManagementAlerts();
+        if (res && res.success && res.data) {
+          const alerts = res.data;
+          if (this.alertsViewBadge) this.alertsViewBadge.textContent = `${alerts.length} تنبيه`;
+          if (this.fullAlertsContainer) {
+            if (!alerts || alerts.length === 0) {
+              this.fullAlertsContainer.innerHTML = '<div style="text-align:center; padding: 3rem; background:#ECFDF5; border:1px solid #A7F3D0; border-radius:12px; color:#065F46; font-weight:700;">✅ لا توجد تنبيهات تشغيلية حرجة حالياً. كافة العمليات والمستودعات ومؤشرات الجودة تعمل ضمن النطاق الطبيعي.</div>';
+            } else {
+              this.fullAlertsContainer.innerHTML = alerts.map(a => this.renderAlertCard(a)).join('');
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Error loading alerts:', err);
       }
     }
 

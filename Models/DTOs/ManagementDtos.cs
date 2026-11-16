@@ -116,6 +116,20 @@ public class ManagementOverviewCardSuppliersDto
     public decimal TotalRemainingQuantity { get; set; }
 }
 
+public class ManagementOverviewCardLaboratoryDto
+{
+    public int TotalLifecycles { get; set; }
+    public decimal AcceptedQuantity { get; set; }
+    public decimal FinalProductQuantity { get; set; }
+}
+
+public class ManagementOverviewCardProductionDto
+{
+    public int ActiveBatches { get; set; }
+    public int HoldBatches { get; set; }
+    public decimal TotalOutputQuantity { get; set; }
+}
+
 public class ManagementOverviewDto
 {
     public ManagementOverviewCardTransportationDto Transportation { get; set; } = new();
@@ -123,6 +137,8 @@ public class ManagementOverviewDto
     public ManagementOverviewCardFinanceDto Finance { get; set; } = new();
     public ManagementOverviewCardEmployeesDto Employees { get; set; } = new();
     public ManagementOverviewCardSuppliersDto Suppliers { get; set; } = new();
+    public ManagementOverviewCardLaboratoryDto Laboratory { get; set; } = new();
+    public ManagementOverviewCardProductionDto Production { get; set; } = new();
 }
 
 // ========================================================================
@@ -403,3 +419,270 @@ public class ManagementSupplierDetailDto
     public List<ManagementTransportationItemDto> TransportationTransactions { get; set; } = new();
     public List<ManagementStorageItemDto> StorageTransactions { get; set; } = new();
 }
+
+// ========================================================================
+// 9. Centralized Executive Monitoring & Cross-Department Oversight DTOs
+// ========================================================================
+
+public class ManagementDepartmentStatusDto
+{
+    public string DepartmentKey { get; set; } = string.Empty;
+    public string DepartmentNameAr { get; set; } = string.Empty;
+    public string Route { get; set; } = string.Empty;
+    public int TotalTransactions { get; set; }
+    public int TodayTransactions { get; set; }
+    public int PendingCount { get; set; }
+    public int ApprovedCount { get; set; }
+    public int RejectedCount { get; set; }
+    public string OperationalStatus { get; set; } = "NORMAL"; // NORMAL | WARNING | CRITICAL
+    public string PrimaryMetric { get; set; } = string.Empty;
+    public string PrimaryMetricLabel { get; set; } = string.Empty;
+    public string SecondaryMetric { get; set; } = string.Empty;
+    public string SecondaryMetricLabel { get; set; } = string.Empty;
+    public DateTime? LastActivityAt { get; set; }
+}
+
+public class ManagementTodayProductionDto
+{
+    public int TodayProcessesCount { get; set; }
+    public decimal TodayInputQuantity { get; set; }
+    public decimal TodayOutputQuantity { get; set; }
+    public decimal TodayWasteQuantity { get; set; }
+    public decimal TodayWastePercentage { get; set; }
+    public int ActiveProcessesCount { get; set; }
+    public int ActiveOrdersCount { get; set; }
+}
+
+public class ManagementWarehouseOverviewDto
+{
+    public decimal TotalRawMaterialStock { get; set; }
+    public int ActiveBatchesCount { get; set; }
+    public int StorageLocationsCount { get; set; }
+    public int LowStockItemsCount { get; set; }
+    public decimal TodayDepositQuantity { get; set; }
+    public decimal TodayIssueQuantity { get; set; }
+}
+
+public class ManagementTodayTransportationDto
+{
+    public int TodayTripsCount { get; set; }
+    public decimal TodayReceivedQuantity { get; set; }
+    public decimal TodayWasteQuantity { get; set; }
+    public int ActiveCarsToday { get; set; }
+    public int PendingApprovalsCount { get; set; }
+}
+
+public class ManagementAttendanceSummaryDto
+{
+    public int TotalEmployees { get; set; }
+    public int PresentToday { get; set; }
+    public int AbsentToday { get; set; }
+    public int UnmarkedToday { get; set; }
+    public decimal AttendanceRateToday { get; set; }
+    public decimal TotalWorkingHoursToday { get; set; }
+    public DateTime Date { get; set; }
+}
+
+public class ManagementFinancialOverviewDto
+{
+    public decimal TotalExpenses { get; set; }
+    public decimal TotalPoContractValue { get; set; }
+    public decimal TotalDeliveredPoValue { get; set; }
+    public decimal TotalRemainingPoValue { get; set; }
+    public decimal ContractPerformancePercentage { get; set; }
+    public int PendingFinancialApprovals { get; set; }
+    public int ActivePosCount { get; set; }
+}
+
+public class ManagementExecutiveDashboardDto
+{
+    public int TotalCompanyTransactions { get; set; }
+    public int TotalPendingApprovals { get; set; }
+    public int TotalApprovedTransactions { get; set; }
+    public int TotalRejectedTransactions { get; set; }
+    public int ActiveAlertsCount { get; set; }
+    public DateTime LastUpdatedAt { get; set; } = DateTime.UtcNow;
+
+    public ManagementTodayProductionDto TodayProduction { get; set; } = new();
+    public ManagementWarehouseOverviewDto WarehouseInventory { get; set; } = new();
+    public ManagementTodayTransportationDto TodayTransportation { get; set; } = new();
+    public ManagementAttendanceSummaryDto AttendanceSummary { get; set; } = new();
+    public ManagementFinancialOverviewDto FinancialOverview { get; set; } = new();
+
+    public List<ManagementDepartmentStatusDto> DepartmentStatuses { get; set; } = new();
+    public List<ManagementAlertDto> TopAlerts { get; set; } = new();
+    public List<ManagementActivityItemDto> RecentActivities { get; set; } = new();
+}
+
+public class ManagementActivityItemDto
+{
+    public string Id { get; set; } = string.Empty;
+    public string Department { get; set; } = string.Empty;
+    public string DepartmentAr { get; set; } = string.Empty;
+    public string Action { get; set; } = string.Empty;
+    public string ActionAr { get; set; } = string.Empty;
+    public string ReferenceNumber { get; set; } = string.Empty;
+    public string ActorName { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public DateTime Timestamp { get; set; }
+    public string Status { get; set; } = "COMPLETED"; // PENDING | APPROVED | REJECTED | COMPLETED | IN_PROGRESS
+    public string StatusAr { get; set; } = "مكتمل";
+    public decimal? AmountOrQuantity { get; set; }
+    public string? Unit { get; set; }
+}
+
+public class ManagementAlertDto
+{
+    public string Id { get; set; } = string.Empty;
+    public string Department { get; set; } = string.Empty;
+    public string DepartmentAr { get; set; } = string.Empty;
+    public string Severity { get; set; } = "WARNING"; // CRITICAL | WARNING | INFO
+    public string Title { get; set; } = string.Empty;
+    public string Message { get; set; } = string.Empty;
+    public string? RelatedReference { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+// ========================================================================
+// 10. Laboratory Monitoring DTOs
+// ========================================================================
+
+public class ManagementLabReportItemDto
+{
+    public int Id { get; set; }
+    public string SampleCode { get; set; } = string.Empty;
+    public int SampleNumber { get; set; }
+    public string LaboratorySection { get; set; } = string.Empty; // PHYSICAL | CHEMICAL
+    public string SampleName { get; set; } = string.Empty;
+    public string SupplierName { get; set; } = string.Empty;
+    public string BatchNumber { get; set; } = string.Empty;
+    public int ProductionReferenceNumber { get; set; }
+    public decimal ReceivedQuantity { get; set; }
+    public decimal AcceptedQuantity { get; set; }
+    public decimal RejectedQuantity { get; set; }
+    public string Unit { get; set; } = "طن";
+    public string ComplyStatus { get; set; } = "COMPLY";
+    public string InspectionDecision { get; set; } = "ACCEPTED";
+    public string ApprovalStatus { get; set; } = "PENDING";
+    public string? RejectionReason { get; set; }
+    public string ResponsibleEmployee { get; set; } = string.Empty;
+    public DateTime ReportIssueDate { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
+public class ManagementLabCertificateItemDto
+{
+    public int Id { get; set; }
+    public string CertificateNumber { get; set; } = string.Empty;
+    public int ProductionReferenceNumber { get; set; }
+    public string FinalProductName { get; set; } = string.Empty;
+    public decimal ActualFinalProductQuantity { get; set; }
+    public decimal ActualRawMaterialInputQuantity { get; set; }
+    public decimal CalculatedDifference { get; set; }
+    public string ConformityDecision { get; set; } = "CONFORMING";
+    public string ApprovalStatus { get; set; } = "PENDING";
+    public string ResponsibleEmployee { get; set; } = string.Empty;
+    public DateTime ProductionCompletionDateTime { get; set; }
+}
+
+public class ManagementLaboratoryOverviewDto
+{
+    public int TotalRawMaterialReports { get; set; }
+    public int AcceptedRawMaterialReports { get; set; }
+    public int RejectedRawMaterialReports { get; set; }
+    public int PendingRawMaterialReports { get; set; }
+    public decimal ComplianceRate { get; set; }
+    public int PhysicalSectionReportsCount { get; set; }
+    public int ChemicalSectionReportsCount { get; set; }
+    public int TotalInProcessReports { get; set; }
+    public int TotalFinalCertificates { get; set; }
+    public decimal TotalRawMaterialAcceptedQuantity { get; set; }
+    public decimal TotalRawMaterialRejectedQuantity { get; set; }
+    public List<ManagementLabReportItemDto> RecentReports { get; set; } = new();
+    public List<ManagementLabCertificateItemDto> RecentCertificates { get; set; } = new();
+}
+
+// ========================================================================
+// 11. Production Monitoring DTOs
+// ========================================================================
+
+public class ManagementProductionOrderItemDto
+{
+    public int Id { get; set; }
+    public string OrderNumber { get; set; } = string.Empty;
+    public string ProductName { get; set; } = string.Empty;
+    public decimal TargetQuantity { get; set; }
+    public decimal ProducedQuantity { get; set; }
+    public decimal TotalPlannedRawMaterialQuantity { get; set; }
+    public decimal TotalTransferredQuantity { get; set; }
+    public decimal ProgressPercentage { get; set; }
+    public string Status { get; set; } = "IN_PROGRESS";
+    public DateTime TargetStartDate { get; set; }
+    public DateTime? TargetCompletionDate { get; set; }
+}
+
+public class ManagementProductionProcessItemDto
+{
+    public int Id { get; set; }
+    public string ProcessNumber { get; set; } = string.Empty;
+    public string? ProductionOrderNumber { get; set; }
+    public DateTime ProductionDate { get; set; }
+    public string StorageLocationName { get; set; } = string.Empty;
+    public decimal TotalInputQuantity { get; set; }
+    public decimal TotalOutputQuantity { get; set; }
+    public decimal TotalWasteQuantity { get; set; }
+    public decimal WastePercentage { get; set; }
+    public string Unit { get; set; } = "طن";
+    public string Status { get; set; } = "COMPLETED";
+    public string ResponsibleEmployee { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
+}
+
+public class ManagementProductionOverviewDto
+{
+    public int TotalProductionOrders { get; set; }
+    public int ActiveProductionOrders { get; set; }
+    public int CompletedProductionOrders { get; set; }
+    public int TotalProcessesCount { get; set; }
+    public decimal TotalInputQuantity { get; set; }
+    public decimal TotalOutputQuantity { get; set; }
+    public decimal TotalWasteQuantity { get; set; }
+    public decimal OverallWastePercentage { get; set; }
+    public int FinishedProductsCount { get; set; }
+    public decimal FinishedProductsQuantity { get; set; }
+    public List<ManagementProductionOrderItemDto> RecentOrders { get; set; } = new();
+    public List<ManagementProductionProcessItemDto> RecentProcesses { get; set; } = new();
+}
+
+// ========================================================================
+// 12. Attendance Monitoring DTOs
+// ========================================================================
+
+public class ManagementAttendanceEmployeeItemDto
+{
+    public Guid UserId { get; set; }
+    public int? RecordId { get; set; }
+    public string FullName { get; set; } = string.Empty;
+    public string Role { get; set; } = string.Empty;
+    public string Department { get; set; } = string.Empty;
+    public string Status { get; set; } = "Unmarked"; // Present | Absent | Unmarked
+    public DateTime? CheckInTime { get; set; }
+    public DateTime? CheckOutTime { get; set; }
+    public decimal? WorkingHours { get; set; }
+    public string? Notes { get; set; }
+    public string ApprovalStatus { get; set; } = "APPROVED";
+}
+
+public class ManagementAttendanceOverviewDto
+{
+    public DateTime Date { get; set; }
+    public int TotalEmployees { get; set; }
+    public int PresentCount { get; set; }
+    public int AbsentCount { get; set; }
+    public int UnmarkedCount { get; set; }
+    public decimal AttendanceRate { get; set; }
+    public decimal TotalWorkingHours { get; set; }
+    public string SubmissionStatus { get; set; } = "DRAFT";
+    public List<ManagementAttendanceEmployeeItemDto> Employees { get; set; } = new();
+}
+

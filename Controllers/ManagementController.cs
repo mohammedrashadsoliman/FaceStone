@@ -89,6 +89,21 @@ public class ManagementController : ControllerBase
             var totPosCount = pos.Count;
             var totRemQty = pos.Sum(p => p.RemainingQuantity);
 
+            // 6. Laboratory
+            var labRaw = await _context.LaboratoryRawMaterialReports.AsNoTracking().ToListAsync();
+            var labInProcess = await _context.LaboratoryInProcessReports.AsNoTracking().ToListAsync();
+            var labCertificates = await _context.LaboratoryFinalConformityCertificates.AsNoTracking().ToListAsync();
+            var totalLifecycles = labRaw.Count + labInProcess.Count + labCertificates.Count;
+            var acceptedLabQty = labRaw.Where(r => r.InspectionDecision == "ACCEPTED" || r.ComplyStatus == "COMPLY").Sum(r => r.AcceptedQuantity);
+            var finalProductLabQty = labCertificates.Sum(c => c.ActualFinalProductQuantity);
+
+            // 7. Production
+            var prodProcesses = await _context.ProductionProcesses.AsNoTracking().ToListAsync();
+            var prodOrders = await _context.ProductionOrders.AsNoTracking().ToListAsync();
+            var activeBatchesCount = prodProcesses.Count(p => p.Status == "IN_PROGRESS") + prodOrders.Count(o => o.Status == "IN_PROGRESS" || o.Status == "IN_PRODUCTION");
+            var holdBatchesCount = prodOrders.Count(o => o.Status == "ON_HOLD" || o.Status == "ON_HOLD_LABORATORY");
+            var totalProdOutput = prodProcesses.Sum(p => p.TotalOutputQuantity);
+
             var overview = new ManagementOverviewDto
             {
                 Transportation = new ManagementOverviewCardTransportationDto
@@ -123,6 +138,18 @@ public class ManagementController : ControllerBase
                     TotalSuppliers = totSuppliers,
                     TotalPos = totPosCount,
                     TotalRemainingQuantity = totRemQty
+                },
+                Laboratory = new ManagementOverviewCardLaboratoryDto
+                {
+                    TotalLifecycles = totalLifecycles,
+                    AcceptedQuantity = acceptedLabQty,
+                    FinalProductQuantity = finalProductLabQty
+                },
+                Production = new ManagementOverviewCardProductionDto
+                {
+                    ActiveBatches = activeBatchesCount,
+                    HoldBatches = holdBatchesCount,
+                    TotalOutputQuantity = totalProdOutput
                 }
             };
 
@@ -132,6 +159,635 @@ public class ManagementController : ControllerBase
         {
             _logger.LogError(ex, "Error generating management overview.");
             return StatusCode(StatusCodes.Status500InternalServerError, ApiResponse.Fail("حدث خطأ أثناء تحميل المؤشرات العامة للوحة الإدارة."));
+        }
+    }
+
+    // ========================================================================
+    // 1.1 EXECUTIVE DASHBOARD: High-Level Centralized Cross-Department Oversight
+    // ========================================================================
+    [HttpGet("executive-dashboard")]
+    [ProducesResponseType(typeof(ApiResponse<ManagementExecutiveDashboardDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetExecutiveDashboard()
+    {
+        try
+        {
+            var today = DateTime.UtcNow.Date;
+
+            // Load records across all departments with AsNoTracking
+            var trans = await _context.Transportations.AsNoTracking().ToListAsync();
+            var storage = await _context.StorageTransactions.AsNoTracking().ToListAsync();
+            var storageOps = await _context.StorageOperations.AsNoTracking().ToListAsync();
+            var rawMaterials = await _context.RawMaterials.AsNoTracking().ToListAsync();
+            var batches = await _context.WarehouseBatches.AsNoTracking().ToListAsync();
+            var locations = await _context.StorageLocations.AsNoTracking().ToListAsync();
+            var labReports = await _context.LaboratoryRawMaterialReports.AsNoTracking().ToListAsync();
+            var labInProcess = await _context.LaboratoryInProcessReports.AsNoTracking().ToListAsync();
+            var labCerts = await _context.LaboratoryFinalConformityCertificates.AsNoTracking().ToListAsync();
+            var prodOrders = await _context.ProductionOrders.AsNoTracking().ToListAsync();
+            var prodProcesses = await _context.ProductionProcesses.AsNoTracking().ToListAsync();
+            var prodFinished = await _context.ProductionFinishedProducts.AsNoTracking().ToListAsync();
+            var users = await _context.Users.AsNoTracking().ToListAsync();
+            var attendanceToday = await _context.AttendanceRecords.AsNoTracking().Where(a => a.Date.Date == today).ToListAsync();
+            var attendanceSubmissions = await _context.AttendanceSubmissions.AsNoTracking().ToListAsync();
+            var expenses = await _context.Expenses.AsNoTracking().ToListAsync();
+            var pos = await _context.PurchaseOrders.AsNoTracking().ToListAsync();
+            var invoices = await _context.Invoices.AsNoTracking().ToListAsync();
+
+            // 1. Global KPI Aggregation
+            var totalTx = trans.Count + storageOps.Count + storage.Count + labReports.Count + labInProcess.Count + labCerts.Count + prodProcesses.Count + prodOrders.Count + attendanceSubmissions.Count + expenses.Count + pos.Count + invoices.Count;
+
+            var pendingTx = trans.Count(t => t.ApprovalStatus == "PENDING")
+                + storage.Count(s => s.ApprovalStatus == "PENDING")
+                + storageOps.Count(o => o.ApprovalStatus == "PENDING")
+                + labReports.Count(r => r.ApprovalStatus == "PENDING")
+                + labCerts.Count(c => c.ApprovalStatus == "PENDING")
+                + attendanceSubmissions.Count(a => a.ApprovalStatus == "PENDING")
+                + prodOrders.Count(p => p.Status == "PENDING_STORAGE_APPROVAL");
+
+            var approvedTx = trans.Count(t => t.ApprovalStatus == "APPROVED")
+                + storage.Count(s => s.ApprovalStatus == "APPROVED")
+                + storageOps.Count(o => o.ApprovalStatus == "APPROVED")
+                + labReports.Count(r => r.ApprovalStatus == "APPROVED")
+                + labCerts.Count(c => c.ApprovalStatus == "APPROVED")
+                + attendanceSubmissions.Count(a => a.ApprovalStatus == "APPROVED")
+                + prodProcesses.Count(p => p.Status == "COMPLETED");
+
+            var rejectedTx = trans.Count(t => t.ApprovalStatus == "REJECTED")
+                + storage.Count(s => s.ApprovalStatus == "REJECTED")
+                + storageOps.Count(o => o.ApprovalStatus == "REJECTED")
+                + labReports.Count(r => r.ApprovalStatus == "REJECTED" || r.InspectionDecision == "REJECTED" || r.ComplyStatus == "NOT_COMPLIED")
+                + labCerts.Count(c => c.ApprovalStatus == "REJECTED" || c.ConformityDecision == "NON_CONFORMING")
+                + attendanceSubmissions.Count(a => a.ApprovalStatus == "REJECTED");
+
+            // 2. Production Today
+            var todayProcesses = prodProcesses.Where(p => p.ProductionDate.Date == today || p.CreatedAt.Date == today).ToList();
+            var todayProdInput = todayProcesses.Sum(p => p.TotalInputQuantity);
+            var todayProdOutput = todayProcesses.Sum(p => p.TotalOutputQuantity);
+            var todayProdWaste = todayProcesses.Sum(p => p.TotalWasteQuantity);
+            var todayProdWastePct = todayProdInput > 0 ? Math.Round((todayProdWaste / todayProdInput) * 100, 2) : 0m;
+            var activeProcessesCount = prodProcesses.Count(p => p.Status == "IN_PROGRESS");
+            var activeOrdersCount = prodOrders.Count(o => o.Status == "IN_PROGRESS" || o.Status == "IN_PRODUCTION" || o.Status == "READY_FOR_PRODUCTION");
+
+            var todayProductionDto = new ManagementTodayProductionDto
+            {
+                TodayProcessesCount = todayProcesses.Count,
+                TodayInputQuantity = todayProdInput,
+                TodayOutputQuantity = todayProdOutput,
+                TodayWasteQuantity = todayProdWaste,
+                TodayWastePercentage = todayProdWastePct,
+                ActiveProcessesCount = activeProcessesCount,
+                ActiveOrdersCount = activeOrdersCount
+            };
+
+            // 3. Warehouse Inventory
+            var totalRawStock = batches.Where(b => b.Status == "ACTIVE").Sum(b => b.CurrentQuantity);
+            if (totalRawStock <= 0)
+            {
+                totalRawStock = storage.Count > 0 ? storage.OrderByDescending(s => s.TransactionDate).First().ClosingBalance : rawMaterials.Sum(r => r.InitialQuantity);
+            }
+            var todayDepositQty = storage.Where(s => s.TransactionDate.Date == today).Sum(s => s.IncomingQuantity)
+                + storageOps.Where(o => o.TransactionDate.Date == today && o.OperationType == "IMPORT").Sum(o => o.InternalNetWeight ?? 0);
+            var todayIssueQty = storage.Where(s => s.TransactionDate.Date == today).Sum(s => s.OutgoingQuantity)
+                + storageOps.Where(o => o.TransactionDate.Date == today && (o.OperationType == "EXPORT" || o.OperationType == "TRANSFER")).Sum(o => o.InternalNetWeight ?? 0);
+
+            var warehouseInventoryDto = new ManagementWarehouseOverviewDto
+            {
+                TotalRawMaterialStock = totalRawStock,
+                ActiveBatchesCount = batches.Count(b => b.Status == "ACTIVE"),
+                StorageLocationsCount = locations.Count,
+                LowStockItemsCount = batches.Count(b => b.Status == "ACTIVE" && b.CurrentQuantity < 50),
+                TodayDepositQuantity = todayDepositQty,
+                TodayIssueQuantity = todayIssueQty
+            };
+
+            // 4. Transportation Today
+            var todayTrans = trans.Where(t => t.TransactionDate.Date == today || (t.DateOfSubmit != default && t.DateOfSubmit.Date == today)).ToList();
+            var todayTransportationDto = new ManagementTodayTransportationDto
+            {
+                TodayTripsCount = todayTrans.Count,
+                TodayReceivedQuantity = todayTrans.Sum(t => t.NetWeight),
+                TodayWasteQuantity = todayTrans.Sum(t => t.WasteQuantity),
+                ActiveCarsToday = todayTrans.Select(t => t.CarNumber).Where(c => !string.IsNullOrWhiteSpace(c)).Distinct(StringComparer.OrdinalIgnoreCase).Count(),
+                PendingApprovalsCount = trans.Count(t => t.ApprovalStatus == "PENDING")
+            };
+
+            // 5. Attendance Summary
+            var totalUsersCount = users.Count;
+            var presentCount = attendanceToday.Count(a => a.Status.Equals("Present", StringComparison.OrdinalIgnoreCase));
+            var absentCount = attendanceToday.Count(a => a.Status.Equals("Absent", StringComparison.OrdinalIgnoreCase));
+            var unmarkedCount = Math.Max(0, totalUsersCount - (presentCount + absentCount));
+            var attRate = totalUsersCount > 0 ? Math.Round(((decimal)presentCount / totalUsersCount) * 100, 1) : 0m;
+            var totWorkingHours = attendanceToday.Sum(a => a.WorkingHours ?? 0);
+
+            var attendanceSummaryDto = new ManagementAttendanceSummaryDto
+            {
+                TotalEmployees = totalUsersCount,
+                PresentToday = presentCount,
+                AbsentToday = absentCount,
+                UnmarkedToday = unmarkedCount,
+                AttendanceRateToday = attRate,
+                TotalWorkingHoursToday = totWorkingHours,
+                Date = today
+            };
+
+            // 6. Financial Overview
+            var totExpenses = expenses.Sum(e => e.Amount);
+            var totPoContractVal = pos.Sum(p => p.TotalValue > 0 ? p.TotalValue : (p.Quantity * (p.TonPrice > 0 ? p.TonPrice : p.PricePerTon)));
+            var poDeliveredVal = 0m;
+            foreach (var po in pos)
+            {
+                var pTrans = trans.Where(t => t.PONumber.Equals(po.PONumber, StringComparison.OrdinalIgnoreCase)).ToList();
+                var dQty = pTrans.Sum(t => t.NetWeight);
+                var price = po.TonPrice > 0 ? po.TonPrice : po.PricePerTon;
+                poDeliveredVal += Math.Round(dQty * price, 2);
+            }
+            var totRemainingVal = Math.Max(0, totPoContractVal - poDeliveredVal);
+            var perfPct = totPoContractVal > 0 ? Math.Round((poDeliveredVal / totPoContractVal) * 100, 1) : 0m;
+
+            var financialOverviewDto = new ManagementFinancialOverviewDto
+            {
+                TotalExpenses = totExpenses,
+                TotalPoContractValue = totPoContractVal,
+                TotalDeliveredPoValue = poDeliveredVal,
+                TotalRemainingPoValue = totRemainingVal,
+                ContractPerformancePercentage = perfPct,
+                PendingFinancialApprovals = pos.Count(p => p.Status == "PENDING"),
+                ActivePosCount = pos.Count(p => p.RemainingQuantity > 0)
+            };
+
+            // 7. Department Status Cards
+            var supplierGroups = pos.GroupBy(p => p.Supplier.Trim(), StringComparer.OrdinalIgnoreCase).ToList();
+            var departmentStatuses = new List<ManagementDepartmentStatusDto>
+            {
+                new()
+                {
+                    DepartmentKey = "FINANCE",
+                    DepartmentNameAr = "الإدارة المالية والمحاسبة",
+                    Route = "/finance",
+                    TotalTransactions = expenses.Count + pos.Count + invoices.Count,
+                    TodayTransactions = expenses.Count(e => e.ExpenseDate.Date == today) + pos.Count(p => p.OrderDate.Date == today),
+                    PendingCount = pos.Count(p => p.Status == "PENDING"),
+                    ApprovedCount = pos.Count(p => p.Status == "APPROVED") + expenses.Count,
+                    RejectedCount = pos.Count(p => p.Status == "REJECTED"),
+                    OperationalStatus = pos.Count(p => p.Status == "PENDING") > 5 ? "WARNING" : "NORMAL",
+                    PrimaryMetric = totExpenses.ToString("N0") + " ج.م",
+                    PrimaryMetricLabel = "إجمالي المصروفات",
+                    SecondaryMetric = totPoContractVal.ToString("N0") + " ج.م",
+                    SecondaryMetricLabel = "قيمة عقود التوريد",
+                    LastActivityAt = expenses.OrderByDescending(e => e.ExpenseDate).Select(e => (DateTime?)e.ExpenseDate).FirstOrDefault()
+                        ?? pos.OrderByDescending(p => p.OrderDate).Select(p => (DateTime?)p.OrderDate).FirstOrDefault()
+                },
+                new()
+                {
+                    DepartmentKey = "TRANSPORTATION",
+                    DepartmentNameAr = "إدارة النقل واللوجستيات",
+                    Route = "/transportation",
+                    TotalTransactions = trans.Count,
+                    TodayTransactions = todayTrans.Count,
+                    PendingCount = trans.Count(t => t.ApprovalStatus == "PENDING"),
+                    ApprovedCount = trans.Count(t => t.ApprovalStatus == "APPROVED"),
+                    RejectedCount = trans.Count(t => t.ApprovalStatus == "REJECTED"),
+                    OperationalStatus = trans.Count(t => t.ApprovalStatus == "PENDING") > 5 ? "WARNING" : "NORMAL",
+                    PrimaryMetric = trans.Sum(t => t.NetWeight).ToString("N2") + " طن",
+                    PrimaryMetricLabel = "إجمالي الوزن الصافي",
+                    SecondaryMetric = trans.Sum(t => t.WasteQuantity).ToString("N2") + " طن",
+                    SecondaryMetricLabel = "إجمالي الهالك",
+                    LastActivityAt = trans.OrderByDescending(t => t.TransactionDate).Select(t => (DateTime?)t.TransactionDate).FirstOrDefault()
+                },
+                new()
+                {
+                    DepartmentKey = "STORAGE",
+                    DepartmentNameAr = "إدارة المخازن والمستودعات",
+                    Route = "/storage",
+                    TotalTransactions = storageOps.Count + storage.Count,
+                    TodayTransactions = storageOps.Count(o => o.CreatedAt.Date == today) + storage.Count(s => s.TransactionDate.Date == today),
+                    PendingCount = storage.Count(s => s.ApprovalStatus == "PENDING") + storageOps.Count(o => o.ApprovalStatus == "PENDING"),
+                    ApprovedCount = storage.Count(s => s.ApprovalStatus == "APPROVED") + storageOps.Count(o => o.ApprovalStatus == "APPROVED"),
+                    RejectedCount = storage.Count(s => s.ApprovalStatus == "REJECTED") + storageOps.Count(o => o.ApprovalStatus == "REJECTED"),
+                    OperationalStatus = batches.Any(b => b.Status == "ACTIVE" && b.CurrentQuantity < 50) ? "WARNING" : "NORMAL",
+                    PrimaryMetric = totalRawStock.ToString("N2") + " طن",
+                    PrimaryMetricLabel = "رصيد المخزون المتاح",
+                    SecondaryMetric = batches.Count(b => b.Status == "ACTIVE").ToString() + " دفعة",
+                    SecondaryMetricLabel = "الدفعات النشطة",
+                    LastActivityAt = storageOps.OrderByDescending(o => o.CreatedAt).Select(o => (DateTime?)o.CreatedAt).FirstOrDefault()
+                },
+                new()
+                {
+                    DepartmentKey = "LABORATORY",
+                    DepartmentNameAr = "إدارة المعمل ومراقبة الجودة",
+                    Route = "/laboratory",
+                    TotalTransactions = labReports.Count + labInProcess.Count + labCerts.Count,
+                    TodayTransactions = labReports.Count(r => r.CreatedAt.Date == today) + labCerts.Count(c => c.ProductionCompletionDateTime.Date == today),
+                    PendingCount = labReports.Count(r => r.ApprovalStatus == "PENDING") + labCerts.Count(c => c.ApprovalStatus == "PENDING"),
+                    ApprovedCount = labReports.Count(r => r.ApprovalStatus == "APPROVED") + labCerts.Count(c => c.ApprovalStatus == "APPROVED"),
+                    RejectedCount = labReports.Count(r => r.ApprovalStatus == "REJECTED" || r.InspectionDecision == "REJECTED" || r.ComplyStatus == "NOT_COMPLIED"),
+                    OperationalStatus = labReports.Any(r => r.ApprovalStatus == "REJECTED" || r.InspectionDecision == "REJECTED" || r.ComplyStatus == "NOT_COMPLIED") ? "CRITICAL" : (labReports.Count(r => r.ApprovalStatus == "PENDING") > 5 ? "WARNING" : "NORMAL"),
+                    PrimaryMetric = (labReports.Count > 0 ? Math.Round(((decimal)labReports.Count(r => r.ComplyStatus == "COMPLY") / labReports.Count) * 100, 1).ToString("N1") : "100") + "%",
+                    PrimaryMetricLabel = "معدل مطابقة المواد",
+                    SecondaryMetric = labReports.Sum(r => r.AcceptedQuantity).ToString("N2") + " طن",
+                    SecondaryMetricLabel = "الكميات المقبولة",
+                    LastActivityAt = labReports.OrderByDescending(r => r.CreatedAt).Select(r => (DateTime?)r.CreatedAt).FirstOrDefault()
+                },
+                new()
+                {
+                    DepartmentKey = "PRODUCTION",
+                    DepartmentNameAr = "إدارة الإنتاج والتشغيل",
+                    Route = "/production",
+                    TotalTransactions = prodProcesses.Count + prodOrders.Count,
+                    TodayTransactions = todayProcesses.Count,
+                    PendingCount = prodOrders.Count(p => p.Status == "PENDING_STORAGE_APPROVAL"),
+                    ApprovedCount = prodProcesses.Count(p => p.Status == "COMPLETED"),
+                    RejectedCount = prodProcesses.Count(p => p.Status == "ON_HOLD"),
+                    OperationalStatus = todayProcesses.Any(p => p.WastePercentage > 5) ? "WARNING" : "NORMAL",
+                    PrimaryMetric = prodProcesses.Sum(p => p.TotalOutputQuantity).ToString("N2") + " طن",
+                    PrimaryMetricLabel = "إجمالي الناتج المصنع",
+                    SecondaryMetric = (prodProcesses.Sum(p => p.TotalInputQuantity) > 0 ? Math.Round((prodProcesses.Sum(p => p.TotalWasteQuantity) / prodProcesses.Sum(p => p.TotalInputQuantity)) * 100, 2).ToString("N2") : "0") + "%",
+                    SecondaryMetricLabel = "معدل الهالك العام",
+                    LastActivityAt = prodProcesses.OrderByDescending(p => p.CreatedAt).Select(p => (DateTime?)p.CreatedAt).FirstOrDefault()
+                },
+                new()
+                {
+                    DepartmentKey = "ATTENDANCE",
+                    DepartmentNameAr = "إدارة الحضور والانصراف",
+                    Route = "/attendance",
+                    TotalTransactions = attendanceSubmissions.Count + attendanceToday.Count,
+                    TodayTransactions = attendanceToday.Count,
+                    PendingCount = attendanceSubmissions.Count(a => a.ApprovalStatus == "PENDING"),
+                    ApprovedCount = attendanceSubmissions.Count(a => a.ApprovalStatus == "APPROVED"),
+                    RejectedCount = attendanceSubmissions.Count(a => a.ApprovalStatus == "REJECTED"),
+                    OperationalStatus = (totalUsersCount > 0 && ((decimal)absentCount / totalUsersCount) > 0.2m) ? "WARNING" : "NORMAL",
+                    PrimaryMetric = attRate.ToString("N1") + "%",
+                    PrimaryMetricLabel = "نسبة حضور اليوم",
+                    SecondaryMetric = $"{presentCount} من أصل {totalUsersCount}",
+                    SecondaryMetricLabel = "الموظفون الحاضرون",
+                    LastActivityAt = attendanceToday.OrderByDescending(a => a.CreatedAt).Select(a => (DateTime?)a.CreatedAt).FirstOrDefault()
+                },
+                new()
+                {
+                    DepartmentKey = "SUPPLIERS",
+                    DepartmentNameAr = "إدارة الموردين والعقود",
+                    Route = "/suppliers",
+                    TotalTransactions = pos.Count,
+                    TodayTransactions = pos.Count(p => p.OrderDate.Date == today),
+                    PendingCount = pos.Count(p => p.Status == "PENDING"),
+                    ApprovedCount = pos.Count(p => p.Status == "APPROVED"),
+                    RejectedCount = pos.Count(p => p.Status == "REJECTED"),
+                    OperationalStatus = "NORMAL",
+                    PrimaryMetric = supplierGroups.Count.ToString() + " مورد",
+                    PrimaryMetricLabel = "الموردون المعتمدون",
+                    SecondaryMetric = pos.Sum(p => p.RemainingQuantity).ToString("N2") + " طن",
+                    SecondaryMetricLabel = "الكميات المتبقية",
+                    LastActivityAt = pos.OrderByDescending(p => p.OrderDate).Select(p => (DateTime?)p.OrderDate).FirstOrDefault()
+                }
+            };
+
+            // 8. Generate Operational Alerts
+            var alerts = GenerateOperationalAlerts(trans, storageOps, batches, labReports, labCerts, prodProcesses, users, attendanceToday);
+
+            // 9. Recent Activities (Top 15)
+            var recentActivities = BuildRecentActivityList(trans, storageOps, labReports, labCerts, prodProcesses, attendanceSubmissions, expenses, pos, 15);
+
+            var dashboardDto = new ManagementExecutiveDashboardDto
+            {
+                TotalCompanyTransactions = totalTx,
+                TotalPendingApprovals = pendingTx,
+                TotalApprovedTransactions = approvedTx,
+                TotalRejectedTransactions = rejectedTx,
+                ActiveAlertsCount = alerts.Count,
+                LastUpdatedAt = DateTime.UtcNow,
+                TodayProduction = todayProductionDto,
+                WarehouseInventory = warehouseInventoryDto,
+                TodayTransportation = todayTransportationDto,
+                AttendanceSummary = attendanceSummaryDto,
+                FinancialOverview = financialOverviewDto,
+                DepartmentStatuses = departmentStatuses,
+                TopAlerts = alerts.Take(8).ToList(),
+                RecentActivities = recentActivities
+            };
+
+            return Ok(ApiResponse<ManagementExecutiveDashboardDto>.Ok(dashboardDto));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error generating executive dashboard.");
+            return StatusCode(StatusCodes.Status500InternalServerError, ApiResponse.Fail("حدث خطأ أثناء تحميل لوحة القيادة التنفيذية للإدارة."));
+        }
+    }
+
+    // ========================================================================
+    // 1.2 ACTIVITY FEED: Chronological Company-Wide Operations Feed
+    // ========================================================================
+    [HttpGet("activity-feed")]
+    [ProducesResponseType(typeof(ApiResponse<List<ManagementActivityItemDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetActivityFeed(
+        [FromQuery] string? department,
+        [FromQuery] DateTime? fromDate,
+        [FromQuery] DateTime? toDate,
+        [FromQuery] string? search,
+        [FromQuery] int limit = 50)
+    {
+        try
+        {
+            var trans = await _context.Transportations.AsNoTracking().ToListAsync();
+            var storageOps = await _context.StorageOperations.AsNoTracking().ToListAsync();
+            var labReports = await _context.LaboratoryRawMaterialReports.AsNoTracking().ToListAsync();
+            var labCerts = await _context.LaboratoryFinalConformityCertificates.AsNoTracking().ToListAsync();
+            var prodProcesses = await _context.ProductionProcesses.AsNoTracking().ToListAsync();
+            var attendanceSubmissions = await _context.AttendanceSubmissions.AsNoTracking().ToListAsync();
+            var expenses = await _context.Expenses.AsNoTracking().ToListAsync();
+            var pos = await _context.PurchaseOrders.AsNoTracking().ToListAsync();
+
+            var activities = BuildRecentActivityList(trans, storageOps, labReports, labCerts, prodProcesses, attendanceSubmissions, expenses, pos, 500);
+
+            // Filtering
+            if (!string.IsNullOrWhiteSpace(department))
+            {
+                var depKey = department.Trim().ToUpperInvariant();
+                activities = activities.Where(a => a.Department.Equals(depKey, StringComparison.OrdinalIgnoreCase)).ToList();
+            }
+
+            if (fromDate.HasValue)
+            {
+                var f = fromDate.Value.Date;
+                activities = activities.Where(a => a.Timestamp >= f).ToList();
+            }
+
+            if (toDate.HasValue)
+            {
+                var t = toDate.Value.Date.AddDays(1).AddTicks(-1);
+                activities = activities.Where(a => a.Timestamp <= t).ToList();
+            }
+
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var q = search.Trim().ToLowerInvariant();
+                activities = activities.Where(a =>
+                    a.Action.ToLowerInvariant().Contains(q) ||
+                    a.ActionAr.ToLowerInvariant().Contains(q) ||
+                    a.ReferenceNumber.ToLowerInvariant().Contains(q) ||
+                    a.ActorName.ToLowerInvariant().Contains(q) ||
+                    a.Description.ToLowerInvariant().Contains(q) ||
+                    a.DepartmentAr.ToLowerInvariant().Contains(q)).ToList();
+            }
+
+            var safeLimit = Math.Clamp(limit, 1, 200);
+            var result = activities.Take(safeLimit).ToList();
+
+            return Ok(ApiResponse<List<ManagementActivityItemDto>>.Ok(result));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error generating management activity feed.");
+            return StatusCode(StatusCodes.Status500InternalServerError, ApiResponse.Fail("حدث خطأ أثناء تحميل سجل الأنشطة والعمليات."));
+        }
+    }
+
+    // ========================================================================
+    // 1.3 ALERTS: Active Operational Alerts Across All Departments
+    // ========================================================================
+    [HttpGet("alerts")]
+    [ProducesResponseType(typeof(ApiResponse<List<ManagementAlertDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetAlerts()
+    {
+        try
+        {
+            var today = DateTime.UtcNow.Date;
+            var trans = await _context.Transportations.AsNoTracking().ToListAsync();
+            var storageOps = await _context.StorageOperations.AsNoTracking().ToListAsync();
+            var batches = await _context.WarehouseBatches.AsNoTracking().ToListAsync();
+            var labReports = await _context.LaboratoryRawMaterialReports.AsNoTracking().ToListAsync();
+            var labCerts = await _context.LaboratoryFinalConformityCertificates.AsNoTracking().ToListAsync();
+            var prodProcesses = await _context.ProductionProcesses.AsNoTracking().ToListAsync();
+            var users = await _context.Users.AsNoTracking().ToListAsync();
+            var attendanceToday = await _context.AttendanceRecords.AsNoTracking().Where(a => a.Date.Date == today).ToListAsync();
+
+            var alerts = GenerateOperationalAlerts(trans, storageOps, batches, labReports, labCerts, prodProcesses, users, attendanceToday);
+            return Ok(ApiResponse<List<ManagementAlertDto>>.Ok(alerts));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching management alerts.");
+            return StatusCode(StatusCodes.Status500InternalServerError, ApiResponse.Fail("حدث خطأ أثناء تحميل التنبيهات التشغيلية."));
+        }
+    }
+
+    // ========================================================================
+    // 1.4 LABORATORY MONITORING: Quality, Tests, Lifecycles & Conformity
+    // ========================================================================
+    [HttpGet("laboratory")]
+    [ProducesResponseType(typeof(ApiResponse<ManagementLaboratoryOverviewDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetLaboratoryMonitoring()
+    {
+        try
+        {
+            var rawReports = await _context.LaboratoryRawMaterialReports.AsNoTracking().OrderByDescending(r => r.CreatedAt).ToListAsync();
+            var inProcess = await _context.LaboratoryInProcessReports.AsNoTracking().OrderByDescending(p => p.CreatedAt).ToListAsync();
+            var certs = await _context.LaboratoryFinalConformityCertificates.AsNoTracking().OrderByDescending(c => c.ProductionCompletionDateTime).ToListAsync();
+
+            var acceptedCount = rawReports.Count(r => r.InspectionDecision == "ACCEPTED" || r.ComplyStatus == "COMPLY");
+            var rejectedCount = rawReports.Count(r => r.InspectionDecision == "REJECTED" || r.ComplyStatus == "NOT_COMPLIED");
+            var pendingCount = rawReports.Count(r => r.ApprovalStatus == "PENDING");
+            var complianceRate = rawReports.Count > 0 ? Math.Round(((decimal)acceptedCount / rawReports.Count) * 100, 1) : 100m;
+
+            var recentReportsDto = rawReports.Take(30).Select(r => new ManagementLabReportItemDto
+            {
+                Id = r.Id,
+                SampleCode = r.SampleCode ?? $"SMP-{r.SampleNumber}",
+                SampleNumber = r.SampleNumber,
+                LaboratorySection = r.LaboratorySection,
+                SampleName = r.SampleName,
+                SupplierName = r.SupplierName ?? string.Empty,
+                BatchNumber = r.BatchNumber ?? string.Empty,
+                ProductionReferenceNumber = r.ProductionReferenceNumber,
+                ReceivedQuantity = r.ReceivedQuantity,
+                AcceptedQuantity = r.AcceptedQuantity,
+                RejectedQuantity = r.RejectedQuantity,
+                Unit = r.Unit ?? "طن",
+                ComplyStatus = r.ComplyStatus,
+                InspectionDecision = r.InspectionDecision,
+                ApprovalStatus = r.ApprovalStatus,
+                RejectionReason = r.RejectionReason,
+                ResponsibleEmployee = r.ResponsibleEmployee,
+                ReportIssueDate = r.ReportIssueDate ?? r.CreatedAt,
+                CreatedAt = r.CreatedAt
+            }).ToList();
+
+            var recentCertsDto = certs.Take(30).Select(c => new ManagementLabCertificateItemDto
+            {
+                Id = c.Id,
+                CertificateNumber = c.CertificateNumber,
+                ProductionReferenceNumber = c.ProductionReferenceNumber,
+                FinalProductName = c.FinalProductName,
+                ActualFinalProductQuantity = c.ActualFinalProductQuantity,
+                ActualRawMaterialInputQuantity = c.ActualRawMaterialInputQuantity,
+                CalculatedDifference = c.CalculatedDifference,
+                ConformityDecision = c.ConformityDecision,
+                ApprovalStatus = c.ApprovalStatus,
+                ResponsibleEmployee = c.ResponsibleEmployee,
+                ProductionCompletionDateTime = c.ProductionCompletionDateTime
+            }).ToList();
+
+            var overviewDto = new ManagementLaboratoryOverviewDto
+            {
+                TotalRawMaterialReports = rawReports.Count,
+                AcceptedRawMaterialReports = acceptedCount,
+                RejectedRawMaterialReports = rejectedCount,
+                PendingRawMaterialReports = pendingCount,
+                ComplianceRate = complianceRate,
+                PhysicalSectionReportsCount = rawReports.Count(r => r.LaboratorySection == "PHYSICAL"),
+                ChemicalSectionReportsCount = rawReports.Count(r => r.LaboratorySection == "CHEMICAL"),
+                TotalInProcessReports = inProcess.Count,
+                TotalFinalCertificates = certs.Count,
+                TotalRawMaterialAcceptedQuantity = rawReports.Sum(r => r.AcceptedQuantity),
+                TotalRawMaterialRejectedQuantity = rawReports.Sum(r => r.RejectedQuantity),
+                RecentReports = recentReportsDto,
+                RecentCertificates = recentCertsDto
+            };
+
+            return Ok(ApiResponse<ManagementLaboratoryOverviewDto>.Ok(overviewDto));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching laboratory monitoring data.");
+            return StatusCode(StatusCodes.Status500InternalServerError, ApiResponse.Fail("حدث خطأ أثناء تحميل بيانات مراقبة المعمل والجودة."));
+        }
+    }
+
+    // ========================================================================
+    // 1.5 PRODUCTION MONITORING: Processes, Output, Waste & Batches
+    // ========================================================================
+    [HttpGet("production")]
+    [ProducesResponseType(typeof(ApiResponse<ManagementProductionOverviewDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetProductionMonitoring()
+    {
+        try
+        {
+            var orders = await _context.ProductionOrders.AsNoTracking().OrderByDescending(o => o.CreatedAt).ToListAsync();
+            var processes = await _context.ProductionProcesses.AsNoTracking().OrderByDescending(p => p.ProductionDate).ToListAsync();
+            var finished = await _context.ProductionFinishedProducts.AsNoTracking().ToListAsync();
+
+            var totalInput = processes.Sum(p => p.TotalInputQuantity);
+            var totalOutput = processes.Sum(p => p.TotalOutputQuantity);
+            var totalWaste = processes.Sum(p => p.TotalWasteQuantity);
+            var overallWastePct = totalInput > 0 ? Math.Round((totalWaste / totalInput) * 100, 2) : 0m;
+
+            var recentOrdersDto = orders.Take(30).Select(o => new ManagementProductionOrderItemDto
+            {
+                Id = o.Id,
+                OrderNumber = o.OrderNumber,
+                ProductName = o.ProductName,
+                TargetQuantity = o.RequestedQuantity,
+                ProducedQuantity = finished.Where(f => f.ProductionOrderId == o.Id || (!string.IsNullOrEmpty(f.ProductionOrderNumber) && f.ProductionOrderNumber.Equals(o.OrderNumber, StringComparison.OrdinalIgnoreCase))).Sum(f => f.ManufacturedQuantity),
+                TotalPlannedRawMaterialQuantity = o.TotalPlannedRawMaterialQuantity,
+                TotalTransferredQuantity = o.TotalTransferredQuantity,
+                ProgressPercentage = o.RequestedQuantity > 0 ? Math.Min(100m, Math.Round((finished.Where(f => f.ProductionOrderId == o.Id || (!string.IsNullOrEmpty(f.ProductionOrderNumber) && f.ProductionOrderNumber.Equals(o.OrderNumber, StringComparison.OrdinalIgnoreCase))).Sum(f => f.ManufacturedQuantity) / o.RequestedQuantity) * 100, 1)) : 0m,
+                Status = o.Status,
+                TargetStartDate = o.PlannedStartDate ?? o.CreatedAt,
+                TargetCompletionDate = o.CompletedDate
+            }).ToList();
+
+            var recentProcessesDto = processes.Take(30).Select(p => new ManagementProductionProcessItemDto
+            {
+                Id = p.Id,
+                ProcessNumber = p.ProcessNumber,
+                ProductionOrderNumber = p.ProductionOrderNumber,
+                ProductionDate = p.ProductionDate,
+                StorageLocationName = p.StorageLocationName ?? string.Empty,
+                TotalInputQuantity = p.TotalInputQuantity,
+                TotalOutputQuantity = p.TotalOutputQuantity,
+                TotalWasteQuantity = p.TotalWasteQuantity,
+                WastePercentage = p.WastePercentage,
+                Unit = p.Unit ?? "طن",
+                Status = p.Status,
+                ResponsibleEmployee = p.ResponsibleEmployee,
+                CreatedAt = p.CreatedAt
+            }).ToList();
+
+            var overviewDto = new ManagementProductionOverviewDto
+            {
+                TotalProductionOrders = orders.Count,
+                ActiveProductionOrders = orders.Count(o => o.Status == "IN_PROGRESS" || o.Status == "IN_PRODUCTION" || o.Status == "READY_FOR_PRODUCTION"),
+                CompletedProductionOrders = orders.Count(o => o.Status == "COMPLETED"),
+                TotalProcessesCount = processes.Count,
+                TotalInputQuantity = totalInput,
+                TotalOutputQuantity = totalOutput,
+                TotalWasteQuantity = totalWaste,
+                OverallWastePercentage = overallWastePct,
+                FinishedProductsCount = finished.Count,
+                FinishedProductsQuantity = finished.Sum(f => f.ManufacturedQuantity),
+                RecentOrders = recentOrdersDto,
+                RecentProcesses = recentProcessesDto
+            };
+
+            return Ok(ApiResponse<ManagementProductionOverviewDto>.Ok(overviewDto));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching production monitoring data.");
+            return StatusCode(StatusCodes.Status500InternalServerError, ApiResponse.Fail("حدث خطأ أثناء تحميل بيانات مراقبة الإنتاج والتشغيل."));
+        }
+    }
+
+    // ========================================================================
+    // 1.6 ATTENDANCE MONITORING: Live Records, Rates, Hours & Staff Status
+    // ========================================================================
+    [HttpGet("attendance")]
+    [ProducesResponseType(typeof(ApiResponse<ManagementAttendanceOverviewDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetAttendanceMonitoring([FromQuery] DateTime? date)
+    {
+        try
+        {
+            var targetDate = (date?.Date ?? DateTime.UtcNow.Date);
+            var users = await _context.Users.AsNoTracking().ToListAsync();
+            var records = await _context.AttendanceRecords.AsNoTracking().Where(r => r.Date.Date == targetDate).ToListAsync();
+            var submission = await _context.AttendanceSubmissions.AsNoTracking().Where(s => s.AttendanceDate.Date == targetDate).FirstOrDefaultAsync();
+
+            var employeeItems = new List<ManagementAttendanceEmployeeItemDto>();
+            foreach (var user in users)
+            {
+                var rec = records.FirstOrDefault(r => r.UserId == user.Id || (!string.IsNullOrWhiteSpace(r.EmployeeName) && r.EmployeeName.Equals(user.FullName, StringComparison.OrdinalIgnoreCase)));
+                employeeItems.Add(new ManagementAttendanceEmployeeItemDto
+                {
+                    UserId = user.Id,
+                    RecordId = rec?.Id,
+                    FullName = user.FullName,
+                    Role = user.Role,
+                    Department = GetDepartmentForRole(user.Role),
+                    Status = rec != null ? rec.Status : "Unmarked",
+                    CheckInTime = rec?.CheckInTime,
+                    CheckOutTime = rec?.CheckOutTime,
+                    WorkingHours = rec?.WorkingHours,
+                    Notes = rec?.Notes,
+                    ApprovalStatus = rec?.ApprovalStatus ?? "PENDING"
+                });
+            }
+
+            var presentCount = employeeItems.Count(e => e.Status.Equals("Present", StringComparison.OrdinalIgnoreCase));
+            var absentCount = employeeItems.Count(e => e.Status.Equals("Absent", StringComparison.OrdinalIgnoreCase));
+            var unmarkedCount = employeeItems.Count(e => e.Status.Equals("Unmarked", StringComparison.OrdinalIgnoreCase));
+            var totEmployees = employeeItems.Count;
+            var attRate = totEmployees > 0 ? Math.Round(((decimal)presentCount / totEmployees) * 100, 1) : 0m;
+            var totalHours = employeeItems.Sum(e => e.WorkingHours ?? 0);
+
+            var overviewDto = new ManagementAttendanceOverviewDto
+            {
+                Date = targetDate,
+                TotalEmployees = totEmployees,
+                PresentCount = presentCount,
+                AbsentCount = absentCount,
+                UnmarkedCount = unmarkedCount,
+                AttendanceRate = attRate,
+                TotalWorkingHours = totalHours,
+                SubmissionStatus = submission?.ApprovalStatus ?? (records.Count > 0 ? "RECORDED" : "NOT_SUBMITTED"),
+                Employees = employeeItems
+            };
+
+            return Ok(ApiResponse<ManagementAttendanceOverviewDto>.Ok(overviewDto));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching attendance monitoring data.");
+            return StatusCode(StatusCodes.Status500InternalServerError, ApiResponse.Fail("حدث خطأ أثناء تحميل بيانات مراقبة الحضور والانصراف."));
         }
     }
 
@@ -1794,5 +2450,340 @@ public class ManagementController : ControllerBase
         if (r.Contains("SENIOR STRUCTURAL ENGINEER")) return "كبير مهندسي الإنشاءات";
         if (r.Contains("CONTRACTOR")) return "مقاول معتمد";
         return "موظف عمليات";
+    }
+
+    private static string GetStatusAr(string? status)
+    {
+        if (string.IsNullOrWhiteSpace(status)) return "معلق";
+        return status.Trim().ToUpperInvariant() switch
+        {
+            "APPROVED" => "معتمد",
+            "REJECTED" => "مرفوض",
+            "PENDING" => "قيد الاعتماد",
+            "COMPLETED" => "مكتمل",
+            "IN_PROGRESS" => "قيد التشغيل",
+            "IN_PRODUCTION" => "قيد التصنيع",
+            "READY_FOR_PRODUCTION" => "جاهز للتشغيل",
+            "ON_HOLD" => "معلق مؤقتاً",
+            "DRAFT" => "مسودة",
+            "SUBMITTED" => "مرسل للمراجعة",
+            "CANCELLED" => "ملغي",
+            "COMPLY" => "مطابق",
+            "NOT_COMPLIED" => "غير مطابق",
+            "ACCEPTED" => "مقبول",
+            _ => status
+        };
+    }
+
+    private static List<ManagementAlertDto> GenerateOperationalAlerts(
+        List<Transportation> trans,
+        List<StorageOperation> storageOps,
+        List<WarehouseBatch> batches,
+        List<LaboratoryRawMaterialReport> labReports,
+        List<LaboratoryFinalConformityCertificate> labCerts,
+        List<ProductionProcess> prodProcesses,
+        List<UserAccount> users,
+        List<AttendanceRecord> attendanceToday)
+    {
+        var alerts = new List<ManagementAlertDto>();
+        var idx = 1;
+
+        // 1. Pending Approvals Alerts
+        var transPending = trans.Count(t => t.ApprovalStatus == "PENDING");
+        if (transPending > 0)
+        {
+            alerts.Add(new ManagementAlertDto
+            {
+                Id = $"ALT-TRP-{idx++}",
+                Department = "TRANSPORTATION",
+                DepartmentAr = "النقل واللوجستيات",
+                Severity = transPending > 5 ? "CRITICAL" : "WARNING",
+                Title = "شحنات بانتظار الاعتماد",
+                Message = $"يوجد {transPending} شحنة نقل بانتظار مراجعة واعتماد قسم الرقابة والتحكم.",
+                CreatedAt = DateTime.UtcNow
+            });
+        }
+
+        var storagePending = storageOps.Count(o => o.ApprovalStatus == "PENDING");
+        if (storagePending > 0)
+        {
+            alerts.Add(new ManagementAlertDto
+            {
+                Id = $"ALT-STG-{idx++}",
+                Department = "STORAGE",
+                DepartmentAr = "المخازن والمستودعات",
+                Severity = storagePending > 5 ? "CRITICAL" : "WARNING",
+                Title = "عمليات مخزنية معلقة",
+                Message = $"يوجد {storagePending} إذن إضافة/صرف مخزني بانتظار الاعتماد والمطابقة.",
+                CreatedAt = DateTime.UtcNow
+            });
+        }
+
+        var labPending = labReports.Count(r => r.ApprovalStatus == "PENDING") + labCerts.Count(c => c.ApprovalStatus == "PENDING");
+        if (labPending > 0)
+        {
+            alerts.Add(new ManagementAlertDto
+            {
+                Id = $"ALT-LAB-{idx++}",
+                Department = "LABORATORY",
+                DepartmentAr = "المعمل ومراقبة الجودة",
+                Severity = labPending > 5 ? "CRITICAL" : "WARNING",
+                Title = "تقارير فحص بانتظار الاعتماد",
+                Message = $"يوجد {labPending} تقرير فحص مخبري/شهادة مطابقة بانتظار قرار الاعتماد النهائي.",
+                CreatedAt = DateTime.UtcNow
+            });
+        }
+
+        // 2. Inventory Threshold Alerts (< 50 tons)
+        var lowBatches = batches.Where(b => b.Status == "ACTIVE" && b.CurrentQuantity < 50).OrderBy(b => b.CurrentQuantity).Take(4).ToList();
+        foreach (var b in lowBatches)
+        {
+            alerts.Add(new ManagementAlertDto
+            {
+                Id = $"ALT-STK-{idx++}",
+                Department = "STORAGE",
+                DepartmentAr = "المخازن والمستودعات",
+                Severity = b.CurrentQuantity < 10 ? "CRITICAL" : "WARNING",
+                Title = "رصيد دفعة مخزنية حرج",
+                Message = $"الدفعة {b.BatchNumber} قاربت على النفاد، الرصيد المتبقي {b.CurrentQuantity:N2} طن فقط.",
+                RelatedReference = b.BatchNumber,
+                CreatedAt = DateTime.UtcNow
+            });
+        }
+
+        // 3. Rejected Quality / Lab Reports
+        var rejectedReports = labReports.Where(r => r.ApprovalStatus == "REJECTED" || r.InspectionDecision == "REJECTED" || r.ComplyStatus == "NOT_COMPLIED")
+            .OrderByDescending(r => r.CreatedAt).Take(3).ToList();
+        foreach (var r in rejectedReports)
+        {
+            alerts.Add(new ManagementAlertDto
+            {
+                Id = $"ALT-QC-{idx++}",
+                Department = "LABORATORY",
+                DepartmentAr = "المعمل ومراقبة الجودة",
+                Severity = "CRITICAL",
+                Title = "مادة خام مرفوضة معملياً",
+                Message = $"تم رفض تقرير فحص العينة {r.SampleCode ?? r.SampleNumber.ToString()} الموردة من {r.SupplierName ?? "المورد"} لعدم مطابقتها للمواصفات القياسية.",
+                RelatedReference = r.SampleCode,
+                CreatedAt = r.CreatedAt
+            });
+        }
+
+        // 4. Production High Waste (> 5%)
+        var highWasteProcesses = prodProcesses.Where(p => p.WastePercentage > 5).OrderByDescending(p => p.ProductionDate).Take(3).ToList();
+        foreach (var p in highWasteProcesses)
+        {
+            alerts.Add(new ManagementAlertDto
+            {
+                Id = $"ALT-PRD-{idx++}",
+                Department = "PRODUCTION",
+                DepartmentAr = "الإنتاج والتشغيل",
+                Severity = "WARNING",
+                Title = "ارتفاع غير اعتيادي لنسبة الهالك",
+                Message = $"سجلت عملية التشغيل {p.ProcessNumber} نسبة هالك مرتفعة ({p.WastePercentage:N2}%) وتجاوزت الحد المسموح به (5%).",
+                RelatedReference = p.ProcessNumber,
+                CreatedAt = p.ProductionDate
+            });
+        }
+
+        // 5. Attendance Alerts (High Absence > 20%)
+        if (users.Count > 0)
+        {
+            var absentCount = attendanceToday.Count(a => a.Status.Equals("Absent", StringComparison.OrdinalIgnoreCase));
+            var absRate = (decimal)absentCount / users.Count;
+            if (absRate > 0.2m)
+            {
+                alerts.Add(new ManagementAlertDto
+                {
+                    Id = $"ALT-ATT-{idx++}",
+                    Department = "ATTENDANCE",
+                    DepartmentAr = "الحضور والانصراف",
+                    Severity = "WARNING",
+                    Title = "ارتفاع معدل غياب الموظفين اليوم",
+                    Message = $"سجل غياب {absentCount} موظفاً اليوم بنسبة ({Math.Round(absRate * 100, 1)}%) من إجمالي القوى العاملة ({users.Count} موظف).",
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+        }
+
+        return alerts;
+    }
+
+    private static List<ManagementActivityItemDto> BuildRecentActivityList(
+        List<Transportation> trans,
+        List<StorageOperation> storageOps,
+        List<LaboratoryRawMaterialReport> labReports,
+        List<LaboratoryFinalConformityCertificate> labCerts,
+        List<ProductionProcess> prodProcesses,
+        List<AttendanceSubmission> attendanceSubmissions,
+        List<Expense> expenses,
+        List<PurchaseOrder> pos,
+        int maxItems)
+    {
+        var list = new List<ManagementActivityItemDto>();
+
+        foreach (var t in trans.OrderByDescending(x => x.TransactionDate).Take(40))
+        {
+            list.Add(new ManagementActivityItemDto
+            {
+                Id = $"ACT-TRP-{t.Id}",
+                Department = "TRANSPORTATION",
+                DepartmentAr = "إدارة النقل واللوجستيات",
+                Action = "تسجيل شحنة نقل",
+                ActionAr = "شحنة نقل بري",
+                ReferenceNumber = $"TRP-{t.TransactionNumber}",
+                ActorName = string.IsNullOrWhiteSpace(t.DriverName) ? "سائق شاحنة" : t.DriverName,
+                Description = $"شحنة خامة {t.MaterialType} بحمولة صافية {t.NetWeight:N2} طن (سيارة {t.CarNumber})",
+                Timestamp = t.DateOfSubmit != default ? t.DateOfSubmit : t.TransactionDate,
+                Status = t.ApprovalStatus,
+                StatusAr = GetStatusAr(t.ApprovalStatus),
+                AmountOrQuantity = t.NetWeight,
+                Unit = "طن"
+            });
+        }
+
+        foreach (var o in storageOps.OrderByDescending(x => x.CreatedAt).Take(40))
+        {
+            var actName = o.OperationType == "IMPORT" ? "إذن إضافة مخزني" : (o.OperationType == "EXPORT" ? "إذن صرف مخزني" : "تحويل للإنتاج");
+            var actAr = o.OperationType == "IMPORT" ? "إذن إضافة" : (o.OperationType == "EXPORT" ? "إذن صرف" : "تحويل تشغيل");
+            list.Add(new ManagementActivityItemDto
+            {
+                Id = $"ACT-STG-{o.Id}",
+                Department = "STORAGE",
+                DepartmentAr = "إدارة المخازن والمستودعات",
+                Action = actName,
+                ActionAr = actAr,
+                ReferenceNumber = $"STG-{o.OperationType}-{o.TransactionNumber}",
+                ActorName = string.IsNullOrWhiteSpace(o.ResponsibleEmployee) ? (o.Source ?? "أمين المخزن") : o.ResponsibleEmployee,
+                Description = $"عملية {actAr} بمستودع {o.StorageLocationName} بوزن صافي {o.InternalNetWeight ?? 0:N2} طن",
+                Timestamp = o.CreatedAt,
+                Status = o.ApprovalStatus,
+                StatusAr = GetStatusAr(o.ApprovalStatus),
+                AmountOrQuantity = o.InternalNetWeight,
+                Unit = "طن"
+            });
+        }
+
+        foreach (var r in labReports.OrderByDescending(x => x.CreatedAt).Take(40))
+        {
+            list.Add(new ManagementActivityItemDto
+            {
+                Id = $"ACT-LAB-R-{r.Id}",
+                Department = "LABORATORY",
+                DepartmentAr = "إدارة المعمل ومراقبة الجودة",
+                Action = $"فحص مادة خام ({r.LaboratorySection})",
+                ActionAr = "تقرير فحص معملي",
+                ReferenceNumber = r.SampleCode ?? $"SMP-{r.SampleNumber}",
+                ActorName = string.IsNullOrWhiteSpace(r.ResponsibleEmployee) ? (r.CreatedBy ?? "مسؤول الفحص") : r.ResponsibleEmployee,
+                Description = $"فحص عينة {r.SampleName} - المقبول {r.AcceptedQuantity:N2} طن من إجمالي {r.ReceivedQuantity:N2} طن",
+                Timestamp = r.CreatedAt,
+                Status = r.ApprovalStatus,
+                StatusAr = GetStatusAr(r.ApprovalStatus),
+                AmountOrQuantity = r.AcceptedQuantity,
+                Unit = "طن"
+            });
+        }
+
+        foreach (var c in labCerts.OrderByDescending(x => x.ProductionCompletionDateTime).Take(30))
+        {
+            list.Add(new ManagementActivityItemDto
+            {
+                Id = $"ACT-LAB-C-{c.Id}",
+                Department = "LABORATORY",
+                DepartmentAr = "إدارة المعمل ومراقبة الجودة",
+                Action = "شهادة مطابقة نهائية",
+                ActionAr = "شهادة مطابقة منتج",
+                ReferenceNumber = c.CertificateNumber,
+                ActorName = c.ResponsibleEmployee ?? "مدير المعمل",
+                Description = $"إصدار شهادة مطابقة للمنتج {c.FinalProductName} بكمية مصنعة {c.ActualFinalProductQuantity:N2} طن",
+                Timestamp = c.ProductionCompletionDateTime,
+                Status = c.ApprovalStatus,
+                StatusAr = GetStatusAr(c.ApprovalStatus),
+                AmountOrQuantity = c.ActualFinalProductQuantity,
+                Unit = "طن"
+            });
+        }
+
+        foreach (var p in prodProcesses.OrderByDescending(x => x.ProductionDate).Take(40))
+        {
+            list.Add(new ManagementActivityItemDto
+            {
+                Id = $"ACT-PRD-{p.Id}",
+                Department = "PRODUCTION",
+                DepartmentAr = "إدارة الإنتاج والتشغيل",
+                Action = "عملية إنتاج وتشغيل",
+                ActionAr = "تشغيل وتصنيع",
+                ReferenceNumber = p.ProcessNumber,
+                ActorName = string.IsNullOrWhiteSpace(p.ResponsibleEmployee) ? (p.CreatedBy ?? "مدير الإنتاج") : p.ResponsibleEmployee,
+                Description = $"تشغيل عملية إنتاج - ناتج {p.TotalOutputQuantity:N2} طن، وهالك {p.TotalWasteQuantity:N2} طن ({p.WastePercentage:N2}%)",
+                Timestamp = p.ProductionDate,
+                Status = p.Status,
+                StatusAr = p.Status == "COMPLETED" ? "مكتمل" : (p.Status == "IN_PROGRESS" ? "قيد التشغيل" : "معلق"),
+                AmountOrQuantity = p.TotalOutputQuantity,
+                Unit = "طن"
+            });
+        }
+
+        foreach (var s in attendanceSubmissions.OrderByDescending(x => x.SubmittedAt).Take(30))
+        {
+            list.Add(new ManagementActivityItemDto
+            {
+                Id = $"ACT-ATT-{s.Id}",
+                Department = "ATTENDANCE",
+                DepartmentAr = "إدارة الحضور والانصراف",
+                Action = "كشف حضور وانصراف",
+                ActionAr = "كشف دوام يومي",
+                ReferenceNumber = s.AttendanceDate.ToString("yyyy-MM-dd"),
+                ActorName = string.IsNullOrWhiteSpace(s.SubmittedBy) ? "مسؤول الحضور" : s.SubmittedBy,
+                Description = $"كشف حضور يوم {s.AttendanceDate:yyyy-MM-dd} (حاضر: {s.PresentCount}، غائب: {s.AbsentCount})",
+                Timestamp = s.SubmittedAt,
+                Status = s.ApprovalStatus,
+                StatusAr = GetStatusAr(s.ApprovalStatus),
+                AmountOrQuantity = s.PresentCount,
+                Unit = "حاضر"
+            });
+        }
+
+        foreach (var e in expenses.OrderByDescending(x => x.ExpenseDate).Take(30))
+        {
+            list.Add(new ManagementActivityItemDto
+            {
+                Id = $"ACT-FIN-E-{e.Id}",
+                Department = "FINANCE",
+                DepartmentAr = "الإدارة المالية والمحاسبة",
+                Action = $"سند صرف ({e.Category})",
+                ActionAr = "سند صرف مالي",
+                ReferenceNumber = e.ReferenceNumber ?? $"EXP-{e.Id}",
+                ActorName = string.IsNullOrWhiteSpace(e.Beneficiary) ? (e.CreatedBy ?? "المستفيد") : e.Beneficiary,
+                Description = $"صرف مبلغ {e.Amount:N2} ج.م - {e.Title}",
+                Timestamp = e.ExpenseDate,
+                Status = "COMPLETED",
+                StatusAr = "مكتمل",
+                AmountOrQuantity = e.Amount,
+                Unit = "ج.م"
+            });
+        }
+
+        foreach (var po in pos.OrderByDescending(x => x.OrderDate).Take(30))
+        {
+            list.Add(new ManagementActivityItemDto
+            {
+                Id = $"ACT-FIN-PO-{po.Id}",
+                Department = "FINANCE",
+                DepartmentAr = "الإدارة المالية والمحاسبة",
+                Action = $"أمر توريد ({po.Supplier})",
+                ActionAr = "عقد أمر شراء",
+                ReferenceNumber = po.PONumber,
+                ActorName = string.IsNullOrWhiteSpace(po.Supplier) ? "إدارة المشتريات" : po.Supplier,
+                Description = $"أمر توريد خامة {po.MaterialName} بكمية {po.Quantity:N2} طن",
+                Timestamp = po.OrderDate,
+                Status = po.Status,
+                StatusAr = GetStatusAr(po.Status),
+                AmountOrQuantity = po.Quantity,
+                Unit = "طن"
+            });
+        }
+
+        return list.OrderByDescending(x => x.Timestamp).Take(maxItems).ToList();
     }
 }

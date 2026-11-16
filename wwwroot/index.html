@@ -32,7 +32,7 @@
   <!-- Finance Department Stylesheet -->
   <link rel="stylesheet" href="/css/finance.css?v=20261005_redesign">
   <!-- Management Department Stylesheet (Unified with Finance UX & Design) -->
-  <link rel="stylesheet" href="/css/management.css?v=20261006_unified">
+  <link rel="stylesheet" href="/css/management.css?v=20261116_mgmt_v2">
   <!-- Mobile Application Stylesheet -->
   <link rel="stylesheet" href="/css/mobile-app.css?v=20260930_pro">
   <!-- Control & Monitoring Department Stylesheet -->
@@ -3724,15 +3724,51 @@
         </div>
       </section>
 
+      <!-- Department Navigation Tabs Bar -->
+      <nav class="mgmt-nav-tabs-bar" aria-label="أقسام الرقابة الإدارية" style="display: flex; gap: 8px; overflow-x: auto; padding-bottom: 10px; margin-bottom: 1.25rem;">
+        <button type="button" class="mgmt-nav-tab active" data-tab="hub" id="tab-mgmt-hub">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          <span>اللوحة التنفيذية الشاملة</span>
+        </button>
+        <button type="button" class="mgmt-nav-tab" data-tab="transportation" id="tab-mgmt-trans">
+          <span>النقل واللوجستيات</span>
+        </button>
+        <button type="button" class="mgmt-nav-tab" data-tab="storage" id="tab-mgmt-storage">
+          <span>المستودعات والمخازن</span>
+        </button>
+        <button type="button" class="mgmt-nav-tab" data-tab="laboratory" id="tab-mgmt-lab">
+          <span>المعمل ومراقبة الجودة</span>
+        </button>
+        <button type="button" class="mgmt-nav-tab" data-tab="production" id="tab-mgmt-prod">
+          <span>الإنتاج والتشغيل</span>
+        </button>
+        <button type="button" class="mgmt-nav-tab" data-tab="finance" id="tab-mgmt-fin">
+          <span>المالية والحسابات</span>
+        </button>
+        <button type="button" class="mgmt-nav-tab" data-tab="attendance" id="tab-mgmt-attendance">
+          <span>الحضور والانصراف</span>
+        </button>
+        <button type="button" class="mgmt-nav-tab" data-tab="suppliers" id="tab-mgmt-sup">
+          <span>الموردون والعقود</span>
+        </button>
+        <button type="button" class="mgmt-nav-tab" data-tab="activity" id="tab-mgmt-activity">
+          <span>سجل الأنشطة الحي</span>
+        </button>
+        <button type="button" class="mgmt-nav-tab" data-tab="alerts" id="tab-mgmt-alerts">
+          <span>التنبيهات التشغيلية</span>
+          <span class="mgmt-alert-badge-count" id="tab-alerts-count" style="display:none;">0</span>
+        </button>
+      </nav>
+
       <!-- ==================================================================
-           1. LANDING HUB VIEW: 5 Clickable Navigation Cards (Finance Design Style)
+           1. LANDING HUB VIEW: Executive Oversight & All Departments Monitoring
            ================================================================== -->
       <div id="mgmt-hub-view">
         <!-- Title Banner Card -->
-        <div class="finance-mgmt-title-card">
+        <div class="finance-mgmt-title-card" style="margin-bottom: 1.25rem;">
           <div class="finance-mgmt-title-content">
-            <h1>لوحة الرقابة والمتابعة الإدارية</h1>
-            <p>مراقبة موحدة ومباشرة لأقسام النقل، المخازن، المالية، الموظفين، والموردين استناداً إلى بيانات المصنع الفعلية</p>
+            <h1>مركز القيادة والمتابعة الإدارية الشاملة</h1>
+            <p>رقابة مركزية موحدة ومباشرة لكافة أقسام المصنع، حركات التشغيل، الأرصدة، الجودة، والاعتمادات</p>
           </div>
           <div class="finance-badge-pill">
             <span class="live-dot-pulse"></span>
@@ -3740,7 +3776,160 @@
           </div>
         </div>
 
-        <!-- 5 Cards Navigation Grid (Exact Finance Nav Card Architecture) -->
+        <!-- 1. Executive Top 4 KPI Cards -->
+        <div class="finance-kpis-grid mgmt-exec-kpis" style="margin-bottom: 1.25rem;">
+          <div class="finance-kpi-card mgmt-kpi-gold">
+            <div class="finance-kpi-top">
+              <span class="finance-kpi-label">إجمالي معاملات الشركة</span>
+              <div class="finance-kpi-icon" style="background: rgba(212, 160, 23, 0.15); color: #D4A017;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+              </div>
+            </div>
+            <span class="finance-kpi-val" id="exec-total-tx">-</span>
+            <span class="finance-kpi-hint">كافة المعاملات المنفذة عبر الأقسام</span>
+          </div>
+
+          <div class="finance-kpi-card">
+            <div class="finance-kpi-top">
+              <span class="finance-kpi-label">طلبات بانتظار الاعتماد</span>
+              <div class="finance-kpi-icon" style="background: rgba(245, 158, 11, 0.15); color: #F59E0B;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              </div>
+            </div>
+            <span class="finance-kpi-val" id="exec-pending-tx" style="color: #F59E0B;">-</span>
+            <span class="finance-kpi-hint">معاملات تتطلب مراجعة وقرار</span>
+          </div>
+
+          <div class="finance-kpi-card">
+            <div class="finance-kpi-top">
+              <span class="finance-kpi-label">العمليات المعتمدة</span>
+              <div class="finance-kpi-icon" style="background: rgba(16, 185, 129, 0.15); color: #10B981;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="20 6 9 17 4 12"/></svg>
+              </div>
+            </div>
+            <span class="finance-kpi-val" id="exec-approved-tx" style="color: #10B981;">-</span>
+            <span class="finance-kpi-hint">تمت مراجعتها واعتمادها نهائياً</span>
+          </div>
+
+          <div class="finance-kpi-card">
+            <div class="finance-kpi-top">
+              <span class="finance-kpi-label">التنبيهات التشغيلية النشطة</span>
+              <div class="finance-kpi-icon" style="background: rgba(239, 68, 68, 0.15); color: #EF4444;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              </div>
+            </div>
+            <span class="finance-kpi-val" id="exec-alerts-count" style="color: #EF4444;">-</span>
+            <span class="finance-kpi-hint">تنبيهات فورية تتطلب التدخل</span>
+          </div>
+        </div>
+
+        <!-- 2. Today's Cross-Department Operational Snapshot Strip -->
+        <div class="mgmt-today-strip-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-bottom: 1.5rem;">
+          <div class="mgmt-today-card">
+            <div class="mgmt-today-header">
+              <span class="mgmt-today-tag">الإنتاج اليوم</span>
+              <span class="mgmt-today-badge" id="today-prod-status">نشط</span>
+            </div>
+            <div class="mgmt-today-val" id="today-prod-output">- طن</div>
+            <div class="mgmt-today-meta">
+              <span>مدخلات: <b id="today-prod-input">-</b> طن</span> | 
+              <span style="color:#ef4444;">هالك: <b id="today-prod-waste">-</b> (<span id="today-prod-wastepct">-%</span>)</span>
+            </div>
+          </div>
+
+          <div class="mgmt-today-card">
+            <div class="mgmt-today-header">
+              <span class="mgmt-today-tag">رصيد المستودعات</span>
+              <span class="mgmt-today-badge badge-blue" id="today-storage-batches">- دفعات</span>
+            </div>
+            <div class="mgmt-today-val" id="today-storage-stock">- طن</div>
+            <div class="mgmt-today-meta">
+              <span>وارد اليوم: <b id="today-storage-deposit">-</b> طن</span> | 
+              <span>صرف: <b id="today-storage-issue">-</b> طن</span>
+            </div>
+          </div>
+
+          <div class="mgmt-today-card">
+            <div class="mgmt-today-header">
+              <span class="mgmt-today-tag">شحنات النقل اليوم</span>
+              <span class="mgmt-today-badge badge-green" id="today-trans-trucks">- شاحنة</span>
+            </div>
+            <div class="mgmt-today-val" id="today-trans-net">- طن</div>
+            <div class="mgmt-today-meta">
+              <span>الرحلات: <b id="today-trans-trips">-</b> نقلة</span> | 
+              <span>الهالك: <b id="today-trans-waste">-</b> طن</span>
+            </div>
+          </div>
+
+          <div class="mgmt-today-card">
+            <div class="mgmt-today-header">
+              <span class="mgmt-today-tag">حضور الموظفين</span>
+              <span class="mgmt-today-badge badge-purple" id="today-att-rate">-%</span>
+            </div>
+            <div class="mgmt-today-val" id="today-att-present">- حاضر</div>
+            <div class="mgmt-today-meta">
+              <span>غياب: <b id="today-att-absent">-</b> موظف</span> | 
+              <span>ساعات: <b id="today-att-hours">-</b> س</span>
+            </div>
+          </div>
+
+          <div class="mgmt-today-card">
+            <div class="mgmt-today-header">
+              <span class="mgmt-today-tag">الموقف المالي العام</span>
+              <span class="mgmt-today-badge badge-gold" id="today-fin-perf">-% إنجاز</span>
+            </div>
+            <div class="mgmt-today-val" id="today-fin-contracts">- ج.م</div>
+            <div class="mgmt-today-meta">
+              <span>المسلم: <b id="today-fin-delivered">-</b></span> | 
+              <span>المصروفات: <b id="today-fin-expenses">-</b></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. Live Alerts Widget -->
+        <div class="mgmt-section-box" id="mgmt-exec-alerts-section" style="margin-bottom: 1.5rem; display: none;">
+          <div class="mgmt-section-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span class="live-dot-pulse" style="background:#EF4444;"></span>
+              <h3 style="margin:0; font-size: 1rem; font-weight:800; color:#0F2A5C;">تنبيهات تشغيلية حرجة وفورية</h3>
+            </div>
+            <button type="button" class="finance-btn-filter-action" id="mgmt-btn-view-all-alerts">
+              <span>عرض كافة التنبيهات ←</span>
+            </button>
+          </div>
+          <div id="mgmt-exec-alerts-list" class="mgmt-alerts-list">
+            <!-- Dynamically populated alerts -->
+          </div>
+        </div>
+
+        <!-- 4. Departments Operational Status Grid -->
+        <div class="mgmt-section-box" style="margin-bottom: 1.5rem;">
+          <div class="mgmt-section-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+            <h3 style="margin:0; font-size: 1rem; font-weight:800; color:#0F2A5C;">الموقف التشغيلي المباشر لكافة الأقسام</h3>
+            <span class="mgmt-code-pill">تحديث لحظي</span>
+          </div>
+          <div id="mgmt-dept-status-grid" class="mgmt-dept-cards-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px;">
+            <!-- Dynamically rendered 7 department status cards -->
+          </div>
+        </div>
+
+        <!-- 5. Recent Chronological Activities Box -->
+        <div class="mgmt-section-box" style="margin-bottom: 1.5rem;">
+          <div class="mgmt-section-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 14 14"/></svg>
+              <h3 style="margin:0; font-size: 1rem; font-weight:800; color:#0F2A5C;">سجل العمليات والأنشطة اللحظي للشركة</h3>
+            </div>
+            <button type="button" class="finance-btn-filter-action" id="mgmt-btn-view-all-activity">
+              <span>فتح السجل الشامل ←</span>
+            </button>
+          </div>
+          <div id="mgmt-exec-activities-list" class="mgmt-activity-feed-list">
+            <!-- Dynamically rendered latest activities -->
+          </div>
+        </div>
+
+        <!-- Original 7 Hub Navigation Cards Grid -->
         <div class="finance-nav-cards-grid">
 
           <!-- Card 1: Transportation -->
@@ -5155,21 +5344,451 @@
           <span>العودة إلى لوحة الإدارة</span>
         </button>
         <div class="finance-subview-title-pill">
-          <span>تتبع دورة الإنتاج الكاملة بالرقم المرجعي (المعمل ← المخازن ← الإنتاج ← الجودة ← النقل)</span>
+          <span>مراقبة المعمل والجودة وتتبع دورة الإنتاج بالرقم المرجعي</span>
+        </div>
+        <div class="finance-subview-actions">
+          <button type="button" class="finance-btn-filter-action" id="mgmt-lab-btn-refresh">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            <span>تحديث البيانات</span>
+          </button>
         </div>
       </div>
 
+      <!-- Laboratory KPIs -->
+      <div class="finance-kpis-grid" style="margin-bottom: 1.25rem;">
+        <div class="finance-kpi-card">
+          <div class="finance-kpi-top">
+            <span class="finance-kpi-label">تقارير فحص المواد الخام</span>
+            <div class="finance-kpi-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 3v6.5L4.2 18a2 2 0 0 0 1.8 3h12a2 2 0 0 0 1.8-3L15 9.5V3"/></svg></div>
+          </div>
+          <span class="finance-kpi-val" id="mgmt-kpi-lab-reports">0</span>
+          <span class="finance-kpi-hint">فحوصات فيزيائية وكيميائية</span>
+        </div>
+
+        <div class="finance-kpi-card">
+          <div class="finance-kpi-top">
+            <span class="finance-kpi-label">معدل مطابقة المواد</span>
+            <div class="finance-kpi-icon" style="background:#ECFDF5; color:#059669;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="20 6 9 17 4 12"/></svg></div>
+          </div>
+          <span class="finance-kpi-val" id="mgmt-kpi-lab-compliance" style="color:#059669;">100%</span>
+          <span class="finance-kpi-hint">نسبة المواد المقبولة معملياً</span>
+        </div>
+
+        <div class="finance-kpi-card">
+          <div class="finance-kpi-top">
+            <span class="finance-kpi-label">إجمالي الخام المقبول</span>
+            <div class="finance-kpi-icon" style="background:#EFF6FF; color:#2563EB;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></div>
+          </div>
+          <span class="finance-kpi-val" id="mgmt-kpi-lab-accepted">0.00 طن</span>
+          <span class="finance-kpi-hint">متاح لصرف الإنتاج</span>
+        </div>
+
+        <div class="finance-kpi-card">
+          <div class="finance-kpi-top">
+            <span class="finance-kpi-label">شهادات مطابقة المنتج النهائي</span>
+            <div class="finance-kpi-icon" style="background:#FEF3C7; color:#D97706;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="8" r="7"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/></svg></div>
+          </div>
+          <span class="finance-kpi-val" id="mgmt-kpi-lab-certs">0</span>
+          <span class="finance-kpi-hint">شهادات مطابقة المنتج النهائي</span>
+        </div>
+      </div>
+
+      <!-- Traceability Search Card -->
       <div class="finance-filters-card" style="padding: 1.25rem; margin-bottom: 1.5rem;">
-        <h3 style="margin: 0 0 0.75rem 0; font-size: 1rem; font-weight: 800; color: #0F2A5C;">بحث تتبعي بالرقم المرجعي للإنتاج</h3>
+        <h3 style="margin: 0 0 0.75rem 0; font-size: 1rem; font-weight: 800; color: #0F2A5C;">بحث تتبعي مباشر بالرقم المرجعي المركزي</h3>
         <div style="display: flex; gap: 12px; max-width: 600px;">
           <input type="number" min="1" id="mgmt-lab-trace-input" placeholder="أدخل الرقم المرجعي التتبعي (مثال: 1 أو 2 أو 3)" class="finance-input" style="flex: 1;" />
-          <button type="button" class="finance-btn-primary" id="mgmt-lab-trace-btn" style="padding: 0 20px;">تتبع الدورة</button>
+          <button type="button" class="finance-btn-primary" id="mgmt-lab-trace-btn" style="padding: 0 20px;">تتبع الدورة الكاملة</button>
         </div>
       </div>
 
-      <div id="mgmt-lab-trace-result" style="margin-top: 1rem;">
-        <div style="text-align: center; padding: 2.5rem; background: #fff; border-radius: 12px; border: 1px solid #E2E8F0; color: #64748B;">
-          أدخل الرقم المرجعي التتبعي أعلاه لعرض السجل الكامل لدورة الإنتاج وربط المعمل بالمخازن والتصنيع.
+      <div id="mgmt-lab-trace-result" style="margin-bottom: 1.5rem;">
+        <div style="text-align: center; padding: 1.5rem; background: #fff; border-radius: 12px; border: 1px solid #E2E8F0; color: #64748B;">
+          أدخل الرقم المرجعي التتبعي أعلاه لتتبع المسار الكامل (المعمل ← المخازن ← الإنتاج ← الجودة ← النقل).
+        </div>
+      </div>
+
+      <!-- Raw Material Reports Table -->
+      <div class="finance-table-card" style="margin-bottom: 1.5rem;">
+        <div class="finance-table-header" style="display:flex; justify-content:space-between; align-items:center; padding: 1rem 1.25rem;">
+          <h3 style="margin:0; font-size: 1rem; font-weight: 800; color: #0F2A5C;">تقارير فحص المواد الخام الواردة (فيزيائي / كيميائي)</h3>
+          <span class="mgmt-code-pill" id="mgmt-lab-reports-badge">0 تقرير</span>
+        </div>
+        <div class="finance-table-wrap">
+          <table class="finance-table">
+            <thead>
+              <tr>
+                <th>كود العينة</th>
+                <th>القسم</th>
+                <th>اسم الخامة</th>
+                <th>المورد</th>
+                <th>رقم الدفعة</th>
+                <th>المستلم (طن)</th>
+                <th>المقبول (طن)</th>
+                <th>المرفوض (طن)</th>
+                <th>المطابقة</th>
+                <th>قرار الفحص</th>
+                <th>حالة الاعتماد</th>
+                <th>المسؤول</th>
+                <th>التاريخ</th>
+              </tr>
+            </thead>
+            <tbody id="mgmt-lab-reports-tbody">
+              <tr><td colspan="13" class="text-center" style="padding: 2rem; color: #64748B;">جاري تحميل تقارير الفحص...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Final Conformity Certificates Table -->
+      <div class="finance-table-card">
+        <div class="finance-table-header" style="display:flex; justify-content:space-between; align-items:center; padding: 1rem 1.25rem;">
+          <h3 style="margin:0; font-size: 1rem; font-weight: 800; color: #0F2A5C;">شهادات مطابقة المنتج النهائي</h3>
+          <span class="mgmt-code-pill" id="mgmt-lab-certs-badge">0 شهادة</span>
+        </div>
+        <div class="finance-table-wrap">
+          <table class="finance-table">
+            <thead>
+              <tr>
+                <th>رقم الشهادة</th>
+                <th>الرقم المرجعي</th>
+                <th>اسم المنتج النهائي</th>
+                <th>الكمية المصنعة (طن)</th>
+                <th>الخام المستخدم (طن)</th>
+                <th>فارق الوزن</th>
+                <th>قرار المطابقة</th>
+                <th>حالة الاعتماد</th>
+                <th>المسؤول</th>
+                <th>تاريخ الإنجاز</th>
+              </tr>
+            </thead>
+            <tbody id="mgmt-lab-certs-tbody">
+              <tr><td colspan="10" class="text-center" style="padding: 2rem; color: #64748B;">جاري تحميل شهادات المطابقة...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- 6. Management Production Operations View -->
+    <div id="mgmt-view-production" style="display: none;">
+      <div class="finance-subview-nav">
+        <button type="button" class="finance-btn-subview-back" id="mgmt-prod-back-btn">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+          <span>العودة إلى لوحة الإدارة</span>
+        </button>
+        <div class="finance-subview-title-pill">
+          <span>مراقبة عمليات الإنتاج والتشغيل — الخلط والتصنيع ونسب الهالك</span>
+        </div>
+        <div class="finance-subview-actions">
+          <button type="button" class="finance-btn-filter-action" id="mgmt-prod-btn-refresh">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            <span>تحديث البيانات</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Production KPIs -->
+      <div class="finance-kpis-grid" style="margin-bottom: 1.25rem;">
+        <div class="finance-kpi-card">
+          <div class="finance-kpi-top">
+            <span class="finance-kpi-label">أوامر الإنتاج</span>
+            <div class="finance-kpi-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
+          </div>
+          <span class="finance-kpi-val" id="mgmt-kpi-prod-orders">0</span>
+          <span class="finance-kpi-hint">نشطة: <b id="mgmt-kpi-prod-activeorders">0</b></span>
+        </div>
+
+        <div class="finance-kpi-card">
+          <div class="finance-kpi-top">
+            <span class="finance-kpi-label">عمليات التشغيل المنفذة</span>
+            <div class="finance-kpi-icon" style="background:#EFF6FF; color:#2563EB;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/></svg></div>
+          </div>
+          <span class="finance-kpi-val" id="mgmt-kpi-prod-processes">0</span>
+          <span class="finance-kpi-hint">دورات تشغيل وخلط فعلية</span>
+        </div>
+
+        <div class="finance-kpi-card">
+          <div class="finance-kpi-top">
+            <span class="finance-kpi-label">إجمالي الناتج المصنع</span>
+            <div class="finance-kpi-icon" style="background:#ECFDF5; color:#059669;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="20 6 9 17 4 12"/></svg></div>
+          </div>
+          <span class="finance-kpi-val" id="mgmt-kpi-prod-output" style="color:#059669;">0.00 طن</span>
+          <span class="finance-kpi-hint">صافي الإنتاج التام</span>
+        </div>
+
+        <div class="finance-kpi-card">
+          <div class="finance-kpi-top">
+            <span class="finance-kpi-label">معدل الهالك الإجمالي</span>
+            <div class="finance-kpi-icon" style="background:#FEF2F2; color:#DC2626;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/></svg></div>
+          </div>
+          <span class="finance-kpi-val" id="mgmt-kpi-prod-waste" style="color:#DC2626;">0.00%</span>
+          <span class="finance-kpi-hint">إجمالي الهالك: <b id="mgmt-kpi-prod-wasteqty">0.00</b> طن</span>
+        </div>
+      </div>
+
+      <!-- Production Processes Table -->
+      <div class="finance-table-card" style="margin-bottom: 1.5rem;">
+        <div class="finance-table-header" style="display:flex; justify-content:space-between; align-items:center; padding: 1rem 1.25rem;">
+          <h3 style="margin:0; font-size: 1rem; font-weight: 800; color: #0F2A5C;">عمليات التشغيل والتصنيع الفعلية</h3>
+          <span class="mgmt-code-pill" id="mgmt-prod-processes-badge">0 عملية</span>
+        </div>
+        <div class="finance-table-wrap">
+          <table class="finance-table">
+            <thead>
+              <tr>
+                <th>رقم العملية</th>
+                <th>أمر الإنتاج المرتبط</th>
+                <th>تاريخ التشغيل</th>
+                <th>المستودع</th>
+                <th>المدخلات (طن)</th>
+                <th>الناتج المصنع (طن)</th>
+                <th>الهالك (طن)</th>
+                <th>نسبة الهالك</th>
+                <th>الحالة</th>
+                <th>المسؤول</th>
+              </tr>
+            </thead>
+            <tbody id="mgmt-prod-processes-tbody">
+              <tr><td colspan="10" class="text-center" style="padding: 2rem; color: #64748B;">جاري تحميل عمليات التشغيل...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Production Orders Table -->
+      <div class="finance-table-card">
+        <div class="finance-table-header" style="display:flex; justify-content:space-between; align-items:center; padding: 1rem 1.25rem;">
+          <h3 style="margin:0; font-size: 1rem; font-weight: 800; color: #0F2A5C;">أوامر وطلبات الإنتاج</h3>
+          <span class="mgmt-code-pill" id="mgmt-prod-orders-badge">0 أمر</span>
+        </div>
+        <div class="finance-table-wrap">
+          <table class="finance-table">
+            <thead>
+              <tr>
+                <th>رقم الأمر</th>
+                <th>المنتج المستهدف</th>
+                <th>الكمية المستهدفة (طن)</th>
+                <th>المنتج الفعلي (طن)</th>
+                <th>الخام المخطط (طن)</th>
+                <th>الخام المنصرف (طن)</th>
+                <th>نسبة الإنجاز</th>
+                <th>الحالة</th>
+                <th>تاريخ البدء</th>
+              </tr>
+            </thead>
+            <tbody id="mgmt-prod-orders-tbody">
+              <tr><td colspan="9" class="text-center" style="padding: 2rem; color: #64748B;">جاري تحميل أوامر الإنتاج...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- 7. Management Attendance View -->
+    <div id="mgmt-view-attendance" style="display: none;">
+      <div class="finance-subview-nav">
+        <button type="button" class="finance-btn-subview-back" id="mgmt-att-back-btn">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+          <span>العودة إلى لوحة الإدارة</span>
+        </button>
+        <div class="finance-subview-title-pill">
+          <span>مراقبة الحضور والانصراف — كشوف دوام الموظفين وساعات العمل</span>
+        </div>
+        <div class="finance-subview-actions">
+          <button type="button" class="finance-btn-filter-action" id="mgmt-att-btn-refresh">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            <span>تحديث</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Date Filter -->
+      <div class="finance-filters-card" style="padding: 1rem 1.25rem; margin-bottom: 1.25rem;">
+        <div style="display:flex; align-items:center; gap: 12px; flex-wrap: wrap;">
+          <label style="font-weight: 700; color: #0F2A5C;" for="mgmt-att-date-picker">تاريخ كشف الحضور:</label>
+          <input type="date" id="mgmt-att-date-picker" class="finance-input" style="max-width: 200px;" />
+          <button type="button" class="finance-btn-primary" id="mgmt-att-btn-apply" style="padding: 8px 18px;">عرض الكشف</button>
+          <span class="mgmt-code-pill" id="mgmt-att-submission-status" style="margin-right: auto;">حالة الكشف: معتمد</span>
+        </div>
+      </div>
+
+      <!-- Attendance KPIs -->
+      <div class="finance-kpis-grid" style="margin-bottom: 1.25rem;">
+        <div class="finance-kpi-card">
+          <div class="finance-kpi-top">
+            <span class="finance-kpi-label">نسبة الحضور</span>
+            <div class="finance-kpi-icon" style="background:#ECFDF5; color:#059669;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="20 6 9 17 4 12"/></svg></div>
+          </div>
+          <span class="finance-kpi-val" id="mgmt-kpi-att-rate" style="color:#059669;">0%</span>
+          <span class="finance-kpi-hint">من إجمالي قوة العمل</span>
+        </div>
+
+        <div class="finance-kpi-card">
+          <div class="finance-kpi-top">
+            <span class="finance-kpi-label">الموظفون الحاضرون</span>
+            <div class="finance-kpi-icon" style="background:#EFF6FF; color:#2563EB;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div>
+          </div>
+          <span class="finance-kpi-val" id="mgmt-kpi-att-present">0</span>
+          <span class="finance-kpi-hint">سجلوا حضورهم اليوم</span>
+        </div>
+
+        <div class="finance-kpi-card">
+          <div class="finance-kpi-top">
+            <span class="finance-kpi-label">الموظفون الغائبون</span>
+            <div class="finance-kpi-icon" style="background:#FEF2F2; color:#DC2626;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg></div>
+          </div>
+          <span class="finance-kpi-val" id="mgmt-kpi-att-absent" style="color:#DC2626;">0</span>
+          <span class="finance-kpi-hint">غائب / إجازة</span>
+        </div>
+
+        <div class="finance-kpi-card">
+          <div class="finance-kpi-top">
+            <span class="finance-kpi-label">إجمالي ساعات العمل</span>
+            <div class="finance-kpi-icon" style="background:#FEF3C7; color:#D97706;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+          </div>
+          <span class="finance-kpi-val" id="mgmt-kpi-att-hours">0 ساعة</span>
+          <span class="finance-kpi-hint">ساعات العمل المحتسبة</span>
+        </div>
+      </div>
+
+      <!-- Attendance Table -->
+      <div class="finance-table-card">
+        <div class="finance-table-header" style="display:flex; justify-content:space-between; align-items:center; padding: 1rem 1.25rem;">
+          <h3 style="margin:0; font-size: 1rem; font-weight: 800; color: #0F2A5C;">سجل حضور وانصراف الموظفين</h3>
+          <span class="mgmt-code-pill" id="mgmt-att-employees-badge">0 موظف</span>
+        </div>
+        <div class="finance-table-wrap">
+          <table class="finance-table">
+            <thead>
+              <tr>
+                <th>اسم الموظف</th>
+                <th>الدور الوظيفي</th>
+                <th>القسم</th>
+                <th>حالة الحضور</th>
+                <th>وقت الحضور</th>
+                <th>وقت الانصراف</th>
+                <th>ساعات العمل</th>
+                <th>حالة الاعتماد</th>
+                <th>ملاحظات</th>
+              </tr>
+            </thead>
+            <tbody id="mgmt-attendance-tbody">
+              <tr><td colspan="9" class="text-center" style="padding: 2rem; color: #64748B;">جاري تحميل كشف الحضور...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- 8. Management Activity Feed View -->
+    <div id="mgmt-view-activity-feed" style="display: none;">
+      <div class="finance-subview-nav">
+        <button type="button" class="finance-btn-subview-back" id="mgmt-activity-back-btn">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+          <span>العودة إلى لوحة الإدارة</span>
+        </button>
+        <div class="finance-subview-title-pill">
+          <span>سجل الأنشطة والعمليات اللحظي لكافة أقسام الشركة</span>
+        </div>
+        <div class="finance-subview-actions">
+          <button type="button" class="finance-btn-filter-action" id="mgmt-activity-btn-refresh">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            <span>تحديث السجل</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Filters -->
+      <div class="finance-filters-card" style="padding: 1.25rem; margin-bottom: 1.25rem;">
+        <div class="finance-filters-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
+          <div class="finance-filter-item">
+            <label class="finance-filter-label" for="mgmt-feed-filter-dept">القسم المعني:</label>
+            <select id="mgmt-feed-filter-dept" class="finance-input">
+              <option value="">كافة الأقسام</option>
+              <option value="TRANSPORTATION">النقل واللوجستيات</option>
+              <option value="STORAGE">المستودعات والمخازن</option>
+              <option value="LABORATORY">المعمل والجودة</option>
+              <option value="PRODUCTION">الإنتاج والتشغيل</option>
+              <option value="ATTENDANCE">الحضور والانصراف</option>
+              <option value="FINANCE">المالية وأوامر الشراء</option>
+            </select>
+          </div>
+
+          <div class="finance-filter-item">
+            <label class="finance-filter-label" for="mgmt-feed-date-from">من تاريخ:</label>
+            <input type="date" id="mgmt-feed-date-from" class="finance-input" />
+          </div>
+
+          <div class="finance-filter-item">
+            <label class="finance-filter-label" for="mgmt-feed-date-to">إلى تاريخ:</label>
+            <input type="date" id="mgmt-feed-date-to" class="finance-input" />
+          </div>
+
+          <div class="finance-filter-item">
+            <label class="finance-filter-label" for="mgmt-feed-search-input">بحث في الأنشطة:</label>
+            <input type="text" id="mgmt-feed-search-input" class="finance-input" placeholder="رقم مرجع، اسم، وصف..." />
+          </div>
+        </div>
+        <div style="display:flex; justify-content:flex-end; gap:8px; margin-top: 1rem;">
+          <button type="button" class="finance-btn-primary" id="mgmt-feed-btn-apply" style="padding: 8px 20px;">تطبيق الفلتر</button>
+          <button type="button" class="finance-btn-filter-action" id="mgmt-feed-btn-reset">إعادة ضبط</button>
+        </div>
+      </div>
+
+      <!-- Activities Feed Table -->
+      <div class="finance-table-card">
+        <div class="finance-table-header" style="display:flex; justify-content:space-between; align-items:center; padding: 1rem 1.25rem;">
+          <h3 style="margin:0; font-size: 1rem; font-weight: 800; color: #0F2A5C;">سجل الحركات المباشرة (أحدث العمليات أولاً)</h3>
+          <span class="mgmt-code-pill" id="mgmt-feed-count-badge">0 حركة</span>
+        </div>
+        <div class="finance-table-wrap">
+          <table class="finance-table">
+            <thead>
+              <tr>
+                <th>التوقيت</th>
+                <th>القسم</th>
+                <th>نوع الحركة</th>
+                <th>الرقم المرجعي</th>
+                <th>المسؤول / المنفذ</th>
+                <th>بيان وتفاصيل العملية</th>
+                <th>الكمية / المبلغ</th>
+                <th>حالة العملية</th>
+              </tr>
+            </thead>
+            <tbody id="mgmt-activity-feed-tbody">
+              <tr><td colspan="8" class="text-center" style="padding: 2rem; color: #64748B;">جاري تحميل سجل الأنشطة...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- 9. Management Alerts View -->
+    <div id="mgmt-view-alerts" style="display: none;">
+      <div class="finance-subview-nav">
+        <button type="button" class="finance-btn-subview-back" id="mgmt-alerts-back-btn">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+          <span>العودة إلى لوحة الإدارة</span>
+        </button>
+        <div class="finance-subview-title-pill">
+          <span>التنبيهات التشغيلية والرقابية للشركة</span>
+        </div>
+        <div class="finance-subview-actions">
+          <button type="button" class="finance-btn-filter-action" id="mgmt-alerts-btn-refresh">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            <span>تحديث التنبيهات</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="mgmt-section-box">
+        <div class="mgmt-section-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+          <h3 style="margin:0; font-size: 1.05rem; font-weight: 800; color: #0F2A5C;">قائمة التنبيهات التشغيلية المباشرة المستخرجة من قاعدة البيانات</h3>
+          <span class="mgmt-code-pill" id="mgmt-alerts-view-badge">0 تنبيه</span>
+        </div>
+        <div id="mgmt-full-alerts-container" class="mgmt-alerts-list">
+          <!-- Dynamically rendered full alerts -->
         </div>
       </div>
     </div>
@@ -10180,7 +10799,7 @@
   <script src="/js/storage.js?v=20261107_live"></script>
   <script src="/js/laboratory.js?v=20261024_v1"></script>
   <script src="/js/production.js?v=20261107_live"></script>
-  <script src="/js/management.js?v=20260928_mgmt"></script>
+  <script src="/js/management.js?v=20261116_mgmt_v2"></script>
   <script src="/js/finance.js?v=20261005_redesign"></script>
   <script src="/js/control-monitoring.js?v=20261007_v4"></script>
   <script src="/js/attendance.js?v=20261116_fix"></script>

@@ -1385,6 +1385,50 @@ class ChatApi {
     });
   }
 
+  static async getManagementExecutiveDashboard() {
+    return await this.request('/api/management/executive-dashboard', {
+      method: 'GET'
+    });
+  }
+
+  static async getManagementActivityFeed(params = {}) {
+    const qs = new URLSearchParams();
+    if (params.department) qs.append('department', params.department);
+    if (params.fromDate) qs.append('fromDate', params.fromDate);
+    if (params.toDate) qs.append('toDate', params.toDate);
+    if (params.search) qs.append('search', params.search);
+    if (params.limit) qs.append('limit', params.limit);
+    const queryStr = qs.toString() ? `?${qs.toString()}` : '';
+    return await this.request(`/api/management/activity-feed${queryStr}`, {
+      method: 'GET'
+    });
+  }
+
+  static async getManagementAlerts() {
+    return await this.request('/api/management/alerts', {
+      method: 'GET'
+    });
+  }
+
+  static async getManagementLaboratoryOverview() {
+    return await this.request('/api/management/laboratory', {
+      method: 'GET'
+    });
+  }
+
+  static async getManagementProductionOverview() {
+    return await this.request('/api/management/production', {
+      method: 'GET'
+    });
+  }
+
+  static async getManagementAttendanceOverview(date = null) {
+    const qs = date ? `?date=${encodeURIComponent(date)}` : '';
+    return await this.request(`/api/management/attendance${qs}`, {
+      method: 'GET'
+    });
+  }
+
   /* =========================================================================
      Attendance Department Endpoints (/api/attendance)
      ========================================================================= */

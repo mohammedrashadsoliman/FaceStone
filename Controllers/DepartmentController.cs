@@ -348,6 +348,17 @@ public class DepartmentController : ControllerBase
     /// Supports both direct API callers (returns 200 / 403 / 401) and browser navigation.
     /// </summary>
     [HttpGet("/management")]
+    [HttpGet("/management/transportation")]
+    [HttpGet("/management/storage")]
+    [HttpGet("/management/finance")]
+    [HttpGet("/management/employees")]
+    [HttpGet("/management/suppliers")]
+    [HttpGet("/management/suppliers/{id}")]
+    [HttpGet("/management/laboratory")]
+    [HttpGet("/management/production")]
+    [HttpGet("/management/attendance")]
+    [HttpGet("/management/activity")]
+    [HttpGet("/management/alerts")]
     public IActionResult HandleManagementDirect()
     {
         if (ShouldServeSpaHtml())
