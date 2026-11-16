@@ -54,32 +54,6 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>
-    /// Register a new user account in SQL Server and immediately receive a JWT Bearer token.
-    /// </summary>
-    [HttpPost("register")]
-    [AllowAnonymous]
-    [ProducesResponseType(typeof(ApiResponse<AuthResponseDto>), StatusCodes.Status201Created)]
-    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> Register([FromBody] RegisterRequestDto request)
-    {
-        if (!ModelState.IsValid)
-        {
-            var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
-            return BadRequest(ApiResponse.Fail("Validation failed.", errors));
-        }
-
-        var (success, error, authResponse) = await _authService.RegisterWithJwtAsync(request);
-        if (!success || authResponse == null)
-        {
-            return BadRequest(ApiResponse.Fail(error ?? "Registration failed. Please review your input."));
-        }
-
-        _logger.LogInformation("New user {Username} ({Role}) registered successfully.", authResponse.User.Username, authResponse.User.Role);
-        return StatusCode(StatusCodes.Status201Created, 
-            ApiResponse<AuthResponseDto>.Ok(authResponse, $"Account created successfully! Welcome, {authResponse.User.FullName}."));
-    }
-
-    /// <summary>
     /// Request password reset instructions by identifier (email, phone, or username).
     /// </summary>
     [HttpPost("forgot-password")]

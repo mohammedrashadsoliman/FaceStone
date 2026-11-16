@@ -1568,6 +1568,26 @@ BEGIN
         ALTER TABLE LaboratoryFinalConformityCertificates ADD SampleCode NVARCHAR(50) NULL;
     IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryFinalConformityCertificates') AND name = 'SampleNumber')
         ALTER TABLE LaboratoryFinalConformityCertificates ADD SampleNumber INT NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryFinalConformityCertificates') AND name = 'ProductionProcessId')
+        ALTER TABLE LaboratoryFinalConformityCertificates ADD ProductionProcessId INT NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryFinalConformityCertificates') AND name = 'ProductionProcessNumber')
+        ALTER TABLE LaboratoryFinalConformityCertificates ADD ProductionProcessNumber NVARCHAR(100) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryFinalConformityCertificates') AND name = 'ProductionFinishedProductId')
+        ALTER TABLE LaboratoryFinalConformityCertificates ADD ProductionFinishedProductId INT NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryFinalConformityCertificates') AND name = 'ManufactureNumber')
+        ALTER TABLE LaboratoryFinalConformityCertificates ADD ManufactureNumber NVARCHAR(100) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryFinalConformityCertificates') AND name = 'ProductionOrderId')
+        ALTER TABLE LaboratoryFinalConformityCertificates ADD ProductionOrderId INT NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryFinalConformityCertificates') AND name = 'ProductionOrderNumber')
+        ALTER TABLE LaboratoryFinalConformityCertificates ADD ProductionOrderNumber NVARCHAR(100) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryFinalConformityCertificates') AND name = 'TargetQuantity')
+        ALTER TABLE LaboratoryFinalConformityCertificates ADD TargetQuantity DECIMAL(18,3) NOT NULL CONSTRAINT DF_LFC_TargetQty DEFAULT 0;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryFinalConformityCertificates') AND name = 'AssociatedReferenceNumbers')
+        ALTER TABLE LaboratoryFinalConformityCertificates ADD AssociatedReferenceNumbers NVARCHAR(500) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryFinalConformityCertificates') AND name = 'QualityParametersJson')
+        ALTER TABLE LaboratoryFinalConformityCertificates ADD QualityParametersJson NVARCHAR(MAX) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryFinalConformityCertificates') AND name = 'CorrectiveAction')
+        ALTER TABLE LaboratoryFinalConformityCertificates ADD CorrectiveAction NVARCHAR(1000) NULL;
 END
 
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'WarehouseBatches')
@@ -1757,6 +1777,24 @@ BEGIN
         ALTER TABLE ProductionFinishedProducts ADD WeighbridgeFileType NVARCHAR(100) NULL;
     IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionFinishedProducts') AND name = 'WeighbridgeFileSize')
         ALTER TABLE ProductionFinishedProducts ADD WeighbridgeFileSize BIGINT NOT NULL CONSTRAINT DF_PFP_WbFileSize DEFAULT 0;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionFinishedProducts') AND name = 'LaboratoryConformityStatus')
+        ALTER TABLE ProductionFinishedProducts ADD LaboratoryConformityStatus NVARCHAR(50) NOT NULL CONSTRAINT DF_PFP_LabStatus DEFAULT 'PENDING_INSPECTION';
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionFinishedProducts') AND name = 'LaboratoryCertificateId')
+        ALTER TABLE ProductionFinishedProducts ADD LaboratoryCertificateId INT NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionFinishedProducts') AND name = 'LaboratoryCertificateNumber')
+        ALTER TABLE ProductionFinishedProducts ADD LaboratoryCertificateNumber NVARCHAR(100) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionFinishedProducts') AND name = 'LaboratoryCertifiedAt')
+        ALTER TABLE ProductionFinishedProducts ADD LaboratoryCertifiedAt DATETIME2 NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionFinishedProducts') AND name = 'LaboratoryCertifiedBy')
+        ALTER TABLE ProductionFinishedProducts ADD LaboratoryCertifiedBy NVARCHAR(150) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionFinishedProducts') AND name = 'LaboratoryRejectionReason')
+        ALTER TABLE ProductionFinishedProducts ADD LaboratoryRejectionReason NVARCHAR(1000) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionFinishedProducts') AND name = 'LaboratoryCorrectiveAction')
+        ALTER TABLE ProductionFinishedProducts ADD LaboratoryCorrectiveAction NVARCHAR(1000) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionFinishedProducts') AND name = 'LaboratoryNotes')
+        ALTER TABLE ProductionFinishedProducts ADD LaboratoryNotes NVARCHAR(1000) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionFinishedProducts') AND name = 'LaboratoryQualityParametersJson')
+        ALTER TABLE ProductionFinishedProducts ADD LaboratoryQualityParametersJson NVARCHAR(MAX) NULL;
     IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_ProductionFinishedProducts_ProductionOrderId' AND object_id = OBJECT_ID('ProductionFinishedProducts'))
         CREATE INDEX IX_ProductionFinishedProducts_ProductionOrderId ON ProductionFinishedProducts (ProductionOrderId);
     IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'ProductionFinishedProducts' AND COLUMN_NAME = 'StorageLocationId' AND IS_NULLABLE = 'NO')
@@ -2410,6 +2448,9 @@ IF NOT EXISTS (SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId] = '2026
                 }
             }
             await db.SaveChangesAsync(cts.Token);
+
+            // Ensure dedicated test account exists for every department
+            await SeedDepartmentTestAccountsAsync(db, logger, cts.Token);
 
             // Initialize Production Sequences if needed
             var seqTypes = new[] { "ORDER", "BATCH", "OUTPUT", "REWORK", "DAILY_SUBMISSION" };
@@ -3987,6 +4028,139 @@ IF NOT EXISTS (SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId] = '2026
         using var sha = SHA256.Create();
         var bytes = sha.ComputeHash(Encoding.UTF8.GetBytes(password + "_FaceStoneSalt_2026"));
         return Convert.ToBase64String(bytes);
+    }
+
+    /// <summary>
+    /// Seeds dedicated, secure, idempotent test accounts for every department in FaceStone.
+    /// Works seamlessly in both local development and published MonsterASP SQL Server environments.
+    /// </summary>
+    public static async Task SeedDepartmentTestAccountsAsync(FaceStoneDbContext db, ILogger logger, CancellationToken ct = default)
+    {
+        var testAccounts = new[]
+        {
+            new
+            {
+                Username = "test_management",
+                Email = "test.management@facestone.com",
+                FullName = "مدير إدارة المصنع (Management)",
+                Role = AppRoles.FactoryManager,
+                Password = "Password123!",
+                Phone = "+20 10 9900 0001"
+            },
+            new
+            {
+                Username = "test_finance",
+                Email = "test.finance@facestone.com",
+                FullName = "المحاسب المالي (Finance)",
+                Role = AppRoles.Accountant,
+                Password = "Password123!",
+                Phone = "+20 10 9900 0002"
+            },
+            new
+            {
+                Username = "test_transport",
+                Email = "test.transport@facestone.com",
+                FullName = "مسؤول حركة النقل واللوجستيات (Transport)",
+                Role = AppRoles.TransportationManager,
+                Password = "Password123!",
+                Phone = "+20 10 9900 0003"
+            },
+            new
+            {
+                Username = "test_storage",
+                Email = "test.storage@facestone.com",
+                FullName = "أمين المستودعات والمخازن (Storage)",
+                Role = AppRoles.StorageManager,
+                Password = "Password123!",
+                Phone = "+20 10 9900 0004"
+            },
+            new
+            {
+                Username = "test_laboratory",
+                Email = "test.laboratory@facestone.com",
+                FullName = "كيميائي فحص الجودة والمعمل (Laboratory)",
+                Role = AppRoles.PhysicalLabEmployee,
+                Password = "Password123!",
+                Phone = "+20 10 9900 0005"
+            },
+            new
+            {
+                Username = "test_production",
+                Email = "test.production@facestone.com",
+                FullName = "مدير خطوط الإنتاج والتشغيل (Production)",
+                Role = AppRoles.ProductionManager,
+                Password = "Password123!",
+                Phone = "+20 10 9900 0006"
+            },
+            new
+            {
+                Username = "test_attendance",
+                Email = "test.attendance@facestone.com",
+                FullName = "مسؤول سجلات الحضور والانصراف (Attendance)",
+                Role = AppRoles.AttendanceEmployee,
+                Password = "Password123!",
+                Phone = "+20 10 9900 0007"
+            },
+            new
+            {
+                Username = "test_suppliers",
+                Email = "test.suppliers@facestone.com",
+                FullName = "مسؤول الموردين والتعاقدات (Suppliers)",
+                Role = AppRoles.FinanceManager,
+                Password = "Password123!",
+                Phone = "+20 10 9900 0008"
+            }
+        };
+
+        var passHash = HashPassword("Password123!");
+        bool changed = false;
+
+        foreach (var acc in testAccounts)
+        {
+            var user = await db.Users.FirstOrDefaultAsync(u => u.Username == acc.Username || u.Email == acc.Email, ct);
+            if (user == null)
+            {
+                await db.Users.AddAsync(new UserAccount
+                {
+                    Id = Guid.NewGuid(),
+                    FullName = acc.FullName,
+                    Username = acc.Username,
+                    Email = acc.Email,
+                    PhoneNumber = acc.Phone,
+                    CountryCode = "+20",
+                    Role = acc.Role,
+                    PasswordHash = passHash,
+                    CreatedAt = DateTime.UtcNow
+                }, ct);
+                changed = true;
+                logger.LogInformation("[SEED] Created dedicated test account '{Username}' for department role '{Role}'.", acc.Username, acc.Role);
+            }
+            else
+            {
+                bool userUpdated = false;
+                if (user.Role != acc.Role)
+                {
+                    user.Role = acc.Role;
+                    userUpdated = true;
+                }
+                if (user.PasswordHash != passHash)
+                {
+                    user.PasswordHash = passHash;
+                    userUpdated = true;
+                }
+                if (userUpdated)
+                {
+                    changed = true;
+                    logger.LogInformation("[SEED] Synchronized test account '{Username}' role/credentials.", acc.Username);
+                }
+            }
+        }
+
+        if (changed)
+        {
+            await db.SaveChangesAsync(ct);
+            logger.LogInformation("[SEED] All 8 department test accounts verified in database.");
+        }
     }
 
     /// <summary>

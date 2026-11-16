@@ -1865,16 +1865,22 @@ public class FaceStoneDbContext : DbContext
             entity.Property(e => e.QuantityUnit).HasMaxLength(50).HasDefaultValue("طن").IsRequired();
             entity.Property(e => e.ActualFinalProductQuantity).HasPrecision(18, 3);
             entity.Property(e => e.ActualRawMaterialInputQuantity).HasPrecision(18, 3);
+            entity.Property(e => e.TargetQuantity).HasPrecision(18, 3);
             entity.Property(e => e.CalculatedDifference).HasPrecision(18, 3);
             entity.Property(e => e.ActualMeasuredWaste).HasPrecision(18, 3);
             entity.Property(e => e.WasteClassification).HasMaxLength(50).HasDefaultValue("ORDINARY_WASTE").IsRequired();
             entity.Property(e => e.ConformityDecision).HasMaxLength(50).IsRequired();
             entity.Property(e => e.NonConformityAction).HasMaxLength(50);
             entity.Property(e => e.ClassifiedProductType).HasMaxLength(100);
+            entity.Property(e => e.ProductionProcessNumber).HasMaxLength(100);
+            entity.Property(e => e.ManufactureNumber).HasMaxLength(100);
+            entity.Property(e => e.ProductionOrderNumber).HasMaxLength(100);
+            entity.Property(e => e.AssociatedReferenceNumbers).HasMaxLength(500);
+            entity.Property(e => e.CorrectiveAction).HasMaxLength(1000);
             entity.Property(e => e.ResponsibleEmployee).HasMaxLength(150).IsRequired();
             entity.Property(e => e.ApprovalStatus).HasMaxLength(50).HasDefaultValue("PENDING").IsRequired();
             entity.Property(e => e.ReviewedBy).HasMaxLength(150);
-            entity.Property(e => e.RejectionReason).HasMaxLength(500);
+            entity.Property(e => e.RejectionReason).HasMaxLength(1000);
             entity.Property(e => e.CreatedBy).HasMaxLength(150).IsRequired();
 
             entity.HasOne(e => e.RawMaterialReport)
@@ -1885,6 +1891,16 @@ public class FaceStoneDbContext : DbContext
             entity.HasOne(e => e.ProductionWorkInProcess)
                   .WithMany()
                   .HasForeignKey(e => e.ProductionWorkInProcessId)
+                  .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(e => e.ProductionProcess)
+                  .WithMany()
+                  .HasForeignKey(e => e.ProductionProcessId)
+                  .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(e => e.ProductionFinishedProduct)
+                  .WithMany()
+                  .HasForeignKey(e => e.ProductionFinishedProductId)
                   .OnDelete(DeleteBehavior.SetNull);
         });
 
@@ -2326,6 +2342,13 @@ public class FaceStoneDbContext : DbContext
 
             entity.Property(e => e.ManufacturedQuantity).HasPrecision(18, 3);
 
+            entity.Property(e => e.LaboratoryConformityStatus).HasMaxLength(50).HasDefaultValue("PENDING_INSPECTION").IsRequired();
+            entity.Property(e => e.LaboratoryCertificateNumber).HasMaxLength(100);
+            entity.Property(e => e.LaboratoryCertifiedBy).HasMaxLength(150);
+            entity.Property(e => e.LaboratoryRejectionReason).HasMaxLength(1000);
+            entity.Property(e => e.LaboratoryCorrectiveAction).HasMaxLength(1000);
+            entity.Property(e => e.LaboratoryNotes).HasMaxLength(1000);
+
             entity.Property(e => e.WeighbridgeAttachmentPath).HasMaxLength(1000);
             entity.Property(e => e.WeighbridgeFileName).HasMaxLength(255);
             entity.Property(e => e.WeighbridgeFileType).HasMaxLength(100);
@@ -2339,6 +2362,11 @@ public class FaceStoneDbContext : DbContext
                   .WithMany(o => o.FinishedProducts)
                   .HasForeignKey(e => e.ProductionOrderId)
                   .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.LaboratoryCertificate)
+                  .WithMany()
+                  .HasForeignKey(e => e.LaboratoryCertificateId)
+                  .OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<ProductionAttachment>(entity =>

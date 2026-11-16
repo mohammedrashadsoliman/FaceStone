@@ -2999,6 +2999,14 @@ public class ProductionController : ControllerBase
             WeighbridgeFileName = f.WeighbridgeFileName,
             WeighbridgeFileType = f.WeighbridgeFileType,
             WeighbridgeFileSize = f.WeighbridgeFileSize,
+            LaboratoryConformityStatus = string.IsNullOrWhiteSpace(f.LaboratoryConformityStatus) ? "PENDING_INSPECTION" : f.LaboratoryConformityStatus,
+            LaboratoryCertificateId = f.LaboratoryCertificateId,
+            LaboratoryCertificateNumber = f.LaboratoryCertificateNumber,
+            LaboratoryCertifiedAt = f.LaboratoryCertifiedAt,
+            LaboratoryCertifiedBy = f.LaboratoryCertifiedBy,
+            LaboratoryRejectionReason = f.LaboratoryRejectionReason,
+            LaboratoryCorrectiveAction = f.LaboratoryCorrectiveAction,
+            LaboratoryNotes = f.LaboratoryNotes,
             CreatedAt = f.CreatedAt,
             CreatedBy = f.CreatedBy
         }).ToList();
@@ -3265,6 +3273,7 @@ public class ProductionController : ControllerBase
                 WeighbridgeFileName = storedOrigName,
                 WeighbridgeFileType = storedContentType,
                 WeighbridgeFileSize = storedFileSize,
+                LaboratoryConformityStatus = "PENDING_INSPECTION",
                 CreatedAt = DateTime.UtcNow,
                 CreatedBy = userName
             };
@@ -3448,9 +3457,9 @@ public class ProductionController : ControllerBase
                 InitialQuantity = finishedProduct.ManufacturedQuantity,
                 CurrentQuantity = finishedProduct.ManufacturedQuantity,
                 ImportDate = txDate,
-                Status = "APPROVED",
+                Status = "PENDING_LAB_INSPECTION",
                 IsActive = true,
-                Notes = $"منتج نهائي من عملية إنتاج {process.ProcessNumber}",
+                Notes = $"منتج نهائي من عملية إنتاج {process.ProcessNumber} (قيد فحص المختبر)",
                 CreatedAt = DateTime.UtcNow,
                 CreatedBy = userName,
                 CreatedByUserId = userId
@@ -3478,6 +3487,18 @@ public class ProductionController : ControllerBase
                     OrderId = parentOrder?.Id,
                     OrderNumber = parentOrder?.OrderNumber,
                     ManufactureNumber = finishedProduct.ManufactureNumber,
+                    Timestamp = DateTime.UtcNow
+                });
+                await _hubContext.Clients.All.SendAsync("OnDepartmentDataChanged", new
+                {
+                    Department = "Laboratory",
+                    Action = "FINISHED_PRODUCT_READY_FOR_INSPECTION",
+                    FinishedProductId = finishedProduct.Id,
+                    ProcessId = process.Id,
+                    ProcessNumber = process.ProcessNumber,
+                    ManufactureNumber = finishedProduct.ManufactureNumber,
+                    ProductName = finishedProduct.FinishedProductName,
+                    Quantity = finishedProduct.ManufacturedQuantity,
                     Timestamp = DateTime.UtcNow
                 });
                 if (parentOrder != null)
@@ -3673,6 +3694,14 @@ public class ProductionController : ControllerBase
                 WeighbridgeFileName = f.WeighbridgeFileName,
                 WeighbridgeFileType = f.WeighbridgeFileType,
                 WeighbridgeFileSize = f.WeighbridgeFileSize,
+                LaboratoryConformityStatus = string.IsNullOrWhiteSpace(f.LaboratoryConformityStatus) ? "PENDING_INSPECTION" : f.LaboratoryConformityStatus,
+                LaboratoryCertificateId = f.LaboratoryCertificateId,
+                LaboratoryCertificateNumber = f.LaboratoryCertificateNumber,
+                LaboratoryCertifiedAt = f.LaboratoryCertifiedAt,
+                LaboratoryCertifiedBy = f.LaboratoryCertifiedBy,
+                LaboratoryRejectionReason = f.LaboratoryRejectionReason,
+                LaboratoryCorrectiveAction = f.LaboratoryCorrectiveAction,
+                LaboratoryNotes = f.LaboratoryNotes,
                 CreatedAt = f.CreatedAt,
                 CreatedBy = f.CreatedBy
             }).ToList()

@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Http;
 
 namespace FaceStone.Web.Models.DTOs;
@@ -107,8 +109,10 @@ public class CreateRawMaterialReportDto
     public string? AnalysisResultsJson { get; set; }
     public string InspectionDecision { get; set; } = "ACCEPTED";
     public string? Notes { get; set; }
+    [JsonIgnore]
     public IFormFile? Attachment { get; set; }
     public string? AttachmentPath { get; set; }
+    [JsonIgnore]
     public IFormFile? QuantityConfirmationDocument { get; set; }
     public string? QuantityConfirmationPath { get; set; }
     public string? QuantityConfirmationFileName { get; set; }
@@ -211,6 +215,7 @@ public class SubmitChemicalInspectionDto
     public string? LabManagerName { get; set; }
     public string? LabManagerSignature { get; set; }
     public DateTime? LabManagerDate { get; set; }
+    [JsonIgnore]
     public IFormFile? Attachment { get; set; }
     public string? AttachmentPath { get; set; }
 }
@@ -228,6 +233,7 @@ public class CreateInProcessReportDto
     public string? SpecificationCriteria { get; set; }
     public string InspectionDecision { get; set; } = "MEETS_REQUIREMENTS";
     public string? Notes { get; set; }
+    [JsonIgnore]
     public IFormFile? Attachment { get; set; }
     public string? AttachmentPath { get; set; }
 }
@@ -260,23 +266,36 @@ public class InProcessReportDto
 
 public class CreateFinalConformityCertificateDto
 {
-    public int ProductionReferenceNumber { get; set; }
+    public int? ProductionReferenceNumber { get; set; }
     public string? LaboratorySection { get; set; }
     public string FinalProductName { get; set; } = string.Empty;
-    public decimal ActualFinalProductQuantity { get; set; }
+    public decimal? ActualFinalProductQuantity { get; set; }
     public string QuantityUnit { get; set; } = "طن";
     public string? ProductionBatchNumber { get; set; }
     public int? ProductionWorkInProcessId { get; set; }
+    public int? ProductionFinishedProductId { get; set; }
+    public int? ProductionProcessId { get; set; }
+    public string? ProductionProcessNumber { get; set; }
+    public string? ManufactureNumber { get; set; }
+    public int? ProductionOrderId { get; set; }
+    public string? ProductionOrderNumber { get; set; }
+    public decimal? TargetQuantity { get; set; }
+    [JsonConverter(typeof(StringOrArrayConverter))]
+    public string? AssociatedReferenceNumbers { get; set; }
     public DateTime? ProductionCompletionDateTime { get; set; }
-    public decimal ActualRawMaterialInputQuantity { get; set; }
+    public decimal? ActualRawMaterialInputQuantity { get; set; }
     public decimal? ActualMeasuredWaste { get; set; }
     public string WasteClassification { get; set; } = "ORDINARY_WASTE";
     public string ConformityDecision { get; set; } = "CONFORMS";
     public string? NonConformityAction { get; set; }
     public string? ClassifiedProductType { get; set; }
     public string? ReworkInstructions { get; set; }
+    public string? RejectionReason { get; set; }
+    public string? CorrectiveAction { get; set; }
     public string? SpecificationResultsJson { get; set; }
+    public string? QualityParametersJson { get; set; }
     public string? Observations { get; set; }
+    [JsonIgnore]
     public IFormFile? Attachment { get; set; }
     public string? AttachmentPath { get; set; }
 }
@@ -295,16 +314,34 @@ public class FinalConformityCertificateDto
     public string QuantityUnit { get; set; } = "طن";
     public string ProductionBatchNumber { get; set; } = string.Empty;
     public int? ProductionWorkInProcessId { get; set; }
+    public int? ProductionProcessId { get; set; }
+    public string? ProductionProcessNumber { get; set; }
+    public int? ProductionFinishedProductId { get; set; }
+    public string? ManufactureNumber { get; set; }
+    public int? ProductionOrderId { get; set; }
+    public string? ProductionOrderNumber { get; set; }
+    public decimal TargetQuantity { get; set; }
+    public string? AssociatedReferenceNumbers { get; set; }
     public DateTime ProductionCompletionDateTime { get; set; }
     public decimal ActualRawMaterialInputQuantity { get; set; }
     public decimal CalculatedDifference { get; set; }
     public decimal? ActualMeasuredWaste { get; set; }
     public string WasteClassification { get; set; } = string.Empty;
     public string ConformityDecision { get; set; } = string.Empty;
+    public string ConformityDecisionArabic => ConformityDecision switch
+    {
+        "CONFORMS" or "APPROVED" => "مطابق للمواصفات القياسية",
+        "NON_CONFORMING" or "REJECTED" => "غير مطابق للمواصفات القياسية",
+        "PENDING_TESTING" or "UNDER_INSPECTION" => "قيد الفحص المخبري",
+        _ => "قيد انتظار الفحص"
+    };
     public string? NonConformityAction { get; set; }
     public string? ClassifiedProductType { get; set; }
     public string? ReworkInstructions { get; set; }
+    public string? RejectionReason { get; set; }
+    public string? CorrectiveAction { get; set; }
     public string? SpecificationResultsJson { get; set; }
+    public string? QualityParametersJson { get; set; }
     public string? Observations { get; set; }
     public string? AttachmentPath { get; set; }
     public string? AttachmentFileName { get; set; }
@@ -314,11 +351,66 @@ public class FinalConformityCertificateDto
     public string ApprovalStatus { get; set; } = string.Empty;
     public string? ReviewedBy { get; set; }
     public DateTime? ReviewedAt { get; set; }
-    public string? RejectionReason { get; set; }
     public bool IsStoragePosted { get; set; }
     public DateTime? StoragePostedAt { get; set; }
     public DateTime CreatedAt { get; set; }
     public string CreatedBy { get; set; } = string.Empty;
+}
+
+public class EligibleFinishedProductForLabDto
+{
+    public int FinishedProductId { get; set; }
+    public int Id => FinishedProductId;
+    public int ProductionProcessId { get; set; }
+    public string ProcessNumber { get; set; } = string.Empty;
+    public int? ProductionOrderId { get; set; }
+    public string? ProductionOrderNumber { get; set; }
+    public string FinishedProductName { get; set; } = string.Empty;
+    public string ManufactureNumber { get; set; } = string.Empty;
+    public decimal ManufacturedQuantity { get; set; }
+    public decimal ActualQuantity => ManufacturedQuantity;
+    public string Unit { get; set; } = "طن";
+    public decimal TargetQuantity { get; set; }
+    public decimal TotalInputQuantity { get; set; }
+    public decimal TotalWasteQuantity { get; set; }
+    public decimal WastePercentage { get; set; }
+    public int? DestinationStorageLocationId { get; set; }
+    public string? DestinationStorageLocationName { get; set; }
+    public DateTime ProductionDate { get; set; }
+    public string FormattedProductionDate => ProductionDate.ToString("yyyy-MM-dd HH:mm");
+    public string ResponsibleEmployee { get; set; } = string.Empty;
+    public string? Notes { get; set; }
+    public string? WeighbridgeAttachmentPath { get; set; }
+    public string LaboratoryConformityStatus { get; set; } = "PENDING_INSPECTION";
+    public string LaboratoryConformityStatusArabic => LaboratoryConformityStatus switch
+    {
+        "APPROVED" or "CONFORMS" => "معتمد مخبرياً – مطابق للمواصفات",
+        "REJECTED" or "NON_CONFORMING" => "مرفوض مخبرياً – غير مطابق للمواصفات",
+        "UNDER_INSPECTION" or "PENDING_TESTING" => "قيد الفحص المخبري",
+        _ => "قيد فحص المختبر"
+    };
+    public int? LaboratoryCertificateId { get; set; }
+    public string? LaboratoryCertificateNumber { get; set; }
+    public DateTime? LaboratoryCertifiedAt { get; set; }
+    public string? LaboratoryCertifiedBy { get; set; }
+    public string? LaboratoryRejectionReason { get; set; }
+    public string? LaboratoryCorrectiveAction { get; set; }
+    public List<int> AssociatedReferenceNumbers { get; set; } = new();
+    public List<string> AssociatedBatchNumbers { get; set; } = new();
+    public List<EligibleFinishedProductMaterialDto> ConsumedMaterials { get; set; } = new();
+}
+
+public class EligibleFinishedProductMaterialDto
+{
+    public int MaterialId { get; set; }
+    public string MaterialName { get; set; } = string.Empty;
+    public string? MaterialClassification { get; set; }
+    public int ProductionReferenceNumber { get; set; }
+    public string BatchNumber { get; set; } = string.Empty;
+    public string SampleCode { get; set; } = string.Empty;
+    public decimal ConsumedQuantity { get; set; }
+    public string Unit { get; set; } = "طن";
+    public string? StorageLocationName { get; set; }
 }
 
 public class ProductionReferenceTraceabilityDto
@@ -381,4 +473,35 @@ public class PurchaseOrderSummaryDto
     public decimal PricePerTon { get; set; }
     public decimal TotalValue { get; set; }
     public string PaymentStatus { get; set; } = string.Empty;
+}
+
+public class StringOrArrayConverter : JsonConverter<string>
+{
+    public override string Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.String)
+        {
+            return reader.GetString() ?? string.Empty;
+        }
+        if (reader.TokenType == JsonTokenType.Number)
+        {
+            return reader.GetInt64().ToString();
+        }
+        if (reader.TokenType == JsonTokenType.StartArray)
+        {
+            var list = new List<string>();
+            while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+            {
+                if (reader.TokenType == JsonTokenType.String) list.Add(reader.GetString() ?? "");
+                else if (reader.TokenType == JsonTokenType.Number) list.Add(reader.GetInt64().ToString());
+            }
+            return string.Join(", ", list);
+        }
+        return string.Empty;
+    }
+
+    public override void Write(Utf8JsonWriter writer, string value, JsonSerializerOptions options)
+    {
+        writer.WriteStringValue(value);
+    }
 }

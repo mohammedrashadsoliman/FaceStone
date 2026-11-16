@@ -543,6 +543,26 @@ public class ProductionFinishedProduct
     public string? WeighbridgeFileType { get; set; }
     public long WeighbridgeFileSize { get; set; }
 
+    /// <summary>
+    /// Laboratory Certification Status:
+    /// PENDING_INSPECTION (قيد فحص المختبر)
+    /// UNDER_INSPECTION (قيد الفحص)
+    /// APPROVED (معتمد مخبرياً – مطابق للمواصفات)
+    /// REJECTED (مرفوض مخبرياً – غير مطابق للمواصفات)
+    /// </summary>
+    public string LaboratoryConformityStatus { get; set; } = "PENDING_INSPECTION";
+
+    public int? LaboratoryCertificateId { get; set; }
+    public LaboratoryFinalConformityCertificate? LaboratoryCertificate { get; set; }
+
+    public string? LaboratoryCertificateNumber { get; set; }
+    public DateTime? LaboratoryCertifiedAt { get; set; }
+    public string? LaboratoryCertifiedBy { get; set; }
+    public string? LaboratoryRejectionReason { get; set; }
+    public string? LaboratoryCorrectiveAction { get; set; }
+    public string? LaboratoryNotes { get; set; }
+    public string? LaboratoryQualityParametersJson { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public string CreatedBy { get; set; } = string.Empty;
 }

@@ -1224,6 +1224,209 @@ public class LaboratoryController : ControllerBase
         return Ok(ApiResponse<FinalConformityCertificateDto>.Ok(MapFinalCertToDto(cert)));
     }
 
+    [HttpGet("eligible-finished-products")]
+    [ProducesResponseType(typeof(ApiResponse<List<EligibleFinishedProductForLabDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetEligibleFinishedProducts([FromQuery] string? status = null, [FromQuery] string? search = null)
+    {
+        var (isAuth, role, userName, userId) = GetAuthenticatedUser();
+        if (!isAuth)
+        {
+            return StatusCode(StatusCodes.Status401Unauthorized, ApiResponse.Fail("المصادقة مطلوبة للوصول إلى المعمل."));
+        }
+
+        var query = _db.ProductionFinishedProducts
+            .AsNoTracking()
+            .Include(f => f.ProductionProcess)
+                .ThenInclude(p => p.Materials)
+            .Include(f => f.ProductionProcess)
+                .ThenInclude(p => p.ProductionOrder)
+            .Include(f => f.ProductionOrder)
+            .AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(status) && !status.Equals("ALL", StringComparison.OrdinalIgnoreCase))
+        {
+            var st = status.Trim().ToUpperInvariant();
+            query = query.Where(f => f.LaboratoryConformityStatus == st);
+        }
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var s = search.Trim().ToLowerInvariant();
+            query = query.Where(f =>
+                f.FinishedProductName.ToLower().Contains(s) ||
+                f.ManufactureNumber.ToLower().Contains(s) ||
+                (f.ProductionProcess != null && f.ProductionProcess.ProcessNumber.ToLower().Contains(s)) ||
+                (f.ProductionOrderNumber != null && f.ProductionOrderNumber.ToLower().Contains(s)));
+        }
+
+        var list = await query
+            .OrderByDescending(f => f.ProductionDate)
+            .ThenByDescending(f => f.Id)
+            .Take(200)
+            .ToListAsync();
+
+        var dtos = list.Select(f =>
+        {
+            var proc = f.ProductionProcess;
+            var mats = proc?.Materials?.ToList() ?? new List<ProductionProcessMaterial>();
+            var targetQty = f.ProductionOrder?.RequestedQuantity 
+                            ?? proc?.ProductionOrder?.RequestedQuantity 
+                            ?? proc?.TotalInputQuantity 
+                            ?? f.ManufacturedQuantity;
+
+            return new EligibleFinishedProductForLabDto
+            {
+                FinishedProductId = f.Id,
+                ProductionProcessId = f.ProductionProcessId,
+                ProcessNumber = proc?.ProcessNumber ?? string.Empty,
+                ProductionOrderId = f.ProductionOrderId ?? proc?.ProductionOrderId,
+                ProductionOrderNumber = f.ProductionOrderNumber ?? proc?.ProductionOrderNumber,
+                FinishedProductName = f.FinishedProductName,
+                ManufactureNumber = f.ManufactureNumber,
+                ManufacturedQuantity = f.ManufacturedQuantity,
+                Unit = f.Unit ?? "طن",
+                TargetQuantity = targetQty,
+                TotalInputQuantity = proc?.TotalInputQuantity ?? 0m,
+                TotalWasteQuantity = proc?.TotalWasteQuantity ?? 0m,
+                WastePercentage = proc?.WastePercentage ?? 0m,
+                DestinationStorageLocationId = f.DestinationStorageLocationId,
+                DestinationStorageLocationName = f.DestinationStorageLocationName,
+                ProductionDate = f.ProductionDate,
+                ResponsibleEmployee = proc?.ResponsibleEmployee ?? f.CreatedBy,
+                Notes = f.Notes,
+                WeighbridgeAttachmentPath = f.WeighbridgeAttachmentPath,
+                LaboratoryConformityStatus = string.IsNullOrWhiteSpace(f.LaboratoryConformityStatus) ? "PENDING_INSPECTION" : f.LaboratoryConformityStatus,
+                LaboratoryCertificateId = f.LaboratoryCertificateId,
+                LaboratoryCertificateNumber = f.LaboratoryCertificateNumber,
+                LaboratoryCertifiedAt = f.LaboratoryCertifiedAt,
+                LaboratoryCertifiedBy = f.LaboratoryCertifiedBy,
+                LaboratoryRejectionReason = f.LaboratoryRejectionReason,
+                LaboratoryCorrectiveAction = f.LaboratoryCorrectiveAction,
+                AssociatedReferenceNumbers = mats.Where(m => m.ProductionReferenceNumber > 0).Select(m => m.ProductionReferenceNumber).Distinct().ToList(),
+                AssociatedBatchNumbers = mats.Where(m => !string.IsNullOrEmpty(m.BatchNumber)).Select(m => m.BatchNumber).Distinct().ToList(),
+                ConsumedMaterials = mats.Select(m => new EligibleFinishedProductMaterialDto
+                {
+                    MaterialId = m.Id,
+                    MaterialName = m.MaterialName,
+                    MaterialClassification = m.MaterialClassification,
+                    ProductionReferenceNumber = m.ProductionReferenceNumber,
+                    BatchNumber = m.BatchNumber,
+                    SampleCode = m.SampleCode,
+                    ConsumedQuantity = m.ConsumedQuantity,
+                    Unit = m.Unit,
+                    StorageLocationName = m.StorageLocationName
+                }).ToList()
+            };
+        }).ToList();
+
+        return Ok(ApiResponse<List<EligibleFinishedProductForLabDto>>.Ok(dtos));
+    }
+
+    [HttpGet("finished-products/{id:int}/context")]
+    [ProducesResponseType(typeof(ApiResponse<EligibleFinishedProductForLabDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetFinishedProductContext(int id)
+    {
+        var f = await _db.ProductionFinishedProducts
+            .AsNoTracking()
+            .Include(f => f.ProductionProcess)
+                .ThenInclude(p => p.Materials)
+            .Include(f => f.ProductionProcess)
+                .ThenInclude(p => p.ProductionOrder)
+            .Include(f => f.ProductionOrder)
+            .FirstOrDefaultAsync(f => f.Id == id);
+
+        if (f == null)
+        {
+            return NotFound(ApiResponse.Fail($"المنتج النهائي #{id} غير موجود في قاعدة البيانات."));
+        }
+
+        var proc = f.ProductionProcess;
+        var mats = proc?.Materials?.ToList() ?? new List<ProductionProcessMaterial>();
+        var targetQty = f.ProductionOrder?.RequestedQuantity 
+                        ?? proc?.ProductionOrder?.RequestedQuantity 
+                        ?? proc?.TotalInputQuantity 
+                        ?? f.ManufacturedQuantity;
+
+        var dto = new EligibleFinishedProductForLabDto
+        {
+            FinishedProductId = f.Id,
+            ProductionProcessId = f.ProductionProcessId,
+            ProcessNumber = proc?.ProcessNumber ?? string.Empty,
+            ProductionOrderId = f.ProductionOrderId ?? proc?.ProductionOrderId,
+            ProductionOrderNumber = f.ProductionOrderNumber ?? proc?.ProductionOrderNumber,
+            FinishedProductName = f.FinishedProductName,
+            ManufactureNumber = f.ManufactureNumber,
+            ManufacturedQuantity = f.ManufacturedQuantity,
+            Unit = f.Unit ?? "طن",
+            TargetQuantity = targetQty,
+            TotalInputQuantity = proc?.TotalInputQuantity ?? 0m,
+            TotalWasteQuantity = proc?.TotalWasteQuantity ?? 0m,
+            WastePercentage = proc?.WastePercentage ?? 0m,
+            DestinationStorageLocationId = f.DestinationStorageLocationId,
+            DestinationStorageLocationName = f.DestinationStorageLocationName,
+            ProductionDate = f.ProductionDate,
+            ResponsibleEmployee = proc?.ResponsibleEmployee ?? f.CreatedBy,
+            Notes = f.Notes,
+            WeighbridgeAttachmentPath = f.WeighbridgeAttachmentPath,
+            LaboratoryConformityStatus = string.IsNullOrWhiteSpace(f.LaboratoryConformityStatus) ? "PENDING_INSPECTION" : f.LaboratoryConformityStatus,
+            LaboratoryCertificateId = f.LaboratoryCertificateId,
+            LaboratoryCertificateNumber = f.LaboratoryCertificateNumber,
+            LaboratoryCertifiedAt = f.LaboratoryCertifiedAt,
+            LaboratoryCertifiedBy = f.LaboratoryCertifiedBy,
+            LaboratoryRejectionReason = f.LaboratoryRejectionReason,
+            LaboratoryCorrectiveAction = f.LaboratoryCorrectiveAction,
+            AssociatedReferenceNumbers = mats.Where(m => m.ProductionReferenceNumber > 0).Select(m => m.ProductionReferenceNumber).Distinct().ToList(),
+            AssociatedBatchNumbers = mats.Where(m => !string.IsNullOrEmpty(m.BatchNumber)).Select(m => m.BatchNumber).Distinct().ToList(),
+            ConsumedMaterials = mats.Select(m => new EligibleFinishedProductMaterialDto
+            {
+                MaterialId = m.Id,
+                MaterialName = m.MaterialName,
+                MaterialClassification = m.MaterialClassification,
+                ProductionReferenceNumber = m.ProductionReferenceNumber,
+                BatchNumber = m.BatchNumber,
+                SampleCode = m.SampleCode,
+                ConsumedQuantity = m.ConsumedQuantity,
+                Unit = m.Unit,
+                StorageLocationName = m.StorageLocationName
+            }).ToList()
+        };
+
+        return Ok(ApiResponse<EligibleFinishedProductForLabDto>.Ok(dto));
+    }
+
+    [HttpGet("final-certificates/by-finished-product/{finishedProductId:int}")]
+    [ProducesResponseType(typeof(ApiResponse<FinalConformityCertificateDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetCertificateByFinishedProduct(int finishedProductId)
+    {
+        var cert = await _db.LaboratoryFinalConformityCertificates
+            .AsNoTracking()
+            .Include(c => c.RawMaterialReport)
+            .OrderByDescending(c => c.Id)
+            .FirstOrDefaultAsync(c => c.ProductionFinishedProductId == finishedProductId);
+
+        if (cert == null)
+        {
+            var pfp = await _db.ProductionFinishedProducts.AsNoTracking().FirstOrDefaultAsync(f => f.Id == finishedProductId);
+            if (pfp != null && !string.IsNullOrEmpty(pfp.ManufactureNumber))
+            {
+                cert = await _db.LaboratoryFinalConformityCertificates
+                    .AsNoTracking()
+                    .Include(c => c.RawMaterialReport)
+                    .OrderByDescending(c => c.Id)
+                    .FirstOrDefaultAsync(c => c.ManufactureNumber == pfp.ManufactureNumber);
+            }
+        }
+
+        if (cert == null)
+        {
+            return NotFound(ApiResponse.Fail($"لا توجد شهادة مطابقة مخبرية مسجلة لهذا المنتج النهائي #{finishedProductId}."));
+        }
+
+        return Ok(ApiResponse<FinalConformityCertificateDto>.Ok(MapFinalCertToDto(cert)));
+    }
+
     [HttpPost("final-certificates")]
     [HttpPost("final-conformity-certificates")]
     [ProducesResponseType(typeof(ApiResponse<FinalConformityCertificateDto>), StatusCodes.Status201Created)]
@@ -1248,23 +1451,112 @@ public class LaboratoryController : ControllerBase
             return BadRequest(ApiResponse.Fail("بيانات شهادة مطابقة المنتج النهائي غير صالحة."));
         }
 
-        // 1. Verify Production Reference Number exists
-        if (dto.ProductionReferenceNumber <= 0)
+        // 1. Resolve ProductionFinishedProduct and linked Production Process if provided
+        ProductionFinishedProduct? finishedProd = null;
+        if (dto.ProductionFinishedProductId.HasValue && dto.ProductionFinishedProductId.Value > 0)
         {
-            return BadRequest(ApiResponse.Fail("الرقم المرجعي التتبعي للإنتاج مطلوب."));
+            finishedProd = await _db.ProductionFinishedProducts
+                .Include(f => f.ProductionProcess)
+                    .ThenInclude(p => p.Materials)
+                .Include(f => f.ProductionProcess)
+                    .ThenInclude(p => p.ProductionOrder)
+                .Include(f => f.ProductionOrder)
+                .FirstOrDefaultAsync(f => f.Id == dto.ProductionFinishedProductId.Value);
         }
+        else if (!string.IsNullOrWhiteSpace(dto.ManufactureNumber))
+        {
+            finishedProd = await _db.ProductionFinishedProducts
+                .Include(f => f.ProductionProcess)
+                    .ThenInclude(p => p.Materials)
+                .Include(f => f.ProductionProcess)
+                    .ThenInclude(p => p.ProductionOrder)
+                .Include(f => f.ProductionOrder)
+                .FirstOrDefaultAsync(f => f.ManufactureNumber.ToLower() == dto.ManufactureNumber.Trim().ToLower());
+        }
+
+        // If finished product found, populate missing details
+        if (finishedProd != null)
+        {
+            dto.ProductionFinishedProductId = finishedProd.Id;
+            dto.ManufactureNumber = finishedProd.ManufactureNumber;
+            dto.ProductionProcessId = finishedProd.ProductionProcessId;
+            dto.ProductionProcessNumber = finishedProd.ProductionProcess?.ProcessNumber ?? string.Empty;
+            dto.ProductionOrderId = finishedProd.ProductionOrderId ?? finishedProd.ProductionProcess?.ProductionOrderId;
+            dto.ProductionOrderNumber = finishedProd.ProductionOrderNumber ?? finishedProd.ProductionProcess?.ProductionOrderNumber;
+
+            if (string.IsNullOrWhiteSpace(dto.FinalProductName))
+                dto.FinalProductName = finishedProd.FinishedProductName;
+
+            if (!dto.ActualFinalProductQuantity.HasValue || dto.ActualFinalProductQuantity.Value <= 0)
+                dto.ActualFinalProductQuantity = finishedProd.ManufacturedQuantity;
+
+            if (!dto.ActualRawMaterialInputQuantity.HasValue || dto.ActualRawMaterialInputQuantity.Value <= 0)
+                dto.ActualRawMaterialInputQuantity = finishedProd.ProductionProcess?.TotalInputQuantity ?? finishedProd.ManufacturedQuantity;
+
+            if (!dto.TargetQuantity.HasValue || dto.TargetQuantity.Value <= 0)
+            {
+                dto.TargetQuantity = finishedProd.ProductionOrder?.RequestedQuantity 
+                                     ?? finishedProd.ProductionProcess?.ProductionOrder?.RequestedQuantity 
+                                     ?? finishedProd.ProductionProcess?.TotalInputQuantity 
+                                     ?? finishedProd.ManufacturedQuantity;
+            }
+
+            var refList = finishedProd.ProductionProcess?.Materials?
+                .Where(m => m.ProductionReferenceNumber > 0)
+                .Select(m => m.ProductionReferenceNumber)
+                .Distinct()
+                .ToList() ?? new List<int>();
+
+            if ((!dto.ProductionReferenceNumber.HasValue || dto.ProductionReferenceNumber.Value <= 0) && refList.Any())
+            {
+                dto.ProductionReferenceNumber = refList.First();
+            }
+
+            if (string.IsNullOrWhiteSpace(dto.AssociatedReferenceNumbers) && refList.Any())
+            {
+                dto.AssociatedReferenceNumbers = string.Join(", ", refList);
+            }
+        }
+
+        // 2. Validate Production Reference Number exists
+        int effectiveRefNum = dto.ProductionReferenceNumber.GetValueOrDefault();
+        if (effectiveRefNum <= 0)
+        {
+            if (finishedProd != null)
+            {
+                effectiveRefNum = finishedProd.Id > 0 ? finishedProd.Id : 1;
+            }
+            else
+            {
+                return BadRequest(ApiResponse.Fail("الرقم المرجعي التتبعي للإنتاج مطلوب. يرجى اختيار منتج نهائي صالح أو إدخال الرقم المرجعي."));
+            }
+        }
+        dto.ProductionReferenceNumber = effectiveRefNum;
 
         var rawReport = await _db.LaboratoryRawMaterialReports
-            .FirstOrDefaultAsync(r => r.ProductionReferenceNumber == dto.ProductionReferenceNumber);
+            .FirstOrDefaultAsync(r => r.ProductionReferenceNumber == effectiveRefNum);
 
-        if (rawReport == null)
+        if (rawReport == null && finishedProd?.ProductionProcess?.Materials != null)
         {
-            return BadRequest(ApiResponse.Fail($"الرقم المرجعي التتبعي #{dto.ProductionReferenceNumber} غير مسجل مسبقاً بفحص المواد الخام."));
+            // If rawReport is null but we have a finished product, try to find any raw report matching materials
+            var matRefs = finishedProd.ProductionProcess.Materials
+                .Where(m => m.ProductionReferenceNumber > 0)
+                .Select(m => m.ProductionReferenceNumber)
+                .ToList();
+            if (matRefs.Any())
+            {
+                rawReport = await _db.LaboratoryRawMaterialReports
+                    .FirstOrDefaultAsync(r => matRefs.Contains(r.ProductionReferenceNumber));
+            }
         }
 
-        // 2. Validate Section
         string assignedSection = AppRoles.GetDefaultLaboratorySection(role);
-        string section = rawReport.LaboratorySection;
+        string section = rawReport?.LaboratorySection ?? (!string.IsNullOrWhiteSpace(dto.LaboratorySection) ? dto.LaboratorySection.Trim().ToUpperInvariant() : assignedSection);
+        if (string.IsNullOrWhiteSpace(section) || (section != "PHYSICAL" && section != "CHEMICAL"))
+        {
+            section = "PHYSICAL";
+        }
+
         if (assignedSection == "PHYSICAL" && section != "PHYSICAL")
         {
             return StatusCode(StatusCodes.Status403Forbidden, ApiResponse.Fail("غير مصرح: موظف المعمل الفيزيائي لا يمكنه فحص منتجات المعمل الكيميائي."));
@@ -1281,22 +1573,48 @@ public class LaboratoryController : ControllerBase
             return BadRequest(ApiResponse.Fail("اسم المنتج النهائي مطلوب."));
         }
 
-        // Difference calculation: Input - Output (calculations preserved without weight restrictions blocking submission)
-        var calculatedDiff = dto.ActualRawMaterialInputQuantity - dto.ActualFinalProductQuantity;
+        decimal effectiveActualOutput = dto.ActualFinalProductQuantity ?? (finishedProd?.ManufacturedQuantity ?? 0m);
+        decimal effectiveInput = dto.ActualRawMaterialInputQuantity ?? (finishedProd?.ProductionProcess?.TotalInputQuantity ?? effectiveActualOutput);
+        decimal effectiveTarget = dto.TargetQuantity ?? effectiveActualOutput;
+        var calculatedDiff = effectiveInput - effectiveActualOutput;
 
-        var decision = (dto.ConformityDecision ?? "CONFORMS").Trim().ToUpperInvariant();
-        if (decision != "CONFORMS" && decision != "NON_CONFORMING" && decision != "PENDING_TESTING")
+        var inputDecision = (dto.ConformityDecision ?? "CONFORMS").Trim().ToUpperInvariant();
+        string certConformityDecision;
+        string certApprovalStatus;
+        string prodStatus;
+
+        if (inputDecision == "APPROVED" || inputDecision == "CONFORMS" || inputDecision.Contains("مطابق"))
         {
-            return BadRequest(ApiResponse.Fail("قرار المطابقة غير صالح. الخيارات المتاحة: مطابق (CONFORMS) | غير مطابق (NON_CONFORMING) | قيد الفحص (PENDING_TESTING)."));
+            certConformityDecision = "CONFORMS";
+            certApprovalStatus = "APPROVED";
+            prodStatus = "APPROVED";
+        }
+        else if (inputDecision == "REJECTED" || inputDecision == "NON_CONFORMING" || inputDecision.Contains("مرفوض") || inputDecision.Contains("غير مطابق"))
+        {
+            certConformityDecision = "NON_CONFORMING";
+            certApprovalStatus = "REJECTED";
+            prodStatus = "REJECTED";
+        }
+        else if (inputDecision == "UNDER_INSPECTION" || inputDecision == "PENDING_TESTING" || inputDecision.Contains("قيد الفحص"))
+        {
+            certConformityDecision = "PENDING_TESTING";
+            certApprovalStatus = "PENDING";
+            prodStatus = "UNDER_INSPECTION";
+        }
+        else
+        {
+            certConformityDecision = "PENDING_TESTING";
+            certApprovalStatus = "PENDING";
+            prodStatus = "PENDING_INSPECTION";
         }
 
         string? nonConfAction = null;
-        if (decision == "NON_CONFORMING")
+        if (certConformityDecision == "NON_CONFORMING")
         {
             nonConfAction = (dto.NonConformityAction ?? "PENDING_DECISION").Trim().ToUpperInvariant();
             if (nonConfAction != "CLASSIFIED_PRODUCT" && nonConfAction != "REWORK_REMANUFACTURE" && nonConfAction != "PENDING_DECISION")
             {
-                return BadRequest(ApiResponse.Fail("إجراء عدم المطابقة غير صالح. الخيارات: تخزين كمنتج مصنف (CLASSIFIED_PRODUCT) | إعادة تصنيع (REWORK_REMANUFACTURE) | معلق قيد القرار (PENDING_DECISION)."));
+                nonConfAction = "PENDING_DECISION";
             }
         }
 
@@ -1315,26 +1633,37 @@ public class LaboratoryController : ControllerBase
             var cert = new LaboratoryFinalConformityCertificate
             {
                 CertificateNumber = certNumber,
-                ProductionReferenceNumber = dto.ProductionReferenceNumber,
-                RawMaterialReportId = rawReport.Id,
-                SampleNumber = rawReport.SampleNumber,
-                SampleCode = rawReport.SampleCode,
+                ProductionReferenceNumber = effectiveRefNum,
+                RawMaterialReportId = rawReport?.Id,
+                SampleNumber = rawReport?.SampleNumber,
+                SampleCode = rawReport?.SampleCode ?? (dto.ManufactureNumber ?? $"SMP-{effectiveRefNum}"),
                 LaboratorySection = section,
                 FinalProductName = prodName,
-                ActualFinalProductQuantity = Math.Round(dto.ActualFinalProductQuantity, 3),
+                ActualFinalProductQuantity = Math.Round(effectiveActualOutput, 3),
                 QuantityUnit = string.IsNullOrWhiteSpace(dto.QuantityUnit) ? "طن" : dto.QuantityUnit.Trim(),
-                ProductionBatchNumber = (dto.ProductionBatchNumber ?? $"BATCH-{dto.ProductionReferenceNumber}").Trim(),
+                ProductionBatchNumber = (dto.ProductionBatchNumber ?? dto.ManufactureNumber ?? $"BATCH-{effectiveRefNum}").Trim(),
                 ProductionWorkInProcessId = dto.ProductionWorkInProcessId,
+                ProductionProcessId = dto.ProductionProcessId,
+                ProductionProcessNumber = dto.ProductionProcessNumber,
+                ProductionFinishedProductId = dto.ProductionFinishedProductId,
+                ManufactureNumber = dto.ManufactureNumber,
+                ProductionOrderId = dto.ProductionOrderId,
+                ProductionOrderNumber = dto.ProductionOrderNumber,
+                TargetQuantity = Math.Round(effectiveTarget, 3),
+                AssociatedReferenceNumbers = dto.AssociatedReferenceNumbers,
                 ProductionCompletionDateTime = dto.ProductionCompletionDateTime ?? DateTime.UtcNow,
-                ActualRawMaterialInputQuantity = Math.Round(dto.ActualRawMaterialInputQuantity, 3),
+                ActualRawMaterialInputQuantity = Math.Round(effectiveInput, 3),
                 CalculatedDifference = calculatedDiff,
                 ActualMeasuredWaste = dto.ActualMeasuredWaste.HasValue ? Math.Round(dto.ActualMeasuredWaste.Value, 3) : null,
                 WasteClassification = string.IsNullOrWhiteSpace(dto.WasteClassification) ? "ORDINARY_WASTE" : dto.WasteClassification.Trim(),
-                ConformityDecision = decision,
+                ConformityDecision = certConformityDecision,
                 NonConformityAction = nonConfAction,
                 ClassifiedProductType = dto.ClassifiedProductType?.Trim(),
                 ReworkInstructions = dto.ReworkInstructions?.Trim(),
+                RejectionReason = dto.RejectionReason?.Trim() ?? (certConformityDecision == "NON_CONFORMING" ? dto.Observations?.Trim() : null),
+                CorrectiveAction = dto.CorrectiveAction?.Trim() ?? dto.ReworkInstructions?.Trim(),
                 SpecificationResultsJson = dto.SpecificationResultsJson,
+                QualityParametersJson = dto.QualityParametersJson ?? dto.SpecificationResultsJson,
                 Observations = dto.Observations?.Trim(),
                 AttachmentPath = !string.IsNullOrWhiteSpace(attachRes.StoredFileName) ? $"/uploads/laboratory/{attachRes.StoredFileName}" : null,
                 AttachmentFileName = attachRes.OriginalFileName,
@@ -1342,8 +1671,8 @@ public class LaboratoryController : ControllerBase
                 AttachmentFileSize = attachRes.FileSize,
                 ResponsibleEmployee = userName,
                 ResponsibleUserId = userId,
-                ApprovalStatus = "APPROVED",
-                ReviewedBy = "System (Auto-Approved)",
+                ApprovalStatus = certApprovalStatus,
+                ReviewedBy = userName,
                 ReviewedAt = DateTime.UtcNow,
                 IsStoragePosted = false,
                 CreatedAt = DateTime.UtcNow,
@@ -1353,7 +1682,52 @@ public class LaboratoryController : ControllerBase
             await _db.LaboratoryFinalConformityCertificates.AddAsync(cert);
             await _db.SaveChangesAsync();
 
-            // Link ProductionWorkInProcess if batch provided
+            // 4. Update the linked ProductionFinishedProduct and WarehouseBatch
+            if (finishedProd != null)
+            {
+                finishedProd.LaboratoryConformityStatus = prodStatus;
+                finishedProd.LaboratoryCertificateId = cert.Id;
+                finishedProd.LaboratoryCertificateNumber = cert.CertificateNumber;
+                finishedProd.LaboratoryNotes = cert.Observations;
+                finishedProd.LaboratoryQualityParametersJson = cert.QualityParametersJson;
+
+                if (prodStatus == "APPROVED")
+                {
+                    finishedProd.LaboratoryCertifiedAt = DateTime.UtcNow;
+                    finishedProd.LaboratoryCertifiedBy = userName;
+                    finishedProd.LaboratoryRejectionReason = null;
+                    finishedProd.LaboratoryCorrectiveAction = null;
+                }
+                else if (prodStatus == "REJECTED")
+                {
+                    finishedProd.LaboratoryCertifiedAt = DateTime.UtcNow;
+                    finishedProd.LaboratoryCertifiedBy = userName;
+                    finishedProd.LaboratoryRejectionReason = cert.RejectionReason ?? "غير مطابق للمواصفات";
+                    finishedProd.LaboratoryCorrectiveAction = cert.CorrectiveAction;
+                }
+
+                // Update corresponding WarehouseBatch for inventory/export control
+                var mfgNo = finishedProd.ManufactureNumber;
+                var wb = await _db.WarehouseBatches.FirstOrDefaultAsync(b => b.BatchNumber == mfgNo);
+                if (wb != null)
+                {
+                    if (prodStatus == "APPROVED")
+                    {
+                        wb.Status = "APPROVED";
+                        wb.IsActive = true;
+                    }
+                    else if (prodStatus == "REJECTED")
+                    {
+                        wb.Status = "REJECTED";
+                    }
+                    else
+                    {
+                        wb.Status = "PENDING_LAB_INSPECTION";
+                    }
+                }
+            }
+
+            // Link ProductionWorkInProcess if provided
             if (dto.ProductionWorkInProcessId.HasValue)
             {
                 var wip = await _db.ProductionWorkInProcess.FirstOrDefaultAsync(w => w.Id == dto.ProductionWorkInProcessId.Value);
@@ -1363,25 +1737,18 @@ public class LaboratoryController : ControllerBase
                     wip.FinalProductQuantity = cert.ActualFinalProductQuantity;
                     wip.WasteQuantity = cert.ActualMeasuredWaste ?? calculatedDiff;
                     wip.WasteClassification = cert.WasteClassification;
-                    wip.Status = decision == "CONFORMS" ? "مكتمل" : (nonConfAction == "REWORK_REMANUFACTURE" ? "إعادة تشغيل" : "قيد المعاينة");
+                    wip.Status = certConformityDecision == "CONFORMS" ? "مكتمل" : (nonConfAction == "REWORK_REMANUFACTURE" ? "إعادة تشغيل" : "قيد المعاينة");
                 }
             }
 
             // Update connected ProductionOutputs of classification FINISHED
             var finishedOutputs = await _db.ProductionOutputs
-                .Where(o => o.ProductionReferenceNumber == dto.ProductionReferenceNumber && o.Classification == "FINISHED")
+                .Where(o => (o.ProductionReferenceNumber == dto.ProductionReferenceNumber || (dto.ManufactureNumber != null && o.OutputNumber == dto.ManufactureNumber)) && o.Classification == "FINISHED")
                 .ToListAsync();
             foreach (var outp in finishedOutputs)
             {
                 outp.LaboratoryCertificateId = cert.Id;
-                if (decision == "CONFORMS")
-                {
-                    outp.LaboratoryConformityStatus = "CONFORMS";
-                }
-                else
-                {
-                    outp.LaboratoryConformityStatus = "NON_CONFORMING";
-                }
+                outp.LaboratoryConformityStatus = certConformityDecision == "CONFORMS" ? "CONFORMS" : "NON_CONFORMING";
             }
 
             // Create FormApprovalHistory for Control & Monitoring review
@@ -1389,15 +1756,15 @@ public class LaboratoryController : ControllerBase
             {
                 FormType = "LaboratoryFinalCert",
                 FormId = cert.Id,
-                PONumber = rawReport.PONumber ?? string.Empty,
+                PONumber = rawReport?.PONumber ?? string.Empty,
                 TransactionOrMovementNumber = cert.CertificateNumber,
-                PreviousStatus = "NONE",
-                NewStatus = "APPROVED",
-                Action = "APPROVED",
-                ActorName = "System (Auto-Approved)",
+                PreviousStatus = "PENDING_INSPECTION",
+                NewStatus = certApprovalStatus,
+                Action = certApprovalStatus,
+                ActorName = userName,
                 ActorUserId = userId,
-                ActorRole = "System",
-                Comment = $"تم إصدار شهادة مطابقة منتج نهائي ({cert.CertificateNumber}) للرقم المرجعي #{dto.ProductionReferenceNumber} بقرار: {decision}. بانتظار اعتماد قسم التحكم والمراقبة.",
+                ActorRole = role,
+                Comment = $"تم إصدار شهادة مطابقة منتج نهائي ({cert.CertificateNumber}) للمنتج {cert.FinalProductName} برقم تصنيع {cert.ManufactureNumber} بقرار: {cert.ConformityDecision}.",
                 Timestamp = DateTime.UtcNow
             };
             await _db.FormApprovalHistories.AddAsync(history);
@@ -1405,22 +1772,58 @@ public class LaboratoryController : ControllerBase
             await _db.SaveChangesAsync();
             await dbTransaction.CommitAsync();
 
-            _logger.LogInformation("Laboratory Final Certificate {Cert} created for Ref #{Ref} by {User}",
-                cert.CertificateNumber, dto.ProductionReferenceNumber, userName);
+            _logger.LogInformation("Laboratory Final Certificate {Cert} created for Product {Prod} (Mfg: {Mfg}) by {User}",
+                cert.CertificateNumber, cert.FinalProductName, cert.ManufactureNumber, userName);
 
-            var notifMsg = $"تم إصدار شهادة مطابقة منتج نهائي ({cert.CertificateNumber}) للرقم المرجعي #{dto.ProductionReferenceNumber} قيد اعتماد الرقابة.";
-            await NotifyLaboratoryChangeAsync("FINAL_CERT", cert.Id, dto.ProductionReferenceNumber, "PENDING", userName, notifMsg);
+            var notifMsg = $"تم إصدار شهادة مطابقة منتج نهائي ({cert.CertificateNumber}) للمنتج ({cert.FinalProductName}) بقرار: {cert.ConformityDecision}.";
+            await NotifyLaboratoryChangeAsync("FINAL_CERT", cert.Id, effectiveRefNum, certApprovalStatus, userName, notifMsg);
+
+            // Notify Production & Warehouse of the inspection outcome
+            try
+            {
+                await _hubContext.Clients.All.SendAsync("OnDepartmentDataChanged", new
+                {
+                    Department = "Production",
+                    Action = "FINISHED_PRODUCT_INSPECTED",
+                    FinishedProductId = finishedProd?.Id,
+                    ManufactureNumber = cert.ManufactureNumber,
+                    CertificateNumber = cert.CertificateNumber,
+                    ConformityStatus = prodStatus,
+                    Inspector = userName,
+                    Timestamp = DateTime.UtcNow
+                });
+                await _hubContext.Clients.All.SendAsync("OnDepartmentDataChanged", new
+                {
+                    Department = "Laboratory",
+                    Action = "CERTIFICATE_ISSUED",
+                    CertificateId = cert.Id,
+                    CertificateNumber = cert.CertificateNumber,
+                    ManufactureNumber = cert.ManufactureNumber,
+                    Status = certApprovalStatus,
+                    Timestamp = DateTime.UtcNow
+                });
+            }
+            catch (Exception exSignal)
+            {
+                _logger.LogWarning(exSignal, "Failed to broadcast lab cert SignalR event");
+            }
 
             var resultDto = MapFinalCertToDto(cert);
+            var successMsg = prodStatus == "APPROVED"
+                ? $"تم اعتماد شهادة مطابقة المنتج النهائي رقم {cert.CertificateNumber} بنجاح (مطابق للمواصفات)."
+                : (prodStatus == "REJECTED"
+                    ? $"تم تسجيل عدم مطابقة المنتج النهائي رقم {cert.CertificateNumber} (مرفوض مخبرياً)."
+                    : $"تم حفظ حالة فحص المنتج النهائي رقم {cert.CertificateNumber} بنجاح.");
+
             return StatusCode(StatusCodes.Status201Created,
-                ApiResponse<FinalConformityCertificateDto>.Ok(resultDto, $"تم إصدار شهادة مطابقة المنتج النهائي رقم {cert.CertificateNumber} بنجاح."));
+                ApiResponse<FinalConformityCertificateDto>.Ok(resultDto, successMsg));
         }
         catch (Exception ex)
         {
             await dbTransaction.RollbackAsync();
             CleanupSavedFiles(new[] { attachRes.StoredFileName });
             _logger.LogError(ex, "Failed to create Laboratory Final Conformity Certificate.");
-            return StatusCode(StatusCodes.Status500InternalServerError, ApiResponse.Fail("حدث خطأ أثناء حفظ شهادة المطابقة."));
+            return StatusCode(StatusCodes.Status500InternalServerError, ApiResponse.Fail("حدث خطأ أثناء حفظ شهادة المطابقة: " + ex.Message));
         }
     }
 
@@ -1930,11 +2333,30 @@ public class LaboratoryController : ControllerBase
                 NonConformityAction = form["nonConformityAction"].FirstOrDefault(),
                 ClassifiedProductType = form["classifiedProductType"].FirstOrDefault(),
                 ReworkInstructions = form["reworkInstructions"].FirstOrDefault(),
+                RejectionReason = form["rejectionReason"].FirstOrDefault(),
+                CorrectiveAction = form["correctiveAction"].FirstOrDefault(),
                 SpecificationResultsJson = form["specificationResultsJson"].FirstOrDefault(),
-                Observations = form["observations"].FirstOrDefault(),
+                QualityParametersJson = form["qualityParametersJson"].FirstOrDefault() ?? form["specificationResultsJson"].FirstOrDefault(),
+                Observations = form["observations"].FirstOrDefault() ?? form["notes"].FirstOrDefault(),
+                ProductionProcessNumber = form["productionProcessNumber"].FirstOrDefault(),
+                ManufactureNumber = form["manufactureNumber"].FirstOrDefault(),
+                ProductionOrderNumber = form["productionOrderNumber"].FirstOrDefault(),
+                AssociatedReferenceNumbers = form["associatedReferenceNumbers"].FirstOrDefault(),
                 Attachment = form.Files.GetFile("attachment"),
                 AttachmentPath = form["attachmentPath"].FirstOrDefault()
             };
+
+            if (int.TryParse(form["productionFinishedProductId"].FirstOrDefault(), out var pfpId))
+                dto.ProductionFinishedProductId = pfpId;
+
+            if (int.TryParse(form["productionProcessId"].FirstOrDefault(), out var procId))
+                dto.ProductionProcessId = procId;
+
+            if (int.TryParse(form["productionOrderId"].FirstOrDefault(), out var pOrderId))
+                dto.ProductionOrderId = pOrderId;
+
+            if (decimal.TryParse(form["targetQuantity"].FirstOrDefault(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var tQty))
+                dto.TargetQuantity = tQty;
 
             if (int.TryParse(form["productionReferenceNumber"].FirstOrDefault(), out var refNo))
                 dto.ProductionReferenceNumber = refNo;
@@ -1959,12 +2381,25 @@ public class LaboratoryController : ControllerBase
 
         try
         {
-            return await JsonSerializer.DeserializeAsync<CreateFinalConformityCertificateDto>(
-                Request.Body,
+            if (Request.Body.CanSeek)
+            {
+                Request.Body.Position = 0;
+            }
+            using var reader = new StreamReader(Request.Body, System.Text.Encoding.UTF8, leaveOpen: true);
+            var bodyText = await reader.ReadToEndAsync();
+            _logger.LogInformation("CreateFinalCertificate JSON body: {Body}", bodyText);
+            if (string.IsNullOrWhiteSpace(bodyText))
+            {
+                _logger.LogWarning("CreateFinalCertificate body was empty!");
+                return null;
+            }
+            return JsonSerializer.Deserialize<CreateFinalConformityCertificateDto>(
+                bodyText,
                 new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.LogError(ex, "Failed to deserialize CreateFinalConformityCertificateDto from JSON body.");
             return null;
         }
     }
@@ -2210,6 +2645,14 @@ public class LaboratoryController : ControllerBase
         QuantityUnit = c.QuantityUnit,
         ProductionBatchNumber = c.ProductionBatchNumber,
         ProductionWorkInProcessId = c.ProductionWorkInProcessId,
+        ProductionProcessId = c.ProductionProcessId,
+        ProductionProcessNumber = c.ProductionProcessNumber,
+        ProductionFinishedProductId = c.ProductionFinishedProductId,
+        ManufactureNumber = c.ManufactureNumber,
+        ProductionOrderId = c.ProductionOrderId,
+        ProductionOrderNumber = c.ProductionOrderNumber,
+        TargetQuantity = c.TargetQuantity,
+        AssociatedReferenceNumbers = c.AssociatedReferenceNumbers,
         ProductionCompletionDateTime = c.ProductionCompletionDateTime,
         ActualRawMaterialInputQuantity = c.ActualRawMaterialInputQuantity,
         CalculatedDifference = c.CalculatedDifference,
@@ -2219,7 +2662,10 @@ public class LaboratoryController : ControllerBase
         NonConformityAction = c.NonConformityAction,
         ClassifiedProductType = c.ClassifiedProductType,
         ReworkInstructions = c.ReworkInstructions,
+        RejectionReason = c.RejectionReason,
+        CorrectiveAction = c.CorrectiveAction,
         SpecificationResultsJson = c.SpecificationResultsJson,
+        QualityParametersJson = c.QualityParametersJson,
         Observations = c.Observations,
         AttachmentPath = c.AttachmentPath,
         AttachmentFileName = c.AttachmentFileName,
@@ -2229,7 +2675,6 @@ public class LaboratoryController : ControllerBase
         ApprovalStatus = c.ApprovalStatus,
         ReviewedBy = c.ReviewedBy,
         ReviewedAt = c.ReviewedAt,
-        RejectionReason = c.RejectionReason,
         IsStoragePosted = c.IsStoragePosted,
         StoragePostedAt = c.StoragePostedAt,
         CreatedAt = c.CreatedAt,

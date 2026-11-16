@@ -98,7 +98,6 @@ class ChatApi {
    */
   static async request(endpoint, options = {}) {
     const isPublicAuthEndpoint = endpoint.startsWith('/api/auth/login') ||
-                                 endpoint.startsWith('/api/auth/register') ||
                                  endpoint.startsWith('/api/auth/forgot-password') ||
                                  endpoint.startsWith('/api/auth/detect-identifier');
 
@@ -195,20 +194,6 @@ class ChatApi {
     const res = await this.request('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({ identifier, password })
-    });
-
-    if (res.success && res.data) {
-      this.isHandlingSessionExpiry = false;
-      this.setToken(res.data.token);
-      this.setCurrentUser(res.data.user);
-    }
-    return res;
-  }
-
-  static async register(userData) {
-    const res = await this.request('/api/auth/register', {
-      method: 'POST',
-      body: JSON.stringify(userData)
     });
 
     if (res.success && res.data) {
@@ -1736,6 +1721,22 @@ class ChatApi {
       method: 'POST',
       body: formData instanceof FormData ? formData : JSON.stringify(formData)
     });
+  }
+
+  static async getEligibleFinishedProductsForLab(params = {}) {
+    const qs = new URLSearchParams();
+    if (params.status && params.status !== 'ALL') qs.append('status', params.status);
+    if (params.search) qs.append('search', params.search);
+    const queryStr = qs.toString() ? `?${qs.toString()}` : '';
+    return await this.request(`/api/laboratory/eligible-finished-products${queryStr}`, { method: 'GET' });
+  }
+
+  static async getLabFinalProductContext(finishedProductId) {
+    return await this.request(`/api/laboratory/finished-products/${finishedProductId}/context`, { method: 'GET' });
+  }
+
+  static async getLabCertificateByFinishedProduct(finishedProductId) {
+    return await this.request(`/api/laboratory/final-certificates/by-finished-product/${finishedProductId}`, { method: 'GET' });
   }
 
   static async getLaboratoryFinalCertificates(params = {}) {

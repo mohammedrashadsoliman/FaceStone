@@ -28,7 +28,7 @@
   <meta name="apple-mobile-web-app-title" content="FaceStone">
 
   <!-- Core Messaging Stylesheet -->
-  <link rel="stylesheet" href="/css/chat-app.css?v=20260929_pro">
+  <link rel="stylesheet" href="/css/chat-app.css?v=20261116_test_accounts">
   <!-- Finance Department Stylesheet -->
   <link rel="stylesheet" href="/css/finance.css?v=20261005_redesign">
   <!-- Management Department Stylesheet (Unified with Finance UX & Design) -->
@@ -8641,11 +8641,6 @@
         <p class="auth-modal-subtitle">بوابة تسجيل الدخول الموحدة لإدارة العمليات والمالية</p>
       </div>
 
-      <div class="auth-tabs-bar" role="tablist">
-        <button type="button" class="auth-tab-btn active" id="auth-tab-login" role="tab" aria-selected="true">تسجيل الدخول</button>
-        <button type="button" class="auth-tab-btn" id="auth-tab-register" role="tab" aria-selected="false">إنشاء حساب جديد</button>
-      </div>
-
       <div class="auth-modal-body">
         <!-- Sign In Form -->
         <div id="auth-view-login">
@@ -8663,77 +8658,221 @@
             <button type="submit" class="auth-btn-primary">تسجيل الدخول إلى النظام</button>
           </form>
 
-          <!-- Quick 1-Click Demo Accounts in Database -->
-          <div class="auth-demo-accounts-pillbox">
-            <strong style="color: var(--text-main); display: block; margin-bottom: 0.5rem; font-weight: 700;">حسابات تجريبية سريعة (انقر للتعبئة التلقائية):</strong>
-            <div class="demo-chips-grid">
-              <div class="demo-account-chip" onclick="fillDemoAccount('kareem.ceo@facestone.com', 'Password123!')">
-                <span class="demo-role">الرئيس التنفيذي:</span> kareem.ceo@facestone.com
+          <!-- ========================================================================
+               Test Accounts Section – حسابات تجريبية لكافة الأقسام
+               ======================================================================== -->
+          <div class="auth-test-accounts-section" aria-label="حسابات تجريبية لكافة الأقسام">
+            <div class="auth-test-header">
+              <div class="auth-test-title-row">
+                <span style="font-size: 1.25rem;">🔐</span>
+                <h2 class="auth-test-title">Test Accounts – حسابات تجريبية</h2>
+                <span class="auth-test-badge-count">8 أقسام</span>
               </div>
-              <div class="demo-account-chip" onclick="fillDemoAccount('it@facestone.com', 'Password123!')">
-                <span class="demo-role">تقنية المعلومات:</span> it@facestone.com
+              <p class="auth-test-subtitle">حسابات حقيقية بقاعدة البيانات لاختبار صلاحيات وواجهات كل قسم. انقر على الزر لتسجيل الدخول التلقائي والانتقال المباشر للقسم.</p>
+            </div>
+
+            <div class="auth-test-grid">
+              <!-- 1. Management -->
+              <div class="auth-test-card">
+                <div class="auth-test-card-top">
+                  <div class="auth-test-icon-wrap" style="background: rgba(15, 42, 92, 0.12); color: #0F2A5C;">🏢</div>
+                  <div class="auth-test-names">
+                    <div class="auth-test-name-ar">الإدارة العامة والرقابة</div>
+                    <div class="auth-test-name-en">Management & Oversight</div>
+                  </div>
+                </div>
+                <div class="auth-test-creds">
+                  <div class="auth-test-cred-item">
+                    <span class="auth-test-cred-lbl">المستخدم:</span>
+                    <span class="auth-test-cred-val">test_management</span>
+                  </div>
+                  <div class="auth-test-cred-item">
+                    <span class="auth-test-cred-lbl">كلمة المرور:</span>
+                    <span class="auth-test-cred-val">Password123!</span>
+                  </div>
+                </div>
+                <button type="button" class="auth-test-btn" onclick="loginAsDepartment('test_management', 'Password123!', '/management')">
+                  <span>تسجيل الدخول بهذا القسم</span>
+                  <span>←</span>
+                </button>
               </div>
-              <div class="demo-account-chip" onclick="fillDemoAccount('sarah@facestone.com', 'SecretPass123!')">
-                <span class="demo-role">المحاسب المالي:</span> sarah@facestone.com
+
+              <!-- 2. Finance -->
+              <div class="auth-test-card">
+                <div class="auth-test-card-top">
+                  <div class="auth-test-icon-wrap" style="background: rgba(16, 185, 129, 0.12); color: #10B981;">💰</div>
+                  <div class="auth-test-names">
+                    <div class="auth-test-name-ar">الإدارة المالية والمحاسبة</div>
+                    <div class="auth-test-name-en">Finance & Accounting</div>
+                  </div>
+                </div>
+                <div class="auth-test-creds">
+                  <div class="auth-test-cred-item">
+                    <span class="auth-test-cred-lbl">المستخدم:</span>
+                    <span class="auth-test-cred-val">test_finance</span>
+                  </div>
+                  <div class="auth-test-cred-item">
+                    <span class="auth-test-cred-lbl">كلمة المرور:</span>
+                    <span class="auth-test-cred-val">Password123!</span>
+                  </div>
+                </div>
+                <button type="button" class="auth-test-btn" onclick="loginAsDepartment('test_finance', 'Password123!', '/finance')">
+                  <span>تسجيل الدخول بهذا القسم</span>
+                  <span>←</span>
+                </button>
               </div>
-              <div class="demo-account-chip" onclick="fillDemoAccount('transport@facestone.com', 'Password123!')">
-                <span class="demo-role">مدير النقل:</span> transport@facestone.com
+
+              <!-- 3. Transportation & Logistics -->
+              <div class="auth-test-card">
+                <div class="auth-test-card-top">
+                  <div class="auth-test-icon-wrap" style="background: rgba(2, 132, 199, 0.12); color: #0284C7;">🚚</div>
+                  <div class="auth-test-names">
+                    <div class="auth-test-name-ar">إدارة النقل واللوجستيات</div>
+                    <div class="auth-test-name-en">Transportation & Logistics</div>
+                  </div>
+                </div>
+                <div class="auth-test-creds">
+                  <div class="auth-test-cred-item">
+                    <span class="auth-test-cred-lbl">المستخدم:</span>
+                    <span class="auth-test-cred-val">test_transport</span>
+                  </div>
+                  <div class="auth-test-cred-item">
+                    <span class="auth-test-cred-lbl">كلمة المرور:</span>
+                    <span class="auth-test-cred-val">Password123!</span>
+                  </div>
+                </div>
+                <button type="button" class="auth-test-btn" onclick="loginAsDepartment('test_transport', 'Password123!', '/transportation')">
+                  <span>تسجيل الدخول بهذا القسم</span>
+                  <span>←</span>
+                </button>
               </div>
-              <div class="demo-account-chip" onclick="fillDemoAccount('storage@facestone.com', 'Storage123!')">
-                <span class="demo-role">أمين المستودع:</span> storage@facestone.com
+
+              <!-- 4. Storage & Warehouse -->
+              <div class="auth-test-card">
+                <div class="auth-test-card-top">
+                  <div class="auth-test-icon-wrap" style="background: rgba(217, 119, 6, 0.12); color: #D97706;">📦</div>
+                  <div class="auth-test-names">
+                    <div class="auth-test-name-ar">إدارة المستودعات والمخازن</div>
+                    <div class="auth-test-name-en">Warehouse & Storage</div>
+                  </div>
+                </div>
+                <div class="auth-test-creds">
+                  <div class="auth-test-cred-item">
+                    <span class="auth-test-cred-lbl">المستخدم:</span>
+                    <span class="auth-test-cred-val">test_storage</span>
+                  </div>
+                  <div class="auth-test-cred-item">
+                    <span class="auth-test-cred-lbl">كلمة المرور:</span>
+                    <span class="auth-test-cred-val">Password123!</span>
+                  </div>
+                </div>
+                <button type="button" class="auth-test-btn" onclick="loginAsDepartment('test_storage', 'Password123!', '/departments/storage')">
+                  <span>تسجيل الدخول بهذا القسم</span>
+                  <span>←</span>
+                </button>
               </div>
-              <div class="demo-account-chip" onclick="fillDemoAccount('manager@facestone.com', 'Manager123!')">
-                <span class="demo-role">مدير المصنع:</span> manager@facestone.com
+
+              <!-- 5. Laboratory & QC -->
+              <div class="auth-test-card">
+                <div class="auth-test-card-top">
+                  <div class="auth-test-icon-wrap" style="background: rgba(5, 150, 105, 0.12); color: #059669;">🔬</div>
+                  <div class="auth-test-names">
+                    <div class="auth-test-name-ar">إدارة المعمل ومراقبة الجودة</div>
+                    <div class="auth-test-name-en">Laboratory & Quality Control</div>
+                  </div>
+                </div>
+                <div class="auth-test-creds">
+                  <div class="auth-test-cred-item">
+                    <span class="auth-test-cred-lbl">المستخدم:</span>
+                    <span class="auth-test-cred-val">test_laboratory</span>
+                  </div>
+                  <div class="auth-test-cred-item">
+                    <span class="auth-test-cred-lbl">كلمة المرور:</span>
+                    <span class="auth-test-cred-val">Password123!</span>
+                  </div>
+                </div>
+                <button type="button" class="auth-test-btn" onclick="loginAsDepartment('test_laboratory', 'Password123!', '/laboratory')">
+                  <span>تسجيل الدخول بهذا القسم</span>
+                  <span>←</span>
+                </button>
               </div>
-              <div class="demo-account-chip" onclick="fillDemoAccount('alex@facestone.com', 'Password123!')">
-                <span class="demo-role">مهندس / موظف:</span> alex@facestone.com
+
+              <!-- 6. Production & Manufacturing -->
+              <div class="auth-test-card">
+                <div class="auth-test-card-top">
+                  <div class="auth-test-icon-wrap" style="background: rgba(14, 116, 144, 0.12); color: #0E7490;">⚙️</div>
+                  <div class="auth-test-names">
+                    <div class="auth-test-name-ar">إدارة الإنتاج والتشغيل</div>
+                    <div class="auth-test-name-en">Production & Manufacturing</div>
+                  </div>
+                </div>
+                <div class="auth-test-creds">
+                  <div class="auth-test-cred-item">
+                    <span class="auth-test-cred-lbl">المستخدم:</span>
+                    <span class="auth-test-cred-val">test_production</span>
+                  </div>
+                  <div class="auth-test-cred-item">
+                    <span class="auth-test-cred-lbl">كلمة المرور:</span>
+                    <span class="auth-test-cred-val">Password123!</span>
+                  </div>
+                </div>
+                <button type="button" class="auth-test-btn" onclick="loginAsDepartment('test_production', 'Password123!', '/production')">
+                  <span>تسجيل الدخول بهذا القسم</span>
+                  <span>←</span>
+                </button>
+              </div>
+
+              <!-- 7. Attendance & HR -->
+              <div class="auth-test-card">
+                <div class="auth-test-card-top">
+                  <div class="auth-test-icon-wrap" style="background: rgba(220, 38, 38, 0.12); color: #DC2626;">📋</div>
+                  <div class="auth-test-names">
+                    <div class="auth-test-name-ar">إدارة الحضور والانصراف</div>
+                    <div class="auth-test-name-en">Attendance & HR</div>
+                  </div>
+                </div>
+                <div class="auth-test-creds">
+                  <div class="auth-test-cred-item">
+                    <span class="auth-test-cred-lbl">المستخدم:</span>
+                    <span class="auth-test-cred-val">test_attendance</span>
+                  </div>
+                  <div class="auth-test-cred-item">
+                    <span class="auth-test-cred-lbl">كلمة المرور:</span>
+                    <span class="auth-test-cred-val">Password123!</span>
+                  </div>
+                </div>
+                <button type="button" class="auth-test-btn" onclick="loginAsDepartment('test_attendance', 'Password123!', '/attendance')">
+                  <span>تسجيل الدخول بهذا القسم</span>
+                  <span>←</span>
+                </button>
+              </div>
+
+              <!-- 8. Suppliers & Procurement -->
+              <div class="auth-test-card">
+                <div class="auth-test-card-top">
+                  <div class="auth-test-icon-wrap" style="background: rgba(124, 58, 237, 0.12); color: #7C3AED;">🤝</div>
+                  <div class="auth-test-names">
+                    <div class="auth-test-name-ar">إدارة الموردين وعقود التوريد</div>
+                    <div class="auth-test-name-en">Suppliers & Procurement</div>
+                  </div>
+                </div>
+                <div class="auth-test-creds">
+                  <div class="auth-test-cred-item">
+                    <span class="auth-test-cred-lbl">المستخدم:</span>
+                    <span class="auth-test-cred-val">test_suppliers</span>
+                  </div>
+                  <div class="auth-test-cred-item">
+                    <span class="auth-test-cred-lbl">كلمة المرور:</span>
+                    <span class="auth-test-cred-val">Password123!</span>
+                  </div>
+                </div>
+                <button type="button" class="auth-test-btn" onclick="loginAsDepartment('test_suppliers', 'Password123!', '/finance/suppliers')">
+                  <span>تسجيل الدخول بهذا القسم</span>
+                  <span>←</span>
+                </button>
               </div>
             </div>
           </div>
-        </div>
-
-        <!-- Create Account Form -->
-        <div id="auth-view-register" style="display: none;">
-          <form id="auth-register-form">
-            <div class="auth-form-field">
-              <label class="auth-field-label" for="reg-name-input">الاسم الكامل</label>
-              <input type="text" class="auth-text-input" id="reg-name-input" required placeholder="مثال: المهندس طارق محمود">
-            </div>
-
-            <div class="auth-form-field">
-              <label class="auth-field-label" for="reg-user-input">اسم المستخدم</label>
-              <input type="text" class="auth-text-input" id="reg-user-input" required placeholder="tarek_stone">
-            </div>
-
-            <div class="auth-form-field">
-              <label class="auth-field-label" for="reg-email-input">البريد الإلكتروني</label>
-              <input type="email" class="auth-text-input" id="reg-email-input" required placeholder="tarek@facestone.com">
-            </div>
-
-            <div class="auth-form-field">
-              <label class="auth-field-label" for="reg-phone-input">رقم الهاتف</label>
-              <input type="tel" class="auth-text-input" id="reg-phone-input" required placeholder="+20 10 9988 7766">
-            </div>
-
-            <div class="auth-form-field">
-              <label class="auth-field-label" for="reg-role-input">الدور الوظيفي</label>
-              <select class="auth-text-input" id="reg-role-input" style="cursor: pointer; height: 44px;">
-                <option value="Employee">موظف ميداني</option>
-                <option value="Accountant">محاسب مالي</option>
-                <option value="TRANSPORTATION_MANAGER">مدير النقل واللوجستيات</option>
-                <option value="STORAGE_MANAGER">أمين المستودع والمخازن</option>
-                <option value="IT">تقنية المعلومات والدعم الفني</option>
-                <option value="CEO">الرئيس التنفيذي</option>
-              </select>
-            </div>
-
-            <div class="auth-form-field">
-              <label class="auth-field-label" for="reg-pwd-input">كلمة المرور (6 أحرف على الأقل)</label>
-              <input type="password" class="auth-text-input" id="reg-pwd-input" required minlength="6" placeholder="••••••••">
-            </div>
-
-            <button type="submit" class="auth-btn-primary">إنشاء الحساب وتفعيله</button>
-          </form>
         </div>
       </div>
     </div>
@@ -10364,6 +10503,24 @@
           </div>
 
           <form id="prd-finished-form" novalidate>
+            <!-- Lab Integration Notification Banner -->
+            <div style="background: linear-gradient(135deg, #eff6ff 0%, #f0fdf4 100%); border: 1.5px solid #93c5fd; border-radius: 10px; padding: 1rem 1.25rem; margin-bottom: 1.5rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+              <div style="display: flex; align-items: center; gap: 12px;">
+                <span style="font-size: 1.8rem;">🔬</span>
+                <div>
+                  <h4 style="margin: 0; font-size: 0.98rem; font-weight: 800; color: #1e3a8a;">
+                    التكامل والربط الآلي مع قسم المختبر — شهادة مطابقة المنتج النهائي
+                  </h4>
+                  <p style="margin: 0.25rem 0 0; font-size: 0.82rem; color: #334155;">
+                    كل منتج نهائي يُسجل هنا يُحال تلقائياً بحالة <strong>قيد فحص المختبر</strong> لفحصه واعتماده من قبل كيميائي المختبر، ولن يُسمح بصرفه أو ترحيله النهائي قبل إصدار شهادة المطابقة المعتمدة.
+                  </p>
+                </div>
+              </div>
+              <span class="prd-badge" style="background: #dbeafe; color: #1e40af; font-size: 0.8rem; font-weight: 700; padding: 0.35rem 0.85rem; border-radius: 6px;">
+                ⚡ ربط مباشر بقاعدة البيانات
+              </span>
+            </div>
+
             <!-- 1. Production Process & Order Selection Card -->
             <div style="background: #f8fafc; border: 1.5px solid #94a3b8; border-radius: 10px; padding: 1.25rem; margin-bottom: 1.5rem;">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
@@ -10701,6 +10858,26 @@
       </div>
     </div>
 
+    <!-- MODAL: Laboratory Certificate Preview in Production -->
+    <div class="prd-modal" id="prd-modal-lab-cert" style="display: none;">
+      <div class="prd-modal-overlay" onclick="ProductionApp.closeModal('prd-modal-lab-cert')"></div>
+      <div class="prd-modal-dialog" style="max-width: 850px; width: 95%;">
+        <div class="prd-modal-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--prd-border); padding: 1rem 1.5rem;">
+          <h3 class="prd-modal-title" id="prd-lab-cert-modal-title" style="margin: 0; font-size: 1.2rem; font-weight: 800; color: #0F2A5C;">
+            📜 شهادة مطابقة المنتج النهائي الرسمية
+          </h3>
+          <button type="button" class="prd-modal-close" onclick="ProductionApp.closeModal('prd-modal-lab-cert')" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--prd-text-muted);">&times;</button>
+        </div>
+        <div class="prd-modal-body" id="prd-lab-cert-modal-content" style="padding: 1.5rem; max-height: 80vh; overflow-y: auto;">
+          <!-- Populated dynamically -->
+        </div>
+        <div class="prd-modal-footer" style="padding: 1rem 1.5rem; border-top: 1px solid var(--prd-border); display: flex; justify-content: space-between; align-items: center;">
+          <button type="button" class="prd-btn prd-btn-primary" id="prd-lab-cert-print-btn" onclick="ProductionApp.printCurrentLabCert()">طباعة الشهادة 🖨️</button>
+          <button type="button" class="prd-btn prd-btn-outline" onclick="ProductionApp.closeModal('prd-modal-lab-cert')">إغلاق</button>
+        </div>
+      </div>
+    </div>
+
     <!-- MODAL: Edit Submission -->
     <div class="prd-modal" id="prd-modal-edit-submission" style="display: none;">
       <div class="prd-modal-overlay" onclick="ProductionApp.closeModal('prd-modal-edit-submission')"></div>
@@ -10790,11 +10967,11 @@
 
   <!-- Real-Time Client Libraries & Application Modules -->
   <script src="/js/signalr.min.js?v=20260927_management"></script>
-  <script src="/js/api.js?v=20261116_fix"></script>
+  <script src="/js/api.js?v=20261116_test_accounts"></script>
   <script src="/js/map.js?v=20260927_management"></script>
   <script src="/js/realtime.js?v=20260927_management"></script>
   <script src="/js/chat-state.js?v=20260927_management"></script>
-  <script src="/js/chat-app.js?v=20261116_fix"></script>
+  <script src="/js/chat-app.js?v=20261116_test_accounts"></script>
   <script src="/js/transportation.js?v=20261107_live"></script>
   <script src="/js/storage.js?v=20261107_live"></script>
   <script src="/js/laboratory.js?v=20261024_v1"></script>

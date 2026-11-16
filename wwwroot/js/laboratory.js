@@ -1720,96 +1720,930 @@
     }
 
     // ======================================================================
-    // 3. FINAL PRODUCT CONFORMITY CERTIFICATE
+    // 3. FINAL PRODUCT CONFORMITY CERTIFICATE (شهادة مطابقة المنتج النهائي)
     // ======================================================================
     static async renderFinalCertView() {
       if (!this.finalContainer) return;
       const sectionAr = LAB_SECTION_AR[this.activeSection];
+      this.eligibleFinishedProducts = [];
+      this.selectedFinishedProduct = null;
+      this.finalCertFilterStatus = 'ALL';
+
       this.finalContainer.innerHTML = `
         <div id="lab-final-alert"></div>
-        <div class="lab-form-card" style="max-width: 900px; margin: 0 auto;">
-          <h3 style="margin:0 0 6px;color:#0F2A5C;font-size:0.98rem;font-weight:800;">إصدار شهادة مطابقة منتج نهائي — ${this.esc(sectionAr)}</h3>
-          <p class="lab-hint" style="margin:0 0 16px;">اختر الرقم المرجعي التتبعي للإنتاج لإصدار شهادة المطابقة للمنتج النهائي.</p>
+
+        <!-- 1. Header & Live Synchronization Banner -->
+        <div class="lab-card" style="background: #ffffff; border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; border-bottom: 1px solid #f1f5f9; padding-bottom: 1rem;">
+            <div>
+              <h2 style="margin: 0; font-size: 1.3rem; font-weight: 800; color: #0F2A5C; display: flex; align-items: center; gap: 0.5rem;">
+                <span style="color: #059669;">📜</span>
+                <span>شهادة مطابقة المنتج النهائي — ${this.esc(sectionAr)}</span>
+              </h2>
+              <p style="margin: 0.35rem 0 0; font-size: 0.85rem; color: #64748B;">
+                ربط مباشر وحي مع قسم الإنتاج (Finished Product & Waste Calculation)، فحص مواصفات المنتج التام واعتماده مخبرياً قبل التوريد أو الصرف.
+              </p>
+            </div>
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+              <button type="button" class="lab-btn lab-btn-outline" id="btn-refresh-final-cert-data" style="font-size: 0.82rem; padding: 0.4rem 0.85rem; display: flex; align-items: center; gap: 6px;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                <span>تحديث المنتجات الحية</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Quick Status Filter Pills -->
+          <div style="display: flex; gap: 0.5rem; margin-top: 1rem; flex-wrap: wrap; align-items: center;">
+            <span style="font-size: 0.8rem; font-weight: 700; color: #475569; margin-left: 0.25rem;">تصفية طابور الفحص:</span>
+            <button type="button" class="lab-btn lab-filter-pill active" data-status="ALL" id="pill-filter-all" style="padding: 0.3rem 0.75rem; font-size: 0.78rem; border-radius: 20px;">
+              الكل (<span id="count-final-all">0</span>)
+            </button>
+            <button type="button" class="lab-btn lab-filter-pill" data-status="PENDING_INSPECTION" id="pill-filter-pending" style="padding: 0.3rem 0.75rem; font-size: 0.78rem; border-radius: 20px; background: #FEF3C7; color: #92400E; border: 1px solid #FCD34D;">
+              ⏱️ قيد فحص المختبر (<span id="count-final-pending">0</span>)
+            </button>
+            <button type="button" class="lab-btn lab-filter-pill" data-status="UNDER_INSPECTION" id="pill-filter-under" style="padding: 0.3rem 0.75rem; font-size: 0.78rem; border-radius: 20px; background: #E0F2FE; color: #0369A1; border: 1px solid #BAE6FD;">
+              🔬 قيد الفحص والتحليل (<span id="count-final-under">0</span>)
+            </button>
+            <button type="button" class="lab-btn lab-filter-pill" data-status="APPROVED" id="pill-filter-approved" style="padding: 0.3rem 0.75rem; font-size: 0.78rem; border-radius: 20px; background: #DCFCE7; color: #166534; border: 1px solid #86EFAC;">
+              ✅ معتمد مخبرياً (<span id="count-final-approved">0</span>)
+            </button>
+            <button type="button" class="lab-btn lab-filter-pill" data-status="REJECTED" id="pill-filter-rejected" style="padding: 0.3rem 0.75rem; font-size: 0.78rem; border-radius: 20px; background: #FEE2E2; color: #991B1B; border: 1px solid #FCA5A5;">
+              ❌ مرفوض مخبرياً (<span id="count-final-rejected">0</span>)
+            </button>
+          </div>
+        </div>
+
+        <!-- 2. Main Inspection Form Card -->
+        <div class="lab-form-card" style="max-width: 1000px; margin: 0 auto 2rem;">
           <form id="lab-final-form" novalidate>
-            <div class="lab-form-grid">
+            
+            <!-- SECTION A: Select Production Number & Finished Product -->
+            <div style="background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 10px; padding: 1.25rem; margin-bottom: 1.5rem;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
+                <label class="lab-label" for="lab-final-prod-select" style="font-weight: 800; font-size: 0.95rem; color: #0F2A5C; margin: 0; display: flex; align-items: center; gap: 6px;">
+                  <span>⚙️ اختيار رقم العملية والمنتج النهائي من قسم الإنتاج (Production Record)</span>
+                  <span class="req">*</span>
+                </label>
+                <span style="font-size: 0.78rem; color: #64748b;">قاعدة بيانات الإنتاج الحية (دون قيم ثابتة)</span>
+              </div>
+
               <div class="lab-field lab-field-full">
-                <label class="lab-label">الرقم المرجعي التتبعي للإنتاج <span class="req">*</span></label>
-                <select class="lab-select" id="lab-final-ref" required>
-                  <option value="">— اختر رقماً مرجعياً للإنتاج —</option>
+                <select class="lab-select" id="lab-final-prod-select" required style="width: 100%; font-weight: 700; font-size: 0.92rem; border: 2px solid #2563eb; padding: 0.65rem 0.85rem;">
+                  <option value="">— جاري تحميل المنتجات المصنعة من قسم الإنتاج... —</option>
                 </select>
+                <div style="margin-top: 6px; display: flex; justify-content: space-between; align-items: center; font-size: 0.78rem; color: #64748B;">
+                  <span>اختر المنتج النهائي لعرض سلسلة التتبع الكاملة والمواد الخام المعتمدة.</span>
+                  <span id="lab-final-active-tag" style="display:none; font-weight: 700;"></span>
+                </div>
               </div>
             </div>
-            <div class="lab-form-grid" style="margin-top:12px;">
-              <div class="lab-field">
-                <label class="lab-label">اسم المنتج النهائي <span class="req">*</span></label>
-                <input type="text" class="lab-input" id="lab-final-name" placeholder="مثال: أحجار ديكور فاخرة 40×40" required>
+
+            <!-- SECTION B: Traceability & Associated Incoming Lab Reference Numbers Card -->
+            <div id="lab-final-context-box" style="display: none; background: #ffffff; border: 1.5px solid #94a3b8; border-radius: 10px; padding: 1.25rem; margin-bottom: 1.5rem; box-shadow: 0 2px 4px rgba(0,0,0,0.04);">
+              <div style="border-bottom: 1px solid #e2e8f0; padding-bottom: 0.75rem; margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+                <h4 style="margin: 0; font-size: 1rem; font-weight: 800; color: #0F2A5C; display: flex; align-items: center; gap: 6px;">
+                  <span>🔍</span>
+                  <span>تفاصيل الإنتاج وسلسلة التتبع للمنتج المختار (Production Traceability)</span>
+                </h4>
+                <span id="lab-context-status-badge" class="lab-badge" style="font-size: 0.85rem; padding: 4px 10px; font-weight: 800;">-</span>
               </div>
-              <div class="lab-field">
-                <label class="lab-label">قرار المطابقة للمواصفات <span class="req">*</span></label>
-                <select class="lab-select" id="lab-final-decision" required>
-                  <option value="CONFORMS">مطابق للمواصفات القياسية</option>
-                  <option value="NON_CONFORMING">غير مطابق للمواصفات</option>
-                  <option value="PENDING_TESTING">يحتاج فحوصات إضافية</option>
-                </select>
+
+              <!-- 4 KPI context tiles -->
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.85rem; margin-bottom: 1rem;">
+                <div style="background: #f8fafc; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid #e2e8f0;">
+                  <span style="font-size: 0.75rem; color: #64748b; display: block;">رقم عملية الإنتاج / أمر الإنتاج</span>
+                  <strong id="lab-ctx-proc-num" style="font-size: 1.05rem; color: #1d4ed8; display: block;">—</strong>
+                  <small id="lab-ctx-order-num" style="font-size: 0.78rem; color: #475569;">—</small>
+                </div>
+                <div style="background: #f8fafc; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid #e2e8f0;">
+                  <span style="font-size: 0.75rem; color: #64748b; display: block;">رقم التصنيع / اسم المنتج النهائي</span>
+                  <strong id="lab-ctx-mfg-num" style="font-size: 1.05rem; color: #0F2A5C; display: block;">—</strong>
+                  <small id="lab-ctx-prod-name" style="font-size: 0.78rem; color: #059669; font-weight: 700;">—</small>
+                </div>
+                <div style="background: #f8fafc; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid #e2e8f0;">
+                  <span style="font-size: 0.75rem; color: #64748b; display: block;">الكمية المستهدفة vs الفعلية المصنعة</span>
+                  <div style="font-size: 1.05rem; font-weight: 800; color: #059669;" id="lab-ctx-qty-disp">0.000 طن</div>
+                  <small id="lab-ctx-diff-disp" style="font-size: 0.75rem; color: #64748b;">—</small>
+                </div>
+                <div style="background: #f8fafc; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid #e2e8f0;">
+                  <span style="font-size: 0.75rem; color: #64748b; display: block;">تاريخ الإنتاج / مسؤول التشغيل</span>
+                  <strong id="lab-ctx-date-disp" style="font-size: 0.88rem; color: #1e293b; display: block;">—</strong>
+                  <small id="lab-ctx-emp-disp" style="font-size: 0.78rem; color: #64748b;">—</small>
+                </div>
               </div>
-              <div class="lab-field lab-field-full">
-                <label class="lab-label">ملاحظات الفاحص والتوصيات</label>
-                <textarea class="lab-textarea" id="lab-final-notes" placeholder="ملاحظات وتوصيات المعمل النهائي..."></textarea>
+
+              <!-- Weighbridge & Storage Location strip -->
+              <div style="background: #f1f5f9; border-radius: 6px; padding: 0.5rem 0.85rem; margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; font-size: 0.82rem;">
+                <div>
+                  <span style="color: #64748b;">مستودع وجهة تخزين المنتج: </span>
+                  <strong id="lab-ctx-storage-loc" style="color: #0F2A5C;">—</strong>
+                </div>
+                <div id="lab-ctx-weighbridge-wrap">
+                  <span style="color: #64748b;">تذكرة ميزان البسكول: </span>
+                  <span id="lab-ctx-weighbridge-link">—</span>
+                </div>
+              </div>
+
+              <!-- Associated Raw Materials and Lab Reference Numbers Table -->
+              <div>
+                <div style="font-size: 0.88rem; font-weight: 800; color: #0F2A5C; margin-bottom: 0.4rem; display: flex; align-items: center; justify-content: space-between;">
+                  <span>🧪 الأرقام المرجعية للمختبر والمواد الخام المستهلكة في التصنيع (Linked Lab References):</span>
+                  <span id="lab-ctx-refs-summary" style="font-size: 0.78rem; color: #0284c7; font-weight: 700;">—</span>
+                </div>
+                <div style="overflow-x: auto; max-height: 200px; border: 1px solid #e2e8f0; border-radius: 8px;">
+                  <table class="lab-table" style="width: 100%; font-size: 0.8rem; text-align: right; border-collapse: collapse;">
+                    <thead style="background: #f8fafc; position: sticky; top: 0;">
+                      <tr>
+                        <th style="padding: 6px 10px;">الرقم المرجعي للمختبر</th>
+                        <th style="padding: 6px 10px;">اسم الخامة المستهلكة</th>
+                        <th style="padding: 6px 10px;">رقم الدفعة (Batch #)</th>
+                        <th style="padding: 6px 10px;">كود العينة</th>
+                        <th style="padding: 6px 10px;">الكمية المستهلكة</th>
+                        <th style="padding: 6px 10px;">موقع المستودع المصدر</th>
+                      </tr>
+                    </thead>
+                    <tbody id="lab-ctx-materials-tbody">
+                      <tr><td colspan="6" style="text-align: center; color: #94a3b8; padding: 1rem;">لا توجد مواد مسجلة</td></tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
-            <div class="lab-form-actions">
-              <button type="submit" class="lab-btn lab-btn-primary" id="lab-final-submit">إصدار واعتماد شهادة المطابقة</button>
+
+            <!-- SECTION C: Laboratory Specification Verification & Testing Criteria -->
+            <div style="background: #ffffff; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 1.25rem; margin-bottom: 1.5rem;">
+              <h3 style="margin: 0 0 1rem; font-size: 1.05rem; font-weight: 800; color: #0F2A5C; display: flex; align-items: center; gap: 6px;">
+                <span>🔬</span>
+                <span>فحوصات الجودة ومطابقة معايير المواصفات القياسية (ASTM / SASO)</span>
+              </h3>
+
+              <div class="lab-form-grid">
+                <div class="lab-field">
+                  <label class="lab-label">المظهر الخارجي والتجانس (Appearance & Uniformity) <span class="req">*</span></label>
+                  <select class="lab-select" id="lab-param-appearance" required>
+                    <option value="مطابق">مطابق تماماً للمظهر القياسي وخالٍ من التشققات أو الفراغات</option>
+                    <option value="مقبول مع ملاحظات">مقبول مع ملاحظات طفيفة</option>
+                    <option value="غير مطابق">غير مطابق للمظهر (عيوب تشكيل / عدم تجانس)</option>
+                  </select>
+                </div>
+
+                <div class="lab-field">
+                  <label class="lab-label">الأبعاد الهندسية والتشطيب (Dimensions & Finishing) <span class="req">*</span></label>
+                  <select class="lab-select" id="lab-param-dimensions" required>
+                    <option value="مطابق">مطابق للأبعاد والتشطيب الهندسي المعتمد (± 1 mm)</option>
+                    <option value="انحراف طفيف">انحراف طفيف ضمن حدود التسامح المسموح</option>
+                    <option value="غير مطابق">غير مطابق للأبعاد الهندسية القياسية</option>
+                  </select>
+                </div>
+
+                <div class="lab-field">
+                  <label class="lab-label">اختبار مقاومة الضغط والصلابة (Compressive Strength - MPa)</label>
+                  <input type="text" class="lab-input" id="lab-param-strength" placeholder="مثال: 38.5 MPa (المطلوب ≥ 35 MPa)">
+                </div>
+
+                <div class="lab-field">
+                  <label class="lab-label">الكثافة والوزن النوعي / نسبة الامتصاص (Specific Gravity / Absorption %)</label>
+                  <input type="text" class="lab-input" id="lab-param-density" placeholder="مثال: امتصاص 4.2% (المسموح ≤ 6.0%)">
+                </div>
+
+                <div class="lab-field lab-field-full">
+                  <label class="lab-label">نتائج الفحوصات وملاحظات الفاحص والتحليل المخبري</label>
+                  <textarea class="lab-textarea" id="lab-final-notes" rows="3" placeholder="أدخل نتائج الاختبارات الدقيقة، قراءات الأجهزة، وأية ملاحظات فنية حول جودة المنتج..."></textarea>
+                </div>
+              </div>
+            </div>
+
+            <!-- SECTION D: Final Inspection Decision & Actions -->
+            <div style="background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 10px; padding: 1.25rem; margin-bottom: 1.5rem;">
+              <h3 style="margin: 0 0 1rem; font-size: 1.05rem; font-weight: 800; color: #0F2A5C; display: flex; align-items: center; gap: 6px;">
+                <span>⚖️</span>
+                <span>القرار النهائي للاعتماد المخبري (Final Inspection Decision)</span>
+              </h3>
+
+              <div class="lab-form-grid">
+                <div class="lab-field">
+                  <label class="lab-label">قرار التفتيش والفحص النهائي <span class="req">*</span></label>
+                  <select class="lab-select" id="lab-final-decision" required style="font-weight: 800; font-size: 0.95rem; padding: 0.65rem 0.85rem;">
+                    <option value="APPROVED" style="color: #166534; font-weight: 800;">Approved – مطابق للمواصفات (معتمد مخبرياً ومصرح بالتوريد)</option>
+                    <option value="REJECTED" style="color: #991B1B; font-weight: 800;">Rejected – غير مطابق للمواصفات (مرفوض مخبرياً)</option>
+                    <option value="UNDER_INSPECTION" style="color: #0369A1; font-weight: 800;">Under Inspection – قيد الفحص والتحليل المخبري</option>
+                    <option value="PENDING_INSPECTION" style="color: #92400E; font-weight: 800;">Pending Laboratory Inspection – قيد انتظار الفحص</option>
+                  </select>
+                </div>
+
+                <div class="lab-field">
+                  <label class="lab-label">مرفق تقرير/شهادة الفحص المخبري الموقعة (PDF, JPG, PNG)</label>
+                  <input type="file" class="lab-input" id="lab-final-attachment" accept=".pdf,image/jpeg,image/png">
+                </div>
+              </div>
+
+              <!-- Rejection Details Box (shown if REJECTED is selected) -->
+              <div id="lab-final-rejection-wrap" style="display: none; background: #FEF2F2; border: 1.5px solid #FCA5A5; border-radius: 8px; padding: 1.25rem; margin-top: 1.25rem;">
+                <div style="font-weight: 800; color: #991B1B; margin-bottom: 0.75rem; font-size: 0.95rem; display: flex; align-items: center; gap: 6px;">
+                  <span>⚠️</span>
+                  <span>بيانات عدم المطابقة وأسباب الرفض والإجراء التصحيحي المطلوب:</span>
+                </div>
+                <div class="lab-form-grid">
+                  <div class="lab-field lab-field-full">
+                    <label class="lab-label" style="color: #991B1B;">أسباب الرفض وعدم المطابقة للمواصفات <span class="req">*</span></label>
+                    <textarea class="lab-textarea" id="lab-final-rejection-reason" rows="2" placeholder="حدد بالتفصيل معايير عدم المطابقة (مثل: هبوط المقاومة عن الحد المسموح، عيوب سطحية، نسبة شوائب...)" style="border-color: #F87171;"></textarea>
+                  </div>
+                  <div class="lab-field">
+                    <label class="lab-label" style="color: #991B1B;">توصيات والإجراءات التصحيحية المقترحة لقسم الإنتاج</label>
+                    <input type="text" class="lab-input" id="lab-final-corrective-action" placeholder="مثال: تعديل نسبة الركام والأسمنت، إعادة الخلط..." style="border-color: #F87171;">
+                  </div>
+                  <div class="lab-field">
+                    <label class="lab-label" style="color: #991B1B;">الإجراء المتخذ على الشحنة المرفوضة</label>
+                    <select class="lab-select" id="lab-final-nonconf-action" style="border-color: #F87171;">
+                      <option value="REWORK_REMANUFACTURE">إعادة تشغيل وتصنيع (Rework / Remanufacture)</option>
+                      <option value="CLASSIFIED_PRODUCT">تخزين كمنتج مصنف / درجة ثانية (Classified Product)</option>
+                      <option value="PENDING_DECISION">معلق قيد القرار / حجر فني (Quarantine / Pending Decision)</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Form Action Buttons -->
+            <div class="lab-form-actions" style="display: flex; justify-content: flex-end; gap: 1rem; align-items: center;">
+              <button type="button" class="lab-btn lab-btn-outline" id="lab-final-btn-reset">إلغاء وتفريغ النموذج</button>
+              <button type="submit" class="lab-btn lab-btn-primary" id="lab-final-submit" style="padding: 0.75rem 2rem; font-weight: 800; font-size: 0.98rem; background: #059669; color: #ffffff;">
+                اعتماد وإصدار شهادة المطابقة المخبرية
+              </button>
             </div>
           </form>
         </div>
+
+        <!-- 3. Table: Issued Final Conformity Certificates Log -->
+        <div class="lab-card" style="background: #ffffff; border-radius: 12px; padding: 1.5rem; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: 1rem; border-bottom: 1px solid #f1f5f9; padding-bottom: 0.75rem;">
+            <div>
+              <h3 style="margin: 0; font-size: 1.15rem; font-weight: 800; color: #0F2A5C;">سجل شهادات مطابقة المنتج النهائي الصادرة</h3>
+              <p style="margin: 0.25rem 0 0; font-size: 0.82rem; color: #64748B;">استعراض وطباعة كافة شهادات المطابقة المعتمدة والمرفوضة ومتابعة ترحيلها للمستودع.</p>
+            </div>
+            <div style="display: flex; gap: 0.5rem; align-items: center;">
+              <input type="text" id="lab-final-log-search" class="lab-input" placeholder="بحث برقم الشهادة / رقم التصنيع..." style="font-size: 0.82rem; padding: 0.4rem 0.75rem; width: 220px;">
+              <button type="button" class="lab-btn lab-btn-outline" id="btn-refresh-final-certs-log" title="تحديث السجل" style="padding: 0.4rem 0.75rem;">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <div style="overflow-x: auto;">
+            <table class="lab-table" style="width: 100%; text-align: right; border-collapse: collapse; font-size: 0.84rem;">
+              <thead style="background: #f8fafc;">
+                <tr>
+                  <th style="padding: 8px 12px;">رقم الشهادة</th>
+                  <th style="padding: 8px 12px;">رقم التصنيع (Mfg #)</th>
+                  <th style="padding: 8px 12px;">اسم المنتج النهائي</th>
+                  <th style="padding: 8px 12px;">عملية الإنتاج</th>
+                  <th style="padding: 8px 12px;">الكمية (طن)</th>
+                  <th style="padding: 8px 12px;">قرار المطابقة</th>
+                  <th style="padding: 8px 12px;">الفاحص المعتمد</th>
+                  <th style="padding: 8px 12px;">تاريخ الاعتماد</th>
+                  <th style="padding: 8px 12px; text-align: center;">إجراءات</th>
+                </tr>
+              </thead>
+              <tbody id="lab-final-certs-tbody">
+                <tr><td colspan="9" style="text-align: center; color: #94a3b8; padding: 2rem;">جاري تحميل سجل شهادات المطابقة...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       `;
 
-      try {
-        const rawRes = await window.ChatApi.getLaboratoryRawMaterialReports({ section: this.activeSection });
-        if (rawRes && rawRes.success && Array.isArray(rawRes.data)) {
-          const sel = document.getElementById('lab-final-ref');
-          if (sel) {
-            sel.innerHTML = '<option value="">— اختر رقماً مرجعياً للإنتاج —</option>' +
-              rawRes.data.map(r => `<option value="${r.productionReferenceNumber}">#${r.productionReferenceNumber} - ${this.esc(r.sampleCode || r.sampleName || 'عينة')}</option>`).join('');
+      // Wire Up Events
+      this.bindFinalCertEvents();
+
+      // Load Initial Data
+      await this.loadEligibleFinishedProductsForLab('ALL');
+      await this.loadIssuedCertificatesLog();
+    }
+
+    static bindFinalCertEvents() {
+      // Refresh Data button
+      document.getElementById('btn-refresh-final-cert-data')?.addEventListener('click', () => {
+        this.loadEligibleFinishedProductsForLab(this.finalCertFilterStatus || 'ALL');
+        this.loadIssuedCertificatesLog();
+      });
+
+      // Filter pills
+      const pills = document.querySelectorAll('.lab-filter-pill');
+      pills.forEach(p => {
+        p.addEventListener('click', () => {
+          pills.forEach(x => x.classList.remove('active'));
+          p.classList.add('active');
+          const st = p.getAttribute('data-status') || 'ALL';
+          this.finalCertFilterStatus = st;
+          this.renderFinalProductSelectOptions(st);
+        });
+      });
+
+      // Select Product change
+      const prodSelect = document.getElementById('lab-final-prod-select');
+      prodSelect?.addEventListener('change', () => {
+        const val = prodSelect.value ? parseInt(prodSelect.value, 10) : null;
+        this.onFinalProductSelected(val);
+      });
+
+      // Decision change (shows/hides rejection wrap and alters submit text)
+      const decisionSelect = document.getElementById('lab-final-decision');
+      const rejWrap = document.getElementById('lab-final-rejection-wrap');
+      const submitBtn = document.getElementById('lab-final-submit');
+
+      decisionSelect?.addEventListener('change', () => {
+        const val = decisionSelect.value;
+        if (val === 'REJECTED') {
+          if (rejWrap) rejWrap.style.display = 'block';
+          if (submitBtn) {
+            submitBtn.textContent = 'حفظ قرار الرفض المخبري للمنتج';
+            submitBtn.style.background = '#dc2626';
           }
-        }
-      } catch (e) {
-        console.warn('Failed to load raw refs for final cert:', e);
-      }
-
-      document.getElementById('lab-final-form')?.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const alertBox = document.getElementById('lab-final-alert');
-        const refNo = parseInt(document.getElementById('lab-final-ref')?.value, 10);
-        const name = document.getElementById('lab-final-name')?.value?.trim();
-        const dec = document.getElementById('lab-final-decision')?.value;
-        const notes = document.getElementById('lab-final-notes')?.value?.trim();
-
-        if (!refNo || !name) {
-          alertBox.innerHTML = '<div class="lab-alert lab-alert-error">يرجى استكمال الحقول الإلزامية واختيار الرقم المرجعي.</div>';
-          return;
-        }
-
-        const fd = new FormData();
-        fd.append('productionReferenceNumber', String(refNo));
-        fd.append('finalProductName', name);
-        fd.append('conformityDecision', dec);
-        fd.append('notes', notes);
-        fd.append('inspectionDateTime', new Date().toISOString());
-
-        try {
-          const res = await window.ChatApi.submitLaboratoryFinalCertificate(fd);
-          if (res && res.success) {
-            this.isDirty = false;
-            alertBox.innerHTML = `<div class="lab-alert lab-alert-success">تم إصدار شهادة المطابقة بنجاح — رقم الشهادة: <b>${this.esc(res.data ? res.data.certificateNumber : '')}</b></div>`;
-            document.getElementById('lab-final-form').reset();
-          } else {
-            alertBox.innerHTML = `<div class="lab-alert lab-alert-error">${this.esc((res && res.message) || 'فشل إصدار الشهادة.')}</div>`;
+        } else if (val === 'UNDER_INSPECTION') {
+          if (rejWrap) rejWrap.style.display = 'none';
+          if (submitBtn) {
+            submitBtn.textContent = 'حفظ حالة الفحص (قيد الفحص المخبري)';
+            submitBtn.style.background = '#0284c7';
           }
-        } catch (err) {
-          alertBox.innerHTML = `<div class="lab-alert lab-alert-error">خطأ: ${this.esc(err.message || '')}</div>`;
+        } else if (val === 'PENDING_INSPECTION') {
+          if (rejWrap) rejWrap.style.display = 'none';
+          if (submitBtn) {
+            submitBtn.textContent = 'تعيين الحالة كـ (قيد انتظار الفحص)';
+            submitBtn.style.background = '#d97706';
+          }
+        } else {
+          if (rejWrap) rejWrap.style.display = 'none';
+          if (submitBtn) {
+            submitBtn.textContent = 'اعتماد وإصدار شهادة المطابقة المخبرية';
+            submitBtn.style.background = '#059669';
+          }
         }
       });
+
+      // Reset button
+      document.getElementById('lab-final-btn-reset')?.addEventListener('click', () => {
+        document.getElementById('lab-final-form')?.reset();
+        const ctxBox = document.getElementById('lab-final-context-box');
+        if (ctxBox) ctxBox.style.display = 'none';
+        this.selectedFinishedProduct = null;
+        if (decisionSelect) decisionSelect.value = 'APPROVED';
+        if (rejWrap) rejWrap.style.display = 'none';
+        if (submitBtn) {
+          submitBtn.textContent = 'اعتماد وإصدار شهادة المطابقة المخبرية';
+          submitBtn.style.background = '#059669';
+        }
+      });
+
+      // Form submission
+      document.getElementById('lab-final-form')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        await this.handleFinalCertificateSubmit();
+      });
+
+      // Certificates Log Search
+      const searchInp = document.getElementById('lab-final-log-search');
+      searchInp?.addEventListener('input', () => this.filterIssuedCertificates(searchInp.value));
+      document.getElementById('btn-refresh-final-certs-log')?.addEventListener('click', () => this.loadIssuedCertificatesLog());
+    }
+
+    static async loadEligibleFinishedProductsForLab(status = 'ALL', selectedId = null) {
+      try {
+        const res = await window.ChatApi.getEligibleFinishedProductsForLab();
+        if (res && res.success && Array.isArray(res.data)) {
+          this.eligibleFinishedProducts = res.data;
+
+          // Update counts
+          const allCount = res.data.length;
+          const pendingCount = res.data.filter(x => x.laboratoryConformityStatus === 'PENDING_INSPECTION').length;
+          const underCount = res.data.filter(x => x.laboratoryConformityStatus === 'UNDER_INSPECTION').length;
+          const appCount = res.data.filter(x => x.laboratoryConformityStatus === 'APPROVED').length;
+          const rejCount = res.data.filter(x => x.laboratoryConformityStatus === 'REJECTED').length;
+
+          const cAll = document.getElementById('count-final-all');
+          const cPend = document.getElementById('count-final-pending');
+          const cUnd = document.getElementById('count-final-under');
+          const cApp = document.getElementById('count-final-approved');
+          const cRej = document.getElementById('count-final-rejected');
+
+          if (cAll) cAll.textContent = allCount;
+          if (cPend) cPend.textContent = pendingCount;
+          if (cUnd) cUnd.textContent = underCount;
+          if (cApp) cApp.textContent = appCount;
+          if (cRej) cRej.textContent = rejCount;
+
+          this.renderFinalProductSelectOptions(status, selectedId);
+        } else {
+          this.eligibleFinishedProducts = [];
+          this.renderFinalProductSelectOptions(status);
+        }
+      } catch (err) {
+        console.error('Error loading eligible finished products for lab:', err);
+      }
+    }
+
+    static renderFinalProductSelectOptions(status = 'ALL', selectedId = null) {
+      const select = document.getElementById('lab-final-prod-select');
+      if (!select) return;
+
+      let list = this.eligibleFinishedProducts || [];
+      if (status && status !== 'ALL') {
+        list = list.filter(x => x.laboratoryConformityStatus === status);
+      }
+
+      let html = '<option value="">-- اختر المنتج النهائي من قسم الإنتاج لإجراء الفحص والاعتماد --</option>';
+      list.forEach(p => {
+        const isSel = selectedId && p.finishedProductId === selectedId;
+        const statusBadge = p.laboratoryConformityStatus === 'APPROVED' ? '✅ معتمد'
+          : (p.laboratoryConformityStatus === 'REJECTED' ? '❌ مرفوض'
+            : (p.laboratoryConformityStatus === 'UNDER_INSPECTION' ? '🔬 قيد الفحص' : '⏱️ بانتظار الفحص'));
+        const orderTxt = p.productionOrderNumber ? ` [أمر: ${p.productionOrderNumber}]` : '';
+
+        html += `<option value="${p.finishedProductId}" ${isSel ? 'selected' : ''}>
+          [عملية: ${this.esc(p.processNumber)}] [تصنيع: ${this.esc(p.manufactureNumber)}]${this.esc(orderTxt)} — ${this.esc(p.finishedProductName)} (${parseFloat(p.manufacturedQuantity).toFixed(2)} ${this.esc(p.unit || 'طن')}) [${statusBadge}]
+        </option>`;
+      });
+
+      select.innerHTML = html;
+
+      if (selectedId) {
+        select.value = selectedId;
+        this.onFinalProductSelected(selectedId);
+      } else if (select.value) {
+        this.onFinalProductSelected(parseInt(select.value, 10));
+      }
+    }
+
+    static onFinalProductSelected(finishedProductId) {
+      const contextBox = document.getElementById('lab-final-context-box');
+      if (!finishedProductId) {
+        this.selectedFinishedProduct = null;
+        if (contextBox) contextBox.style.display = 'none';
+        return;
+      }
+
+      const prod = (this.eligibleFinishedProducts || []).find(p => p.finishedProductId === finishedProductId);
+      if (!prod) {
+        this.selectedFinishedProduct = null;
+        if (contextBox) contextBox.style.display = 'none';
+        return;
+      }
+
+      this.selectedFinishedProduct = prod;
+      if (contextBox) contextBox.style.display = 'block';
+
+      // Update Context Fields
+      const procEl = document.getElementById('lab-ctx-proc-num');
+      const orderEl = document.getElementById('lab-ctx-order-num');
+      const mfgEl = document.getElementById('lab-ctx-mfg-num');
+      const prodNameEl = document.getElementById('lab-ctx-prod-name');
+      const qtyDisp = document.getElementById('lab-ctx-qty-disp');
+      const diffDisp = document.getElementById('lab-ctx-diff-disp');
+      const dateDisp = document.getElementById('lab-ctx-date-disp');
+      const empDisp = document.getElementById('lab-ctx-emp-disp');
+      const storageLoc = document.getElementById('lab-ctx-storage-loc');
+      const wbWrap = document.getElementById('lab-ctx-weighbridge-link');
+      const statusBadge = document.getElementById('lab-context-status-badge');
+      const refsSummary = document.getElementById('lab-ctx-refs-summary');
+
+      if (procEl) procEl.textContent = prod.processNumber;
+      if (orderEl) orderEl.textContent = prod.productionOrderNumber ? `أمر إنتاج: ${prod.productionOrderNumber}` : 'بدون أمر إنتاج';
+      if (mfgEl) mfgEl.textContent = prod.manufactureNumber;
+      if (prodNameEl) prodNameEl.textContent = prod.finishedProductName;
+      if (qtyDisp) qtyDisp.textContent = `${parseFloat(prod.manufacturedQuantity).toFixed(3)} ${prod.unit || 'طن'} (المستهدف: ${parseFloat(prod.targetQuantity).toFixed(3)} طن)`;
+      
+      const diff = parseFloat(prod.manufacturedQuantity) - parseFloat(prod.targetQuantity);
+      if (diffDisp) {
+        diffDisp.textContent = `فارق الإنتاج: ${diff >= 0 ? '+' : ''}${diff.toFixed(3)} طن | الهالك: ${parseFloat(prod.totalWasteQuantity).toFixed(3)} طن (${parseFloat(prod.wastePercentage).toFixed(2)}%)`;
+      }
+      if (dateDisp) dateDisp.textContent = prod.formattedProductionDate || prod.productionDate;
+      if (empDisp) empDisp.textContent = prod.responsibleEmployee || 'مسؤول الإنتاج';
+      if (storageLoc) storageLoc.textContent = prod.destinationStorageLocationName || 'المستودع الرئيسي';
+
+      if (wbWrap) {
+        wbWrap.innerHTML = prod.weighbridgeAttachmentPath
+          ? `<a href="${prod.weighbridgeAttachmentPath}" target="_blank" class="lab-badge" style="background: #e0f2fe; color: #0369a1; text-decoration: none; font-weight: 700;">📄 فتح تذكرة ميزان البسكول للمنتج</a>`
+          : '<span style="color: #94a3b8;">غير مرفق</span>';
+      }
+
+      // Status Badge
+      if (statusBadge) {
+        const st = prod.laboratoryConformityStatus;
+        if (st === 'APPROVED') {
+          statusBadge.textContent = '✅ معتمد مخبرياً (مطابق للمواصفات)';
+          statusBadge.style.background = '#dcfce7';
+          statusBadge.style.color = '#166534';
+        } else if (st === 'REJECTED') {
+          statusBadge.textContent = '❌ مرفوض مخبرياً (غير مطابق)';
+          statusBadge.style.background = '#fee2e2';
+          statusBadge.style.color = '#991b1b';
+        } else if (st === 'UNDER_INSPECTION') {
+          statusBadge.textContent = '🔬 قيد الفحص والتحليل المخبري';
+          statusBadge.style.background = '#e0f2fe';
+          statusBadge.style.color = '#0369a1';
+        } else {
+          statusBadge.textContent = '⏱️ قيد فحص المختبر (بانتظار القرار)';
+          statusBadge.style.background = '#fef3c7';
+          statusBadge.style.color = '#92400e';
+        }
+      }
+
+      // References Summary
+      const refs = prod.associatedReferenceNumbers || [];
+      if (refsSummary) {
+        refsSummary.textContent = refs.length > 0 ? `الأرقام المرجعية المرتبطة: #${refs.join(', #')}` : 'لا توجد أرقام مرجعية';
+      }
+
+      // Populate Materials Table
+      const matTbody = document.getElementById('lab-ctx-materials-tbody');
+      if (matTbody) {
+        const mats = prod.consumedMaterials || [];
+        if (mats.length === 0) {
+          matTbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #94a3b8; padding: 1rem;">لا توجد مواد مسجلة بالعملية</td></tr>';
+        } else {
+          let rows = '';
+          mats.forEach(m => {
+            rows += `
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 6px 10px;"><span class="lab-badge" style="background:#eff6ff;color:#1d4ed8;font-weight:800;">#${this.esc(m.productionReferenceNumber)}</span></td>
+                <td style="padding: 6px 10px; font-weight: 700; color: #0F2A5C;">${this.esc(m.materialName)}</td>
+                <td style="padding: 6px 10px; font-weight: 600;">${this.esc(m.batchNumber)}</td>
+                <td style="padding: 6px 10px; color: #64748b;">${this.esc(m.sampleCode || '—')}</td>
+                <td style="padding: 6px 10px; font-weight: 800; color: #0284c7;">${parseFloat(m.consumedQuantity).toFixed(3)} ${this.esc(m.unit || 'طن')}</td>
+                <td style="padding: 6px 10px; color: #64748b;">${this.esc(m.storageLocationName || 'المستودع')}</td>
+              </tr>
+            `;
+          });
+          matTbody.innerHTML = rows;
+        }
+      }
+
+      // Set default form values according to existing decision if any
+      const decSelect = document.getElementById('lab-final-decision');
+      const rejWrap = document.getElementById('lab-final-rejection-wrap');
+      const rejReason = document.getElementById('lab-final-rejection-reason');
+      const corAction = document.getElementById('lab-final-corrective-action');
+      const submitBtn = document.getElementById('lab-final-submit');
+
+      if (prod.laboratoryConformityStatus === 'REJECTED') {
+        if (decSelect) decSelect.value = 'REJECTED';
+        if (rejWrap) rejWrap.style.display = 'block';
+        if (rejReason) rejReason.value = prod.laboratoryRejectionReason || '';
+        if (corAction) corAction.value = prod.laboratoryCorrectiveAction || '';
+        if (submitBtn) {
+          submitBtn.textContent = 'تحديث قرار الرفض المخبري';
+          submitBtn.style.background = '#dc2626';
+        }
+      } else if (prod.laboratoryConformityStatus === 'UNDER_INSPECTION') {
+        if (decSelect) decSelect.value = 'UNDER_INSPECTION';
+        if (rejWrap) rejWrap.style.display = 'none';
+        if (submitBtn) {
+          submitBtn.textContent = 'حفظ حالة الفحص (قيد الفحص المخبري)';
+          submitBtn.style.background = '#0284c7';
+        }
+      } else if (prod.laboratoryConformityStatus === 'APPROVED') {
+        if (decSelect) decSelect.value = 'APPROVED';
+        if (rejWrap) rejWrap.style.display = 'none';
+        if (submitBtn) {
+          submitBtn.textContent = 'إعادة اعتماد شهادة المطابقة المخبرية';
+          submitBtn.style.background = '#059669';
+        }
+      } else {
+        if (decSelect) decSelect.value = 'APPROVED';
+        if (rejWrap) rejWrap.style.display = 'none';
+        if (submitBtn) {
+          submitBtn.textContent = 'اعتماد وإصدار شهادة المطابقة المخبرية';
+          submitBtn.style.background = '#059669';
+        }
+      }
+    }
+
+    static async handleFinalCertificateSubmit() {
+      const alertBox = document.getElementById('lab-final-alert');
+      if (!this.selectedFinishedProduct) {
+        if (alertBox) alertBox.innerHTML = '<div class="lab-alert lab-alert-error">يرجى اختيار المنتج النهائي من القائمة أولاً.</div>';
+        return;
+      }
+
+      const p = this.selectedFinishedProduct;
+      const decision = document.getElementById('lab-final-decision')?.value || 'APPROVED';
+      const appearance = document.getElementById('lab-param-appearance')?.value || 'مطابق';
+      const dimensions = document.getElementById('lab-param-dimensions')?.value || 'مطابق';
+      const strength = document.getElementById('lab-param-strength')?.value?.trim() || '';
+      const density = document.getElementById('lab-param-density')?.value?.trim() || '';
+      const notes = document.getElementById('lab-final-notes')?.value?.trim() || '';
+      const rejReason = document.getElementById('lab-final-rejection-reason')?.value?.trim() || '';
+      const corAction = document.getElementById('lab-final-corrective-action')?.value?.trim() || '';
+      const nonConf = document.getElementById('lab-final-nonconf-action')?.value || 'PENDING_DECISION';
+
+      if (decision === 'REJECTED' && !rejReason) {
+        if (alertBox) alertBox.innerHTML = '<div class="lab-alert lab-alert-error">يرجى توضيح سبب الرفض الإلزامي للمنتج غير المطابق.</div>';
+        document.getElementById('lab-final-rejection-reason')?.focus();
+        return;
+      }
+
+      const qualityParams = {
+        appearance: appearance,
+        dimensions: dimensions,
+        strength: strength,
+        density: density,
+        evaluatedAt: new Date().toISOString()
+      };
+
+      const primaryRef = (p.associatedReferenceNumbers && p.associatedReferenceNumbers.length > 0)
+        ? p.associatedReferenceNumbers[0]
+        : 1;
+
+      const fd = new FormData();
+      fd.append('productionFinishedProductId', String(p.finishedProductId));
+      fd.append('productionProcessId', String(p.productionProcessId));
+      fd.append('productionProcessNumber', p.processNumber);
+      fd.append('manufactureNumber', p.manufactureNumber);
+      fd.append('finalProductName', p.finishedProductName);
+      fd.append('productionReferenceNumber', String(primaryRef));
+      if (p.associatedReferenceNumbers && p.associatedReferenceNumbers.length > 0) {
+        fd.append('associatedReferenceNumbers', p.associatedReferenceNumbers.join(', '));
+      }
+      if (p.productionOrderId) {
+        fd.append('productionOrderId', String(p.productionOrderId));
+      }
+      if (p.productionOrderNumber) {
+        fd.append('productionOrderNumber', p.productionOrderNumber);
+      }
+      fd.append('actualFinalProductQuantity', String(p.manufacturedQuantity));
+      fd.append('targetQuantity', String(p.targetQuantity || p.manufacturedQuantity));
+      fd.append('actualRawMaterialInputQuantity', String(p.totalInputQuantity || p.manufacturedQuantity));
+      fd.append('quantityUnit', p.unit || 'طن');
+      fd.append('wasteClassification', 'ORDINARY_WASTE');
+      fd.append('conformityDecision', decision);
+      fd.append('laboratorySection', this.activeSection || 'PHYSICAL');
+      fd.append('specificationResultsJson', JSON.stringify(qualityParams));
+      fd.append('qualityParametersJson', JSON.stringify(qualityParams));
+      fd.append('observations', notes || `فحص مواصفات المنتج النهائي ${p.finishedProductName} - قرار: ${decision}`);
+      
+      if (decision === 'REJECTED') {
+        fd.append('rejectionReason', rejReason);
+        fd.append('correctiveAction', corAction);
+        fd.append('nonConformityAction', nonConf);
+      }
+
+      const fileInput = document.getElementById('lab-final-attachment');
+      if (fileInput && fileInput.files && fileInput.files.length > 0) {
+        fd.append('attachment', fileInput.files[0]);
+      }
+
+      const submitBtn = document.getElementById('lab-final-submit');
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'جاري حفظ وتوثيق شهادة المطابقة...';
+      }
+
+      try {
+        const res = await window.ChatApi.submitLaboratoryFinalCertificate(fd);
+        if (res && res.success) {
+          const cert = res.data;
+          const certNo = cert ? cert.certificateNumber : '';
+          const msg = decision === 'APPROVED'
+            ? `تم إصدار واعتماد شهادة مطابقة المنتج النهائي رقم <strong>${this.esc(certNo)}</strong> بنجاح! تم اعتماد المنتج رسمياً في قسم الإنتاج وتوثيق مطابقته للمواصفات.`
+            : (decision === 'REJECTED'
+                ? `تم تسجيل قرار الرفض المخبري للمنتج رقم <strong>${this.esc(certNo)}</strong> وتحديث حالة قسم الإنتاج إلى (مرفوض مخبرياً).`
+                : `تم حفظ حالة فحص المنتج رقم <strong>${this.esc(certNo)}</strong> بنجاح.`);
+
+          if (alertBox) {
+            alertBox.innerHTML = `<div class="lab-alert lab-alert-success">${msg}</div>`;
+          }
+
+          // Reload products & log
+          await this.loadEligibleFinishedProductsForLab(this.finalCertFilterStatus || 'ALL', p.finishedProductId);
+          await this.loadIssuedCertificatesLog();
+
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        } else {
+          if (alertBox) alertBox.innerHTML = `<div class="lab-alert lab-alert-error">${this.esc(res?.message || 'فشل حفظ شهادة المطابقة')}</div>`;
+        }
+      } catch (err) {
+        console.error('Error submitting lab final certificate:', err);
+        if (alertBox) alertBox.innerHTML = `<div class="lab-alert lab-alert-error">حدث خطأ: ${this.esc(err.message || 'خطأ غير معروف')}</div>`;
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'اعتماد وإصدار شهادة المطابقة المخبرية';
+        }
+      }
+    }
+
+    static async loadIssuedCertificatesLog() {
+      const tbody = document.getElementById('lab-final-certs-tbody');
+      if (!tbody) return;
+
+      try {
+        const res = await window.ChatApi.getLaboratoryFinalCertificates();
+        if (res && res.success && Array.isArray(res.data)) {
+          this.issuedCertificates = res.data;
+          this.renderIssuedCertificatesTable(res.data);
+        } else {
+          this.issuedCertificates = [];
+          tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: #94a3b8; padding: 2rem;">لا توجد شهادات مطابقة مسجلة حتى الآن</td></tr>';
+        }
+      } catch (err) {
+        console.error('Error loading issued certificates:', err);
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: #ef4444; padding: 1.5rem;">فشل تحميل سجل الشهادات</td></tr>';
+      }
+    }
+
+    static renderIssuedCertificatesTable(certs) {
+      const tbody = document.getElementById('lab-final-certs-tbody');
+      if (!tbody) return;
+
+      if (!certs || certs.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: #94a3b8; padding: 2rem;">لا توجد شهادات مطابقة تطابق البحث</td></tr>';
+        return;
+      }
+
+      let html = '';
+      certs.forEach(c => {
+        const dec = c.conformityDecision || '';
+        const decBadge = (dec === 'CONFORMS' || dec === 'APPROVED')
+          ? '<span class="lab-badge" style="background:#dcfce7;color:#166534;font-weight:800;">✅ مطابق للمواصفات</span>'
+          : (dec === 'NON_CONFORMING' || dec === 'REJECTED'
+              ? '<span class="lab-badge" style="background:#fee2e2;color:#991b1b;font-weight:800;">❌ غير مطابق</span>'
+              : '<span class="lab-badge" style="background:#e0f2fe;color:#0369a1;font-weight:800;">🔬 قيد الفحص</span>');
+
+        const procTxt = c.productionProcessNumber ? c.productionProcessNumber : (c.productionReferenceNumber ? `#${c.productionReferenceNumber}` : '—');
+        const mfgTxt = c.manufactureNumber ? c.manufactureNumber : (c.productionBatchNumber || '—');
+        const dateTxt = (c.createdAt || '').slice(0, 16).replace('T', ' ');
+
+        html += `
+          <tr style="border-bottom: 1px solid #f1f5f9;">
+            <td style="padding: 8px 12px; font-weight: 800; color: #0F2A5C;">
+              <span class="lab-badge" style="background:#eff6ff;color:#1d4ed8;font-weight:800;font-size:0.85rem;">
+                ${this.esc(c.certificateNumber)}
+              </span>
+            </td>
+            <td style="padding: 8px 12px; font-weight: 700; color: #1e293b;">${this.esc(mfgTxt)}</td>
+            <td style="padding: 8px 12px; font-weight: 700; color: #059669;">${this.esc(c.finalProductName)}</td>
+            <td style="padding: 8px 12px; color: #64748b;">${this.esc(procTxt)}</td>
+            <td style="padding: 8px 12px; font-weight: 800; color: #0284c7;">${parseFloat(c.actualFinalProductQuantity).toFixed(3)} ${this.esc(c.quantityUnit || 'طن')}</td>
+            <td style="padding: 8px 12px;">${decBadge}</td>
+            <td style="padding: 8px 12px; color: #475569;">${this.esc(c.responsibleEmployee || 'فاحص المعمل')}</td>
+            <td style="padding: 8px 12px; color: #64748b; font-size: 0.78rem;">${this.esc(dateTxt)}</td>
+            <td style="padding: 8px 12px; text-align: center;">
+              <button type="button" class="lab-btn lab-btn-outline" onclick="LaboratoryApp.openFinalCertModalById(${c.id})" style="padding: 0.3rem 0.75rem; font-size: 0.78rem; font-weight: 700;">
+                معاينة وطباعة 🖨️
+              </button>
+            </td>
+          </tr>
+        `;
+      });
+
+      tbody.innerHTML = html;
+    }
+
+    static filterIssuedCertificates(query) {
+      if (!this.issuedCertificates) return;
+      if (!query || !query.trim()) {
+        this.renderIssuedCertificatesTable(this.issuedCertificates);
+        return;
+      }
+      const q = query.trim().toLowerCase();
+      const filtered = this.issuedCertificates.filter(c =>
+        (c.certificateNumber && c.certificateNumber.toLowerCase().includes(q)) ||
+        (c.manufactureNumber && c.manufactureNumber.toLowerCase().includes(q)) ||
+        (c.finalProductName && c.finalProductName.toLowerCase().includes(q)) ||
+        (c.productionProcessNumber && c.productionProcessNumber.toLowerCase().includes(q))
+      );
+      this.renderIssuedCertificatesTable(filtered);
+    }
+
+    static async openFinalCertModalById(certId) {
+      try {
+        const res = await window.ChatApi.request(`/api/laboratory/final-certificates/${certId}`, { method: 'GET' });
+        if (res && res.success && res.data) {
+          this.openFinalCertModal(res.data);
+        } else {
+          alert('تعذر استرجاع بيانات شهادة المطابقة.');
+        }
+      } catch (err) {
+        console.error('Error fetching cert by id:', err);
+      }
+    }
+
+    static openFinalCertModal(cert) {
+      if (!this.reportModal || !this.modalSheetContent) return;
+      this.activePrintReport = cert;
+      this.modalSheetContent.innerHTML = this.generateFinalCertPrintSheetHtml(cert);
+      this.reportModal.style.display = 'flex';
+    }
+
+    static generateFinalCertPrintSheetHtml(cert) {
+      const dec = cert.conformityDecision || '';
+      const isApproved = dec === 'CONFORMS' || dec === 'APPROVED';
+      const statusTitle = isApproved ? 'مطابق للمواصفات القياسية (APPROVED)' : 'غير مطابق للمواصفات (REJECTED)';
+      const statusColor = isApproved ? '#15803d' : '#b91c1c';
+      const statusBg = isApproved ? '#f0fdf4' : '#fef2f2';
+      const statusBorder = isApproved ? '#86efac' : '#fca5a5';
+
+      let qualityHtml = '';
+      try {
+        if (cert.qualityParametersJson) {
+          const q = JSON.parse(cert.qualityParametersJson);
+          qualityHtml = `
+            <div style="margin-top: 10px; font-size: 11pt;">
+              <table style="width: 100%; border-collapse: collapse; margin-top: 5px;">
+                <tr style="border-bottom: 1px solid #e2e8f0;">
+                  <td style="padding: 4px; font-weight: bold; width: 35%;">المظهر الخارجي والتجانس:</td>
+                  <td style="padding: 4px;">${this.esc(q.appearance || 'مطابق')}</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #e2e8f0;">
+                  <td style="padding: 4px; font-weight: bold;">الأبعاد الهندسية والتشطيب:</td>
+                  <td style="padding: 4px;">${this.esc(q.dimensions || 'مطابق')}</td>
+                </tr>
+                ${q.strength ? `<tr style="border-bottom: 1px solid #e2e8f0;"><td style="padding: 4px; font-weight: bold;">مقاومة الضغط والصلابة:</td><td style="padding: 4px;">${this.esc(q.strength)}</td></tr>` : ''}
+                ${q.density ? `<tr style="border-bottom: 1px solid #e2e8f0;"><td style="padding: 4px; font-weight: bold;">الكثافة والوزن النوعي:</td><td style="padding: 4px;">${this.esc(q.density)}</td></tr>` : ''}
+              </table>
+            </div>
+          `;
+        }
+      } catch (e) {
+        // Fallback
+      }
+
+      return `
+        <div style="font-family: 'Cairo', 'Segoe UI', Tahoma, sans-serif; direction: rtl; text-align: right; color: #0F172A; padding: 20px; line-height: 1.6;">
+          <!-- Header -->
+          <div style="border-bottom: 2px solid #0F2A5C; padding-bottom: 14px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <h1 style="margin: 0; font-size: 18pt; font-weight: 800; color: #0F2A5C;">شركة فيس ستون للمنتجات الأسمنتية</h1>
+              <div style="font-size: 11pt; color: #64748B;">FaceStone Industrial Cement Products — Quality Assurance Dept</div>
+              <div style="font-size: 12pt; font-weight: 700; color: #D97706; margin-top: 4px;">شهادة مطابقة واعتماد المنتج النهائي الرسمي</div>
+            </div>
+            <div style="text-align: left; border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 8px 14px; background: #f8fafc;">
+              <div style="font-size: 10pt; color: #64748B;">رقم الشهادة:</div>
+              <div style="font-size: 14pt; font-weight: 800; color: #1d4ed8;">${this.esc(cert.certificateNumber)}</div>
+              <div style="font-size: 9pt; color: #475569; margin-top: 2px;">تاريخ الإصدار: ${(cert.createdAt || '').slice(0, 10)}</div>
+            </div>
+          </div>
+
+          <!-- Production & Traceability Info -->
+          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px; margin-bottom: 16px;">
+            <div style="font-weight: 800; font-size: 12pt; color: #0F2A5C; margin-bottom: 8px; border-bottom: 1px dashed #cbd5e1; padding-bottom: 4px;">
+              1. بيانات المنتج النهائي وتتبع عملية الإنتاج
+            </div>
+            <table style="width: 100%; font-size: 11pt; border-collapse: collapse;">
+              <tr>
+                <td style="width: 25%; padding: 4px; font-weight: bold; color: #475569;">اسم المنتج النهائي:</td>
+                <td style="width: 25%; padding: 4px; font-weight: 800; color: #059669;">${this.esc(cert.finalProductName)}</td>
+                <td style="width: 25%; padding: 4px; font-weight: bold; color: #475569;">رقم التصنيع (Mfg #):</td>
+                <td style="width: 25%; padding: 4px; font-weight: 800; color: #0F2A5C;">${this.esc(cert.manufactureNumber || cert.productionBatchNumber || '—')}</td>
+              </tr>
+              <tr>
+                <td style="padding: 4px; font-weight: bold; color: #475569;">رقم عملية الإنتاج:</td>
+                <td style="padding: 4px; font-weight: 700; color: #1d4ed8;">${this.esc(cert.productionProcessNumber || '—')}</td>
+                <td style="padding: 4px; font-weight: bold; color: #475569;">أمر الإنتاج المرتبط:</td>
+                <td style="padding: 4px; font-weight: 700;">${this.esc(cert.productionOrderNumber || '—')}</td>
+              </tr>
+              <tr>
+                <td style="padding: 4px; font-weight: bold; color: #475569;">الكمية الفعلية المصنعة:</td>
+                <td style="padding: 4px; font-weight: 800; color: #0284c7;">${parseFloat(cert.actualFinalProductQuantity).toFixed(3)} ${this.esc(cert.quantityUnit || 'طن')}</td>
+                <td style="padding: 4px; font-weight: bold; color: #475569;">الأرقام المرجعية المشتركة:</td>
+                <td style="padding: 4px; font-weight: 700; color: #7c3aed;">#${this.esc(cert.associatedReferenceNumbers || cert.productionReferenceNumber)}</td>
+              </tr>
+            </table>
+          </div>
+
+          <!-- Quality Testing & Criteria -->
+          <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px; margin-bottom: 16px;">
+            <div style="font-weight: 800; font-size: 12pt; color: #0F2A5C; margin-bottom: 8px; border-bottom: 1px dashed #cbd5e1; padding-bottom: 4px;">
+              2. نتائج الفحوصات والتحاليل المخبرية
+            </div>
+            ${qualityHtml}
+            ${cert.observations ? `<div style="margin-top: 10px; font-size: 11pt; color: #334155;"><strong>ملاحظات وتوصيات المختبر:</strong> ${this.esc(cert.observations)}</div>` : ''}
+          </div>
+
+          <!-- Decision Box -->
+          <div style="background: ${statusBg}; border: 2px solid ${statusBorder}; border-radius: 8px; padding: 16px; margin-bottom: 24px; text-align: center;">
+            <div style="font-size: 11pt; font-weight: bold; color: ${statusColor};">قرار التفتيش والمطابقة النهائي:</div>
+            <div style="font-size: 16pt; font-weight: 900; color: ${statusColor}; margin-top: 4px;">${statusTitle}</div>
+            ${cert.rejectionReason ? `<div style="margin-top: 8px; font-size: 11pt; color: #991b1b;"><strong>سبب عدم المطابقة:</strong> ${this.esc(cert.rejectionReason)}</div>` : ''}
+            ${cert.correctiveAction ? `<div style="margin-top: 4px; font-size: 10.5pt; color: #475569;"><strong>الإجراء التصحيحي الموصى به:</strong> ${this.esc(cert.correctiveAction)}</div>` : ''}
+          </div>
+
+          <!-- Signatures -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; text-align: center; margin-top: 30px; font-size: 11pt;">
+            <div style="border-top: 1px solid #cbd5e1; padding-top: 8px;">
+              <div style="font-weight: bold; color: #475569;">فاحص / كيميائي المعمل</div>
+              <div style="margin-top: 6px; font-weight: 700; color: #0F2A5C;">${this.esc(cert.responsibleEmployee || 'فاحص المعمل')}</div>
+            </div>
+            <div style="border-top: 1px solid #cbd5e1; padding-top: 8px;">
+              <div style="font-weight: bold; color: #475569;">مدير إدارة توكيد الجودة</div>
+              <div style="margin-top: 6px; font-weight: 700; color: #0F2A5C;">معتمد وموثق إلكترونياً</div>
+            </div>
+            <div style="border-top: 1px solid #cbd5e1; padding-top: 8px;">
+              <div style="font-weight: bold; color: #475569;">ختم الاعتماد المخبري الرسمي</div>
+              <div style="margin-top: 4px; font-size: 9pt; color: #94a3b8;">[ختم إلكتروني رسمي معتمد]</div>
+            </div>
+          </div>
+        </div>
+      `;
     }
 
     // ======================================================================

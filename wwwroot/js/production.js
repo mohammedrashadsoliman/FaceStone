@@ -2461,9 +2461,34 @@
             let finsHtml = '';
             if (p.finishedProducts && p.finishedProducts.length > 0) {
               p.finishedProducts.forEach(f => {
-                finsHtml += `<div style="margin-bottom: 0.25rem;">
+                const labStatus = f.laboratoryConformityStatus || 'PENDING_INSPECTION';
+                let labBadgeHtml = '';
+                if (labStatus === 'APPROVED' || labStatus === 'CONFORMS') {
+                  labBadgeHtml = `<span class="prd-badge" style="background:#dcfce7;color:#166534;font-size:0.75rem;font-weight:700;">✅ معتمد مخبرياً</span>`;
+                } else if (labStatus === 'REJECTED' || labStatus === 'NON_CONFORMING') {
+                  labBadgeHtml = `<span class="prd-badge" style="background:#fee2e2;color:#991b1b;font-size:0.75rem;font-weight:700;" title="${this.escape(f.laboratoryRejectionReason || 'غير مطابق')}">❌ مرفوض مخبرياً</span>`;
+                } else if (labStatus === 'UNDER_INSPECTION') {
+                  labBadgeHtml = `<span class="prd-badge" style="background:#e0f2fe;color:#0369a1;font-size:0.75rem;font-weight:700;">🔬 قيد الفحص</span>`;
+                } else {
+                  labBadgeHtml = `<span class="prd-badge" style="background:#fef3c7;color:#92400e;font-size:0.75rem;font-weight:700;">⏱️ قيد فحص المختبر</span>`;
+                }
+
+                const certBtn = f.laboratoryCertificateNumber || f.laboratoryCertificateId
+                  ? `<button type="button" class="prd-btn prd-btn-ghost" onclick="ProductionApp.viewLabCertificate(${f.id})" style="padding: 1px 6px; font-size: 0.72rem; color: #1d4ed8; text-decoration: underline;" title="معاينة شهادة المطابقة الرسمية">
+                      عرض الشهادة (${this.escape(f.laboratoryCertificateNumber || 'CERT')})
+                    </button>`
+                  : '';
+
+                finsHtml += `<div style="margin-bottom: 0.45rem; padding-bottom: 0.35rem; border-bottom: 1px dashed #e2e8f0;">
                   <strong style="color: #10b981;">${this.escape(f.finishedProductName)}</strong>
-                  <span style="font-size: 0.75rem; color: #64748b; display: block;">رقم التصنيع: <b style="color: var(--prd-navy-dark);">${this.escape(f.manufactureNumber)}</b></span>
+                  <div style="font-size: 0.75rem; color: #64748b; margin-top: 2px;">
+                    رقم التصنيع: <b style="color: var(--prd-navy-dark);">${this.escape(f.manufactureNumber)}</b> (${parseFloat(f.manufacturedQuantity).toFixed(3)} ${this.escape(f.unit || 'طن')})
+                  </div>
+                  <div style="margin-top: 4px; display: flex; align-items: center; gap: 4px; flex-wrap: wrap;">
+                    ${labBadgeHtml}
+                    ${certBtn}
+                  </div>
+                  ${f.laboratoryRejectionReason ? `<div style="font-size:0.72rem; color:#dc2626; margin-top:2px;">سبب الرفض: ${this.escape(f.laboratoryRejectionReason)}</div>` : ''}
                 </div>`;
               });
             } else {
@@ -2575,12 +2600,35 @@
 
           let finRows = '';
           (p.finishedProducts || []).forEach(f => {
+            const labStatus = f.laboratoryConformityStatus || 'PENDING_INSPECTION';
+            let labBadge = '';
+            if (labStatus === 'APPROVED' || labStatus === 'CONFORMS') {
+              labBadge = `<span class="prd-badge" style="background:#dcfce7;color:#166534;font-weight:700;">✅ معتمد مخبرياً</span>`;
+            } else if (labStatus === 'REJECTED' || labStatus === 'NON_CONFORMING') {
+              labBadge = `<span class="prd-badge" style="background:#fee2e2;color:#991b1b;font-weight:700;" title="${this.escape(f.laboratoryRejectionReason || '')}">❌ مرفوض مخبرياً</span>`;
+            } else if (labStatus === 'UNDER_INSPECTION') {
+              labBadge = `<span class="prd-badge" style="background:#e0f2fe;color:#0369a1;font-weight:700;">🔬 قيد الفحص</span>`;
+            } else {
+              labBadge = `<span class="prd-badge" style="background:#fef3c7;color:#92400e;font-weight:700;">⏱️ قيد فحص المختبر</span>`;
+            }
+
+            const certAction = f.laboratoryCertificateNumber || f.laboratoryCertificateId
+              ? `<button type="button" class="prd-btn prd-btn-outline" onclick="ProductionApp.viewLabCertificate(${f.id})" style="padding: 0.25rem 0.65rem; font-size: 0.75rem; font-weight: 700; color: #1d4ed8;">معاينة الشهادة (${this.escape(f.laboratoryCertificateNumber || '')})</button>`
+              : '<span style="color:#94a3b8;font-size:0.8rem;">—</span>';
+
             finRows += `
               <tr style="border-bottom: 1px solid #e2e8f0;">
                 <td style="padding: 0.5rem 0.75rem; font-weight: 700; color: #10b981;">${this.escape(f.finishedProductName)}</td>
                 <td style="padding: 0.5rem 0.75rem;"><strong style="color: var(--prd-navy-dark);">${this.escape(f.manufactureNumber)}</strong></td>
                 <td style="padding: 0.5rem 0.75rem; font-weight: 800; color: #10b981;">${parseFloat(f.manufacturedQuantity).toFixed(3)} ${this.escape(f.unit || 'طن')}</td>
                 <td style="padding: 0.5rem 0.75rem;">${this.escape(this.formatDateTime(f.productionDate))}</td>
+                <td style="padding: 0.5rem 0.75rem;">
+                  ${labBadge}
+                  ${f.laboratoryRejectionReason ? `<div style="font-size:0.75rem; color:#dc2626; margin-top:2px;">السبب: ${this.escape(f.laboratoryRejectionReason)}</div>` : ''}
+                </td>
+                <td style="padding: 0.5rem 0.75rem;">
+                  ${certAction}
+                </td>
                 <td style="padding: 0.5rem 0.75rem;">
                   ${f.weighbridgeAttachmentPath ? `<a href="${f.weighbridgeAttachmentPath}" target="_blank" class="prd-badge" style="background: #dcfce7; color: #166534; text-decoration: none;">📄 تذكرة وزن المنتج</a>` : '—'}
                 </td>
@@ -2663,11 +2711,13 @@
                         <th style="padding: 0.5rem 0.75rem;">رقم التصنيع المستقل (MFG #)</th>
                         <th style="padding: 0.5rem 0.75rem;">الكمية المصنعة</th>
                         <th style="padding: 0.5rem 0.75rem;">تاريخ الإنتاج</th>
+                        <th style="padding: 0.5rem 0.75rem;">حالة الفحص المخبري</th>
+                        <th style="padding: 0.5rem 0.75rem;">شهادة المطابقة</th>
                         <th style="padding: 0.5rem 0.75rem;">تذكرة البسكول</th>
                       </tr>
                     </thead>
                     <tbody>
-                      ${finRows || '<tr><td colspan="5" style="text-align: center; color: var(--prd-text-muted);">بانتظار تسجيل المنتج النهائي</td></tr>'}
+                      ${finRows || '<tr><td colspan="7" style="text-align: center; color: var(--prd-text-muted);">بانتظار تسجيل المنتج النهائي</td></tr>'}
                     </tbody>
                   </table>
                 </div>
@@ -2730,6 +2780,95 @@
         if (contentEl) {
           contentEl.innerHTML = '<div style="text-align: center; padding: 3rem; color: #ef4444;">حدث خطأ أثناء تحميل تفاصيل العملية</div>';
         }
+      }
+    }
+
+    static async viewLabCertificate(finishedProductId) {
+      const modal = document.getElementById('prd-modal-lab-cert');
+      const contentEl = document.getElementById('prd-lab-cert-modal-content');
+      const titleEl = document.getElementById('prd-lab-cert-modal-title');
+      if (!modal || !contentEl) return;
+
+      modal.style.display = 'flex';
+      contentEl.innerHTML = '<div style="text-align: center; padding: 3rem; color: #64748b;"><div class="spinner-border text-primary" role="status"></div><div style="margin-top: 10px;">جاري تحميل تفاصيل شهادة المطابقة المخبرية...</div></div>';
+
+      try {
+        const res = await window.ChatApi.getLabCertificateByFinishedProduct(finishedProductId);
+        if (res && res.success && res.data) {
+          const cert = res.data;
+          this.activeLabCert = cert;
+          if (titleEl) {
+            titleEl.textContent = `📜 شهادة مطابقة المنتج النهائي (${cert.certificateNumber || ''})`;
+          }
+          if (window.LaboratoryApp && typeof window.LaboratoryApp.generateFinalCertPrintSheetHtml === 'function') {
+            contentEl.innerHTML = window.LaboratoryApp.generateFinalCertPrintSheetHtml(cert);
+          } else {
+            contentEl.innerHTML = `
+              <div style="border: 2px solid #0F2A5C; border-radius: 8px; padding: 20px; background: #fff;">
+                <div style="text-align: center; border-bottom: 2px solid #0F2A5C; padding-bottom: 15px; margin-bottom: 15px;">
+                  <h3 style="color: #0F2A5C; margin: 0;">شهادة مطابقة منتج نهائي (مختبر فيس ستون)</h3>
+                  <div style="color: #64748b; font-size: 0.9rem; margin-top: 5px;">رقم الشهادة: <strong>${this.escape(cert.certificateNumber)}</strong></div>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 0.9rem;">
+                  <div><strong>المنتج:</strong> ${this.escape(cert.finalProductName)}</div>
+                  <div><strong>رقم التصنيع:</strong> ${this.escape(cert.manufactureNumber)}</div>
+                  <div><strong>الكمية المصنعة:</strong> ${parseFloat(cert.actualFinalProductQuantity || 0).toFixed(3)} ${this.escape(cert.quantityUnit || 'طن')}</div>
+                  <div><strong>عملية الإنتاج:</strong> ${this.escape(cert.productionProcessNumber || '—')}</div>
+                  <div><strong>قرار المطابقة:</strong> <span style="font-weight: 700; color: ${cert.conformityDecision === 'APPROVED' ? '#16a34a' : '#dc2626'}">${cert.conformityDecision === 'APPROVED' ? 'معتمد ومطابق' : 'مرفوض'}</span></div>
+                  <div><strong>المسؤول المخبري:</strong> ${this.escape(cert.responsibleEmployee || 'فاحص الجودة')}</div>
+                </div>
+                ${cert.rejectionReason ? `<div style="margin-top: 15px; background: #fef2f2; border: 1px solid #fca5a5; padding: 10px; border-radius: 6px; color: #dc2626;"><strong>سبب عدم المطابقة:</strong> ${this.escape(cert.rejectionReason)}</div>` : ''}
+              </div>
+            `;
+          }
+        } else {
+          contentEl.innerHTML = `<div style="text-align: center; padding: 2rem; color: #ef4444;">${this.escape(res?.message || 'لم يتم العثور على شهادة مطابقة مسجلة لهذا المنتج النهائي.')}</div>`;
+        }
+      } catch (err) {
+        console.error('Error fetching lab certificate for finished product:', err);
+        contentEl.innerHTML = '<div style="text-align: center; padding: 2rem; color: #ef4444;">حدث خطأ أثناء استرجاع شهادة المطابقة المخبرية</div>';
+      }
+    }
+
+    static printCurrentLabCert() {
+      if (!this.activeLabCert) {
+        alert('لا توجد شهادة مطابقة محملة للطباعة.');
+        return;
+      }
+      const cert = this.activeLabCert;
+      const printHtml = window.LaboratoryApp && typeof window.LaboratoryApp.generateFinalCertPrintSheetHtml === 'function'
+        ? window.LaboratoryApp.generateFinalCertPrintSheetHtml(cert)
+        : (document.getElementById('prd-lab-cert-modal-content')?.innerHTML || '');
+
+      const printWin = window.open('', '_blank', 'width=900,height=800');
+      if (printWin) {
+        printWin.document.open();
+        printWin.document.write(`
+          <!DOCTYPE html>
+          <html dir="rtl" lang="ar">
+          <head>
+            <meta charset="utf-8">
+            <title>شهادة مطابقة منتج نهائي - ${this.escape(cert.certificateNumber || '')}</title>
+            <style>
+              body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #fff; color: #1e293b; margin: 20px; direction: rtl; }
+              @media print {
+                body { margin: 0; padding: 15px; }
+              }
+            </style>
+          </head>
+          <body>
+            ${printHtml}
+            <script>
+              window.onload = function() {
+                window.print();
+              };
+            <\/script>
+          </body>
+          </html>
+        `);
+        printWin.document.close();
+      } else {
+        alert('يرجى السماح بالنوافذ المنبثقة لطباعة الشهادة.');
       }
     }
 

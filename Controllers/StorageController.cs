@@ -3744,7 +3744,7 @@ public class StorageController : ControllerBase
             .Include(b => b.StorageLocation)
             .Include(b => b.ProductionOrder)
             .Include(b => b.ProductionProcess)
-            .Where(b => b.IsActive && b.CurrentQuantity > 0 &&
+            .Where(b => b.IsActive && b.CurrentQuantity > 0 && b.Status == "APPROVED" &&
                    (b.MaterialClassification == "FINAL_PRODUCT" || b.ProductionOrderId != null || b.ProductionProcessId != null));
 
         if (targetLocationId.HasValue && targetLocationId.Value > 0)

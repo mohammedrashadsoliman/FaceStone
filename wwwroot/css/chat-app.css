@@ -1985,13 +1985,14 @@ a {
 }
 
 .auth-card-modal {
-  width: 100%;
-  max-width: 480px;
+  width: 95%;
+  max-width: 860px;
+  max-height: 90vh;
+  overflow-y: auto;
   background: #FFFFFF;
   border-radius: 20px;
   border: 1px solid rgba(255, 255, 255, 0.25);
   box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.25), 0 0 0 1px rgba(15, 23, 42, 0.05);
-  overflow: hidden;
   display: flex;
   flex-direction: column;
   animation: modalScale 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
@@ -2151,47 +2152,174 @@ a {
   transform: translateY(0);
 }
 
-.auth-demo-accounts-pillbox {
-  margin-top: 1.5rem;
-  padding: 1rem;
+/* =========================================================================
+   Test Accounts Section (حسابات تجريبية لكافة الأقسام)
+   ========================================================================= */
+.auth-test-accounts-section {
+  margin-top: 1.75rem;
+  padding: 1.25rem 1.5rem;
   background: #F8FAFC;
   border: 1px solid #E2E8F0;
-  border-radius: 12px;
-  font-size: 0.775rem;
-  color: #475569;
+  border-radius: 16px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
 }
 
-.demo-chips-grid {
+.auth-test-header {
+  margin-bottom: 1.1rem;
+  text-align: right;
+  border-bottom: 1px solid #E2E8F0;
+  padding-bottom: 0.75rem;
+}
+
+.auth-test-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 0.25rem;
+}
+
+.auth-test-title {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #0F172A;
+  margin: 0;
+}
+
+.auth-test-badge-count {
+  font-size: 0.75rem;
+  background: #0F2A5C;
+  color: #D4AF37;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 700;
+}
+
+.auth-test-subtitle {
+  font-size: 0.8rem;
+  color: #64748B;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.auth-test-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 12px;
+}
+
+.auth-test-card {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin-top: 0.5rem;
+  justify-content: space-between;
+  gap: 0.65rem;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
 }
 
-.demo-account-chip {
+.auth-test-card:hover {
+  border-color: #0F2A5C;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+  transform: translateY(-2px);
+}
+
+.auth-test-card-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.auth-test-icon-wrap {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.15rem;
+  flex-shrink: 0;
+}
+
+.auth-test-names {
+  flex: 1;
+  min-width: 0;
+}
+
+.auth-test-name-ar {
+  font-size: 0.875rem;
+  font-weight: 800;
+  color: #0F172A;
+  line-height: 1.25;
+}
+
+.auth-test-name-en {
+  font-size: 0.725rem;
+  font-weight: 600;
+  color: #64748B;
+  letter-spacing: 0.2px;
+}
+
+.auth-test-creds {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: #FFFFFF;
-  border: 1px solid #E2E8F0;
-  padding: 0.4rem 0.75rem;
+  gap: 8px;
+  background: #F8FAFC;
+  border: 1px dashed #CBD5E1;
   border-radius: 8px;
-  cursor: pointer;
-  font-weight: 600;
+  padding: 5px 10px;
   font-size: 0.775rem;
-  color: #1E293B;
-  transition: all 0.15s ease;
 }
 
-.demo-account-chip .demo-role {
+.auth-test-cred-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.auth-test-cred-lbl {
+  color: #64748B;
+  font-weight: 600;
+  font-size: 0.725rem;
+}
+
+.auth-test-cred-val {
+  font-family: monospace;
   font-weight: 700;
-  color: #0F172A;
+  color: #0F2A5C;
+  direction: ltr;
+  display: inline-block;
 }
 
-.demo-account-chip:hover {
-  border-color: #0F172A;
-  background: #F1F5F9;
-  transform: translateX(-2px);
+.auth-test-btn {
+  width: 100%;
+  padding: 7px 12px;
+  background: #0F2A5C;
+  color: #FFFFFF;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+  box-shadow: 0 1px 3px rgba(15, 42, 92, 0.15);
+}
+
+.auth-test-btn:hover {
+  background: #163E82;
+  color: #D4AF37;
+  transform: translateY(-1px);
+}
+
+.auth-test-btn:active {
+  transform: translateY(0);
 }
 
 /* Toast Notifications */

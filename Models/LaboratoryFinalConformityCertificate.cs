@@ -58,6 +58,36 @@ public class LaboratoryFinalConformityCertificate
     public ProductionWorkInProcess? ProductionWorkInProcess { get; set; }
 
     /// <summary>
+    /// Direct links to Production Process and Finished Product
+    /// </summary>
+    public int? ProductionProcessId { get; set; }
+    public ProductionProcess? ProductionProcess { get; set; }
+    public string? ProductionProcessNumber { get; set; }
+
+    public int? ProductionFinishedProductId { get; set; }
+    public ProductionFinishedProduct? ProductionFinishedProduct { get; set; }
+    public string? ManufactureNumber { get; set; }
+
+    public int? ProductionOrderId { get; set; }
+    public string? ProductionOrderNumber { get; set; }
+    public decimal TargetQuantity { get; set; }
+
+    /// <summary>
+    /// Comma-separated or JSON list of linked incoming Lab Reference Numbers
+    /// </summary>
+    public string? AssociatedReferenceNumbers { get; set; }
+
+    /// <summary>
+    /// نتائج الفحوصات ومعايير الجودة التفصيلية (JSON)
+    /// </summary>
+    public string? QualityParametersJson { get; set; }
+
+    /// <summary>
+    /// توصيات والإجراءات التصحيحية عند الرفض
+    /// </summary>
+    public string? CorrectiveAction { get; set; }
+
+    /// <summary>
     /// تاريخ ووقت اكتمال الإنتاج
     /// </summary>
     public DateTime ProductionCompletionDateTime { get; set; } = DateTime.UtcNow;

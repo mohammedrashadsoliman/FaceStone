@@ -39,11 +39,8 @@ class ChatApp {
     // Auth Modal
     this.authModal = document.getElementById('auth-modal-backdrop');
     this.authLoginForm = document.getElementById('auth-login-form');
-    this.authRegisterForm = document.getElementById('auth-register-form');
     this.tabLoginBtn = document.getElementById('auth-tab-login');
-    this.tabRegisterBtn = document.getElementById('auth-tab-register');
     this.authLoginView = document.getElementById('auth-view-login');
-    this.authRegisterView = document.getElementById('auth-view-register');
 
     // Department Selection Elements
     this.deptSelectionRoot = document.getElementById('dept-selection-root');
@@ -189,7 +186,6 @@ class ChatApp {
   static bindUiActions() {
     // Auth Tabs
     this.tabLoginBtn?.addEventListener('click', () => this.switchAuthTab('login'));
-    this.tabRegisterBtn?.addEventListener('click', () => this.switchAuthTab('register'));
 
     // Floating Chat Button & Window Actions
     this.floatingChatBtn?.addEventListener('click', () => {
@@ -324,53 +320,41 @@ class ChatApp {
 
       if (res.success && res.data) {
         this.showToast(`مرحباً بك، ${res.data.user.fullName}!`);
-        if (window.location.pathname !== '/departments') {
-          history.replaceState({ view: 'departments' }, '', '/departments');
+        
+        const targetRoute = window.pendingDeptRedirect;
+        window.pendingDeptRedirect = null;
+
+        if (targetRoute) {
+          // Direct navigation to authorized department dashboard
+          await this.onAuthenticated(res.data.user);
+          if (targetRoute.startsWith('/finance/suppliers')) {
+            await this.enterDepartment('finance', targetRoute);
+          } else if (targetRoute === '/finance' || targetRoute.startsWith('/finance')) {
+            await this.enterDepartment('finance', targetRoute);
+          } else if (targetRoute === '/transportation') {
+            await this.enterDepartment('transportation');
+          } else if (targetRoute === '/storage' || targetRoute === '/departments/storage') {
+            await this.enterDepartment('storage');
+          } else if (targetRoute.startsWith('/management')) {
+            await this.enterDepartment('management', targetRoute);
+          } else if (targetRoute.startsWith('/laboratory')) {
+            await this.enterDepartment('laboratory', targetRoute);
+          } else if (targetRoute.startsWith('/production')) {
+            await this.enterDepartment('production', targetRoute);
+          } else if (targetRoute.startsWith('/attendance')) {
+            await this.enterDepartment('attendance');
+          } else {
+            this.showView('departments');
+          }
+        } else {
+          if (window.location.pathname !== '/departments') {
+            history.replaceState({ view: 'departments' }, '', '/departments');
+          }
+          this.showView('departments');
+          await this.onAuthenticated(res.data.user);
         }
-        this.showView('departments');
-        await this.onAuthenticated(res.data.user);
       } else {
         this.showToast(res.message || 'فشل تسجيل الدخول. يرجى التحقق من صحة البيانات.', 'error');
-      }
-    });
-
-    // Register Form Submit
-    this.authRegisterForm?.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const fullName = document.getElementById('reg-name-input')?.value.trim();
-      const username = document.getElementById('reg-user-input')?.value.trim();
-      const email = document.getElementById('reg-email-input')?.value.trim();
-      const phone = document.getElementById('reg-phone-input')?.value.trim();
-      const pwd = document.getElementById('reg-pwd-input')?.value;
-      const role = document.getElementById('reg-role-input')?.value || 'Employee';
-      const submitBtn = this.authRegisterForm.querySelector('button[type="submit"]');
-
-      if (!fullName || !username || !email || !phone || !pwd) {
-        this.showToast('جميع حقول التسجيل مطلوبة.', 'error');
-        return;
-      }
-
-      this.setBtnLoading(submitBtn, true);
-      const res = await ChatApi.register({
-        fullName,
-        username,
-        email,
-        phoneNumber: phone,
-        countryCode: '+20',
-        password: pwd,
-        role: role
-      });
-      this.setBtnLoading(submitBtn, false);
-
-      if (res.success && res.data) {
-        this.showToast(`تم إنشاء الحساب بنجاح! مرحباً بك، ${res.data.user.fullName}`);
-        if (window.location.pathname !== '/departments') {
-          history.replaceState({ view: 'departments' }, '', '/departments');
-        }
-        this.showView('departments');
-        await this.onAuthenticated(res.data.user);
-      } else {
-        this.showToast(res.message || 'فشل إنشاء الحساب.', 'error');
       }
     });
 
@@ -2668,17 +2652,8 @@ class ChatApp {
   }
 
   static switchAuthTab(tab) {
-    if (tab === 'login') {
-      this.tabLoginBtn?.classList.add('active');
-      this.tabRegisterBtn?.classList.remove('active');
-      this.authLoginView?.style.setProperty('display', 'block');
-      this.authRegisterView?.style.setProperty('display', 'none');
-    } else {
-      this.tabLoginBtn?.classList.remove('active');
-      this.tabRegisterBtn?.classList.add('active');
-      this.authLoginView?.style.setProperty('display', 'none');
-      this.authRegisterView?.style.setProperty('display', 'block');
-    }
+    this.tabLoginBtn?.classList.add('active');
+    this.authLoginView?.style.setProperty('display', 'block');
   }
 
   static showAuthModal(show) {
@@ -2890,6 +2865,27 @@ window.fillDemoAccount = function(identifier, password) {
   if (idInput && pwdInput) {
     idInput.value = identifier;
     pwdInput.value = password;
+  }
+};
+
+// Dedicated Department Test Account Auto-Login
+window.loginAsDepartment = function(identifier, password, targetRoute) {
+  const idInput = document.getElementById('login-id-input');
+  const pwdInput = document.getElementById('login-pwd-input');
+  if (idInput && pwdInput) {
+    idInput.value = identifier;
+    pwdInput.value = password;
+  }
+  window.pendingDeptRedirect = targetRoute || null;
+  const form = document.getElementById('auth-login-form');
+  if (form) {
+    if (typeof form.requestSubmit === 'function') {
+      form.requestSubmit();
+    } else {
+      const submitBtn = form.querySelector('button[type="submit"]');
+      if (submitBtn) submitBtn.click();
+      else form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+    }
   }
 };
 
