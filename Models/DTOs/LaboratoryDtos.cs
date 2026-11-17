@@ -295,6 +295,8 @@ public class CreateFinalConformityCertificateDto
     public string? SpecificationResultsJson { get; set; }
     public string? QualityParametersJson { get; set; }
     public string? Observations { get; set; }
+    public string? FinalTestResults { get; set; }
+    public string? InspectorNotes { get; set; }
     [JsonIgnore]
     public IFormFile? Attachment { get; set; }
     public string? AttachmentPath { get; set; }
@@ -343,6 +345,8 @@ public class FinalConformityCertificateDto
     public string? SpecificationResultsJson { get; set; }
     public string? QualityParametersJson { get; set; }
     public string? Observations { get; set; }
+    public string? FinalTestResults { get; set; }
+    public string? InspectorNotes { get; set; }
     public string? AttachmentPath { get; set; }
     public string? AttachmentFileName { get; set; }
     public string? AttachmentFileType { get; set; }

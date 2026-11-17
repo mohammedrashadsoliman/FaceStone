@@ -1662,8 +1662,8 @@ public class LaboratoryController : ControllerBase
                 ReworkInstructions = dto.ReworkInstructions?.Trim(),
                 RejectionReason = dto.RejectionReason?.Trim() ?? (certConformityDecision == "NON_CONFORMING" ? dto.Observations?.Trim() : null),
                 CorrectiveAction = dto.CorrectiveAction?.Trim() ?? dto.ReworkInstructions?.Trim(),
-                SpecificationResultsJson = dto.SpecificationResultsJson,
-                QualityParametersJson = dto.QualityParametersJson ?? dto.SpecificationResultsJson,
+                SpecificationResultsJson = !string.IsNullOrWhiteSpace(dto.FinalTestResults) ? dto.FinalTestResults : dto.SpecificationResultsJson,
+                QualityParametersJson = dto.QualityParametersJson ?? dto.FinalTestResults ?? dto.SpecificationResultsJson,
                 Observations = dto.Observations?.Trim(),
                 AttachmentPath = !string.IsNullOrWhiteSpace(attachRes.StoredFileName) ? $"/uploads/laboratory/{attachRes.StoredFileName}" : null,
                 AttachmentFileName = attachRes.OriginalFileName,
@@ -2337,7 +2337,9 @@ public class LaboratoryController : ControllerBase
                 CorrectiveAction = form["correctiveAction"].FirstOrDefault(),
                 SpecificationResultsJson = form["specificationResultsJson"].FirstOrDefault(),
                 QualityParametersJson = form["qualityParametersJson"].FirstOrDefault() ?? form["specificationResultsJson"].FirstOrDefault(),
-                Observations = form["observations"].FirstOrDefault() ?? form["notes"].FirstOrDefault(),
+                Observations = form["inspectorNotes"].FirstOrDefault() ?? form["observations"].FirstOrDefault() ?? form["notes"].FirstOrDefault(),
+                FinalTestResults = form["finalTestResults"].FirstOrDefault() ?? form["specificationResultsJson"].FirstOrDefault(),
+                InspectorNotes = form["inspectorNotes"].FirstOrDefault() ?? form["observations"].FirstOrDefault() ?? form["notes"].FirstOrDefault(),
                 ProductionProcessNumber = form["productionProcessNumber"].FirstOrDefault(),
                 ManufactureNumber = form["manufactureNumber"].FirstOrDefault(),
                 ProductionOrderNumber = form["productionOrderNumber"].FirstOrDefault(),
@@ -2631,55 +2633,86 @@ public class LaboratoryController : ControllerBase
         CreatedBy = p.CreatedBy
     };
 
-    public static FinalConformityCertificateDto MapFinalCertToDto(LaboratoryFinalConformityCertificate c) => new()
+    public static FinalConformityCertificateDto MapFinalCertToDto(LaboratoryFinalConformityCertificate c)
     {
-        Id = c.Id,
-        CertificateNumber = c.CertificateNumber,
-        ProductionReferenceNumber = c.ProductionReferenceNumber,
-        RawMaterialReportId = c.RawMaterialReportId,
-        SampleNumber = c.SampleNumber ?? c.RawMaterialReport?.SampleNumber,
-        SampleCode = c.SampleCode ?? c.RawMaterialReport?.SampleCode ?? (c.RawMaterialReport != null ? $"SMP-{c.RawMaterialReport.SampleNumber:D4}" : null),
-        LaboratorySection = c.LaboratorySection,
-        FinalProductName = c.FinalProductName,
-        ActualFinalProductQuantity = c.ActualFinalProductQuantity,
-        QuantityUnit = c.QuantityUnit,
-        ProductionBatchNumber = c.ProductionBatchNumber,
-        ProductionWorkInProcessId = c.ProductionWorkInProcessId,
-        ProductionProcessId = c.ProductionProcessId,
-        ProductionProcessNumber = c.ProductionProcessNumber,
-        ProductionFinishedProductId = c.ProductionFinishedProductId,
-        ManufactureNumber = c.ManufactureNumber,
-        ProductionOrderId = c.ProductionOrderId,
-        ProductionOrderNumber = c.ProductionOrderNumber,
-        TargetQuantity = c.TargetQuantity,
-        AssociatedReferenceNumbers = c.AssociatedReferenceNumbers,
-        ProductionCompletionDateTime = c.ProductionCompletionDateTime,
-        ActualRawMaterialInputQuantity = c.ActualRawMaterialInputQuantity,
-        CalculatedDifference = c.CalculatedDifference,
-        ActualMeasuredWaste = c.ActualMeasuredWaste,
-        WasteClassification = c.WasteClassification,
-        ConformityDecision = c.ConformityDecision,
-        NonConformityAction = c.NonConformityAction,
-        ClassifiedProductType = c.ClassifiedProductType,
-        ReworkInstructions = c.ReworkInstructions,
-        RejectionReason = c.RejectionReason,
-        CorrectiveAction = c.CorrectiveAction,
-        SpecificationResultsJson = c.SpecificationResultsJson,
-        QualityParametersJson = c.QualityParametersJson,
-        Observations = c.Observations,
-        AttachmentPath = c.AttachmentPath,
-        AttachmentFileName = c.AttachmentFileName,
-        AttachmentFileType = c.AttachmentFileType,
-        AttachmentFileSize = c.AttachmentFileSize,
-        ResponsibleEmployee = c.ResponsibleEmployee,
-        ApprovalStatus = c.ApprovalStatus,
-        ReviewedBy = c.ReviewedBy,
-        ReviewedAt = c.ReviewedAt,
-        IsStoragePosted = c.IsStoragePosted,
-        StoragePostedAt = c.StoragePostedAt,
-        CreatedAt = c.CreatedAt,
-        CreatedBy = c.CreatedBy
-    };
+        string? finalTestResults = null;
+        string? inspectorNotes = null;
+
+        if (!string.IsNullOrWhiteSpace(c.QualityParametersJson))
+        {
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(c.QualityParametersJson);
+                var root = doc.RootElement;
+                if (root.TryGetProperty("finalTestResults", out var ftr)) finalTestResults = ftr.GetString();
+                if (root.TryGetProperty("inspectorNotes", out var inotes)) inspectorNotes = inotes.GetString();
+                else if (root.TryGetProperty("notes", out var legacyNotes)) inspectorNotes = legacyNotes.GetString();
+            }
+            catch { }
+        }
+
+        if (string.IsNullOrWhiteSpace(finalTestResults) && !string.IsNullOrWhiteSpace(c.SpecificationResultsJson))
+        {
+            finalTestResults = c.SpecificationResultsJson;
+        }
+
+        if (string.IsNullOrWhiteSpace(inspectorNotes))
+        {
+            inspectorNotes = c.Observations;
+        }
+
+        return new FinalConformityCertificateDto
+        {
+            Id = c.Id,
+            CertificateNumber = c.CertificateNumber,
+            ProductionReferenceNumber = c.ProductionReferenceNumber,
+            RawMaterialReportId = c.RawMaterialReportId,
+            SampleNumber = c.SampleNumber ?? c.RawMaterialReport?.SampleNumber,
+            SampleCode = c.SampleCode ?? c.RawMaterialReport?.SampleCode ?? (c.RawMaterialReport != null ? $"SMP-{c.RawMaterialReport.SampleNumber:D4}" : null),
+            LaboratorySection = c.LaboratorySection,
+            FinalProductName = c.FinalProductName,
+            ActualFinalProductQuantity = c.ActualFinalProductQuantity,
+            QuantityUnit = c.QuantityUnit,
+            ProductionBatchNumber = c.ProductionBatchNumber,
+            ProductionWorkInProcessId = c.ProductionWorkInProcessId,
+            ProductionProcessId = c.ProductionProcessId,
+            ProductionProcessNumber = c.ProductionProcessNumber,
+            ProductionFinishedProductId = c.ProductionFinishedProductId,
+            ManufactureNumber = c.ManufactureNumber,
+            ProductionOrderId = c.ProductionOrderId,
+            ProductionOrderNumber = c.ProductionOrderNumber,
+            TargetQuantity = c.TargetQuantity,
+            AssociatedReferenceNumbers = c.AssociatedReferenceNumbers,
+            ProductionCompletionDateTime = c.ProductionCompletionDateTime,
+            ActualRawMaterialInputQuantity = c.ActualRawMaterialInputQuantity,
+            CalculatedDifference = c.CalculatedDifference,
+            ActualMeasuredWaste = c.ActualMeasuredWaste,
+            WasteClassification = c.WasteClassification,
+            ConformityDecision = c.ConformityDecision,
+            NonConformityAction = c.NonConformityAction,
+            ClassifiedProductType = c.ClassifiedProductType,
+            ReworkInstructions = c.ReworkInstructions,
+            RejectionReason = c.RejectionReason,
+            CorrectiveAction = c.CorrectiveAction,
+            SpecificationResultsJson = c.SpecificationResultsJson,
+            QualityParametersJson = c.QualityParametersJson,
+            Observations = c.Observations,
+            FinalTestResults = finalTestResults,
+            InspectorNotes = inspectorNotes,
+            AttachmentPath = c.AttachmentPath,
+            AttachmentFileName = c.AttachmentFileName,
+            AttachmentFileType = c.AttachmentFileType,
+            AttachmentFileSize = c.AttachmentFileSize,
+            ResponsibleEmployee = c.ResponsibleEmployee,
+            ApprovalStatus = c.ApprovalStatus,
+            ReviewedBy = c.ReviewedBy,
+            ReviewedAt = c.ReviewedAt,
+            IsStoragePosted = c.IsStoragePosted,
+            StoragePostedAt = c.StoragePostedAt,
+            CreatedAt = c.CreatedAt,
+            CreatedBy = c.CreatedBy
+        };
+    }
 
     public static LaboratoryReferenceLookupDto MapToReferenceLookupDto(LaboratoryRawMaterialReport r)
     {

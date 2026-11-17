@@ -1870,45 +1870,22 @@
               </div>
             </div>
 
-            <!-- SECTION C: Laboratory Specification Verification & Testing Criteria -->
+            <!-- SECTION C: Laboratory Testing & Inspection Results -->
             <div style="background: #ffffff; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 1.25rem; margin-bottom: 1.5rem;">
               <h3 style="margin: 0 0 1rem; font-size: 1.05rem; font-weight: 800; color: #0F2A5C; display: flex; align-items: center; gap: 6px;">
                 <span>🔬</span>
-                <span>فحوصات الجودة ومطابقة معايير المواصفات القياسية (ASTM / SASO)</span>
+                <span>نتائج الاختبارات وملاحظات الفاحص للمنتج النهائي</span>
               </h3>
 
               <div class="lab-form-grid">
-                <div class="lab-field">
-                  <label class="lab-label">المظهر الخارجي والتجانس (Appearance & Uniformity) <span class="req">*</span></label>
-                  <select class="lab-select" id="lab-param-appearance" required>
-                    <option value="مطابق">مطابق تماماً للمظهر القياسي وخالٍ من التشققات أو الفراغات</option>
-                    <option value="مقبول مع ملاحظات">مقبول مع ملاحظات طفيفة</option>
-                    <option value="غير مطابق">غير مطابق للمظهر (عيوب تشكيل / عدم تجانس)</option>
-                  </select>
-                </div>
-
-                <div class="lab-field">
-                  <label class="lab-label">الأبعاد الهندسية والتشطيب (Dimensions & Finishing) <span class="req">*</span></label>
-                  <select class="lab-select" id="lab-param-dimensions" required>
-                    <option value="مطابق">مطابق للأبعاد والتشطيب الهندسي المعتمد (± 1 mm)</option>
-                    <option value="انحراف طفيف">انحراف طفيف ضمن حدود التسامح المسموح</option>
-                    <option value="غير مطابق">غير مطابق للأبعاد الهندسية القياسية</option>
-                  </select>
-                </div>
-
-                <div class="lab-field">
-                  <label class="lab-label">اختبار مقاومة الضغط والصلابة (Compressive Strength - MPa)</label>
-                  <input type="text" class="lab-input" id="lab-param-strength" placeholder="مثال: 38.5 MPa (المطلوب ≥ 35 MPa)">
-                </div>
-
-                <div class="lab-field">
-                  <label class="lab-label">الكثافة والوزن النوعي / نسبة الامتصاص (Specific Gravity / Absorption %)</label>
-                  <input type="text" class="lab-input" id="lab-param-density" placeholder="مثال: امتصاص 4.2% (المسموح ≤ 6.0%)">
+                <div class="lab-field lab-field-full">
+                  <label class="lab-label" for="lab-final-test-results">نتائج الاختبارات النهائية</label>
+                  <textarea class="lab-textarea" id="lab-final-test-results" rows="3" placeholder="أدخل نتائج الاختبارات النهائية للمنتج النهائي يدوياً..."></textarea>
                 </div>
 
                 <div class="lab-field lab-field-full">
-                  <label class="lab-label">نتائج الفحوصات وملاحظات الفاحص والتحليل المخبري</label>
-                  <textarea class="lab-textarea" id="lab-final-notes" rows="3" placeholder="أدخل نتائج الاختبارات الدقيقة، قراءات الأجهزة، وأية ملاحظات فنية حول جودة المنتج..."></textarea>
+                  <label class="lab-label" for="lab-final-inspector-notes">ملاحظات الفاحص</label>
+                  <textarea class="lab-textarea" id="lab-final-inspector-notes" rows="3" placeholder="أدخل ملاحظات فاحص الجودة والكيميائي..."></textarea>
                 </div>
               </div>
             </div>
@@ -2326,11 +2303,8 @@
 
       const p = this.selectedFinishedProduct;
       const decision = document.getElementById('lab-final-decision')?.value || 'APPROVED';
-      const appearance = document.getElementById('lab-param-appearance')?.value || 'مطابق';
-      const dimensions = document.getElementById('lab-param-dimensions')?.value || 'مطابق';
-      const strength = document.getElementById('lab-param-strength')?.value?.trim() || '';
-      const density = document.getElementById('lab-param-density')?.value?.trim() || '';
-      const notes = document.getElementById('lab-final-notes')?.value?.trim() || '';
+      const finalTestResults = document.getElementById('lab-final-test-results')?.value?.trim() || '';
+      const inspectorNotes = document.getElementById('lab-final-inspector-notes')?.value?.trim() || '';
       const rejReason = document.getElementById('lab-final-rejection-reason')?.value?.trim() || '';
       const corAction = document.getElementById('lab-final-corrective-action')?.value?.trim() || '';
       const nonConf = document.getElementById('lab-final-nonconf-action')?.value || 'PENDING_DECISION';
@@ -2342,10 +2316,8 @@
       }
 
       const qualityParams = {
-        appearance: appearance,
-        dimensions: dimensions,
-        strength: strength,
-        density: density,
+        finalTestResults: finalTestResults,
+        inspectorNotes: inspectorNotes,
         evaluatedAt: new Date().toISOString()
       };
 
@@ -2376,9 +2348,11 @@
       fd.append('wasteClassification', 'ORDINARY_WASTE');
       fd.append('conformityDecision', decision);
       fd.append('laboratorySection', this.activeSection || 'PHYSICAL');
-      fd.append('specificationResultsJson', JSON.stringify(qualityParams));
+      fd.append('specificationResultsJson', finalTestResults || JSON.stringify(qualityParams));
       fd.append('qualityParametersJson', JSON.stringify(qualityParams));
-      fd.append('observations', notes || `فحص مواصفات المنتج النهائي ${p.finishedProductName} - قرار: ${decision}`);
+      fd.append('observations', inspectorNotes || finalTestResults || `فحص مواصفات المنتج النهائي ${p.finishedProductName} - قرار: ${decision}`);
+      fd.append('finalTestResults', finalTestResults);
+      fd.append('inspectorNotes', inspectorNotes);
       
       if (decision === 'REJECTED') {
         fd.append('rejectionReason', rejReason);
@@ -2544,8 +2518,32 @@
 
       let qualityHtml = '';
       try {
+        let q = null;
         if (cert.qualityParametersJson) {
-          const q = JSON.parse(cert.qualityParametersJson);
+          try { q = JSON.parse(cert.qualityParametersJson); } catch (e) { }
+        }
+
+        const finalTestResults = (q && q.finalTestResults) || cert.finalTestResults || cert.specificationResultsJson || '';
+        const inspectorNotes = (q && q.inspectorNotes) || cert.inspectorNotes || (q && q.notes) || '';
+
+        if (finalTestResults || inspectorNotes) {
+          qualityHtml = `
+            <div style="margin-top: 10px; font-size: 11pt;">
+              <table style="width: 100%; border-collapse: collapse; margin-top: 5px;">
+                ${finalTestResults ? `
+                  <tr style="border-bottom: 1px solid #e2e8f0;">
+                    <td style="padding: 6px 4px; font-weight: bold; width: 30%; color: #0F2A5C; vertical-align: top;">نتائج الاختبارات النهائية:</td>
+                    <td style="padding: 6px 4px; white-space: pre-wrap; font-weight: 600;">${this.esc(finalTestResults)}</td>
+                  </tr>` : ''}
+                ${inspectorNotes ? `
+                  <tr style="border-bottom: 1px solid #e2e8f0;">
+                    <td style="padding: 6px 4px; font-weight: bold; width: 30%; color: #0F2A5C; vertical-align: top;">ملاحظات الفاحص:</td>
+                    <td style="padding: 6px 4px; white-space: pre-wrap;">${this.esc(inspectorNotes)}</td>
+                  </tr>` : ''}
+              </table>
+            </div>
+          `;
+        } else if (q && (q.appearance || q.dimensions || q.strength || q.density)) {
           qualityHtml = `
             <div style="margin-top: 10px; font-size: 11pt;">
               <table style="width: 100%; border-collapse: collapse; margin-top: 5px;">

@@ -2817,6 +2817,7 @@
                   <div><strong>قرار المطابقة:</strong> <span style="font-weight: 700; color: ${cert.conformityDecision === 'APPROVED' ? '#16a34a' : '#dc2626'}">${cert.conformityDecision === 'APPROVED' ? 'معتمد ومطابق' : 'مرفوض'}</span></div>
                   <div><strong>المسؤول المخبري:</strong> ${this.escape(cert.responsibleEmployee || 'فاحص الجودة')}</div>
                 </div>
+                ${cert.finalTestResults ? `<div style="margin-top: 15px; background: #f8fafc; border: 1px solid #e2e8f0; padding: 10px; border-radius: 6px; font-size: 0.9rem;"><strong>نتائج الاختبارات النهائية:</strong> <div style="margin-top: 4px; white-space: pre-wrap; font-weight: 600;">${this.escape(cert.finalTestResults)}</div></div>` : ''}
                 ${cert.rejectionReason ? `<div style="margin-top: 15px; background: #fef2f2; border: 1px solid #fca5a5; padding: 10px; border-radius: 6px; color: #dc2626;"><strong>سبب عدم المطابقة:</strong> ${this.escape(cert.rejectionReason)}</div>` : ''}
               </div>
             `;
