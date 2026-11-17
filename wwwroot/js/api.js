@@ -1756,6 +1756,20 @@ class ChatApi {
     });
   }
 
+  static async submitLaboratoryFinalPhysicalApproval(formData) {
+    return await this.request('/api/laboratory/final-certificates/physical-approval', {
+      method: 'POST',
+      body: formData instanceof FormData ? formData : JSON.stringify(formData)
+    });
+  }
+
+  static async submitLaboratoryFinalChemicalApproval(formData) {
+    return await this.request('/api/laboratory/final-certificates/chemical-approval', {
+      method: 'POST',
+      body: formData instanceof FormData ? formData : JSON.stringify(formData)
+    });
+  }
+
   static async getLaboratoryInProcessReports(params = {}) {
     const qs = new URLSearchParams();
     if (params.section && params.section !== 'ALL') qs.append('section', params.section);

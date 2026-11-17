@@ -1879,6 +1879,11 @@ public class FaceStoneDbContext : DbContext
             entity.Property(e => e.CorrectiveAction).HasMaxLength(1000);
             entity.Property(e => e.ResponsibleEmployee).HasMaxLength(150).IsRequired();
             entity.Property(e => e.ApprovalStatus).HasMaxLength(50).HasDefaultValue("PENDING").IsRequired();
+            entity.Property(e => e.PhysicalApprovalStatus).HasMaxLength(50).HasDefaultValue("PENDING").IsRequired();
+            entity.Property(e => e.PhysicalApprovedBy).HasMaxLength(150);
+            entity.Property(e => e.ChemicalApprovalStatus).HasMaxLength(50).HasDefaultValue("PENDING").IsRequired();
+            entity.Property(e => e.ChemicalApprovedBy).HasMaxLength(150);
+            entity.Property(e => e.OverallStatus).HasMaxLength(50).HasDefaultValue("PENDING_PHYSICAL").IsRequired();
             entity.Property(e => e.ReviewedBy).HasMaxLength(150);
             entity.Property(e => e.RejectionReason).HasMaxLength(1000);
             entity.Property(e => e.CreatedBy).HasMaxLength(150).IsRequired();

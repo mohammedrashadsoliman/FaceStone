@@ -1721,6 +1721,7 @@
 
     // ======================================================================
     // 3. FINAL PRODUCT CONFORMITY CERTIFICATE (شهادة مطابقة المنتج النهائي)
+    // Mandatory Sequential Two-Stage Workflow: Physical (Stage 1) -> Chemical (Stage 2)
     // ======================================================================
     static async renderFinalCertView() {
       if (!this.finalContainer) return;
@@ -1738,10 +1739,10 @@
             <div>
               <h2 style="margin: 0; font-size: 1.3rem; font-weight: 800; color: #0F2A5C; display: flex; align-items: center; gap: 0.5rem;">
                 <span style="color: #059669;">📜</span>
-                <span>شهادة مطابقة المنتج النهائي — ${this.esc(sectionAr)}</span>
+                <span>شهادة مطابقة المنتج النهائي — اعتماد مخبري مرحلي (فيزيائي ثم كيميائي)</span>
               </h2>
               <p style="margin: 0.35rem 0 0; font-size: 0.85rem; color: #64748B;">
-                ربط مباشر وحي مع قسم الإنتاج (Finished Product & Waste Calculation)، فحص مواصفات المنتج التام واعتماده مخبرياً قبل التوريد أو الصرف.
+                دورة اعتماد مرحلية إلزامية تبدأ بالفحص والاعتماد الفيزيائي وتختتم بالتحليل والاعتماد الكيميائي لمنتجات قسم الإنتاج التامة قبل التوريد أو الصرف.
               </p>
             </div>
             <div style="display: flex; align-items: center; gap: 0.5rem;">
@@ -1758,14 +1759,14 @@
             <button type="button" class="lab-btn lab-filter-pill active" data-status="ALL" id="pill-filter-all" style="padding: 0.3rem 0.75rem; font-size: 0.78rem; border-radius: 20px;">
               الكل (<span id="count-final-all">0</span>)
             </button>
-            <button type="button" class="lab-btn lab-filter-pill" data-status="PENDING_INSPECTION" id="pill-filter-pending" style="padding: 0.3rem 0.75rem; font-size: 0.78rem; border-radius: 20px; background: #FEF3C7; color: #92400E; border: 1px solid #FCD34D;">
-              ⏱️ قيد فحص المختبر (<span id="count-final-pending">0</span>)
+            <button type="button" class="lab-btn lab-filter-pill" data-status="PENDING_PHYSICAL" id="pill-filter-pending-physical" style="padding: 0.3rem 0.75rem; font-size: 0.78rem; border-radius: 20px; background: #FEF3C7; color: #92400E; border: 1px solid #FCD34D;">
+              ⏱️ بانتظار الفحص الفيزيائي (مرحلة 1) (<span id="count-final-pending-physical">0</span>)
             </button>
-            <button type="button" class="lab-btn lab-filter-pill" data-status="UNDER_INSPECTION" id="pill-filter-under" style="padding: 0.3rem 0.75rem; font-size: 0.78rem; border-radius: 20px; background: #E0F2FE; color: #0369A1; border: 1px solid #BAE6FD;">
-              🔬 قيد الفحص والتحليل (<span id="count-final-under">0</span>)
+            <button type="button" class="lab-btn lab-filter-pill" data-status="PENDING_CHEMICAL" id="pill-filter-pending-chemical" style="padding: 0.3rem 0.75rem; font-size: 0.78rem; border-radius: 20px; background: #E0F2FE; color: #0369A1; border: 1px solid #BAE6FD;">
+              ⏱️ بانتظار التحليل الكيميائي (مرحلة 2) (<span id="count-final-pending-chemical">0</span>)
             </button>
             <button type="button" class="lab-btn lab-filter-pill" data-status="APPROVED" id="pill-filter-approved" style="padding: 0.3rem 0.75rem; font-size: 0.78rem; border-radius: 20px; background: #DCFCE7; color: #166534; border: 1px solid #86EFAC;">
-              ✅ معتمد مخبرياً (<span id="count-final-approved">0</span>)
+              ✅ معتمد رسمياً (كلا المرحلتين) (<span id="count-final-approved">0</span>)
             </button>
             <button type="button" class="lab-btn lab-filter-pill" data-status="REJECTED" id="pill-filter-rejected" style="padding: 0.3rem 0.75rem; font-size: 0.78rem; border-radius: 20px; background: #FEE2E2; color: #991B1B; border: 1px solid #FCA5A5;">
               ❌ مرفوض مخبرياً (<span id="count-final-rejected">0</span>)
@@ -1774,164 +1775,215 @@
         </div>
 
         <!-- 2. Main Inspection Form Card -->
-        <div class="lab-form-card" style="max-width: 1000px; margin: 0 auto 2rem;">
-          <form id="lab-final-form" novalidate>
-            
-            <!-- SECTION A: Select Production Number & Finished Product -->
-            <div style="background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 10px; padding: 1.25rem; margin-bottom: 1.5rem;">
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
-                <label class="lab-label" for="lab-final-prod-select" style="font-weight: 800; font-size: 0.95rem; color: #0F2A5C; margin: 0; display: flex; align-items: center; gap: 6px;">
-                  <span>⚙️ اختيار رقم العملية والمنتج النهائي من قسم الإنتاج (Production Record)</span>
-                  <span class="req">*</span>
-                </label>
-                <span style="font-size: 0.78rem; color: #64748b;">قاعدة بيانات الإنتاج الحية (دون قيم ثابتة)</span>
-              </div>
+        <div class="lab-form-card" style="max-width: 1050px; margin: 0 auto 2rem;">
+          
+          <!-- SECTION A: Select Production Number & Finished Product -->
+          <div style="background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 10px; padding: 1.25rem; margin-bottom: 1.5rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
+              <label class="lab-label" for="lab-final-prod-select" style="font-weight: 800; font-size: 0.95rem; color: #0F2A5C; margin: 0; display: flex; align-items: center; gap: 6px;">
+                <span>⚙️ اختيار رقم العملية والمنتج النهائي من قسم الإنتاج (Production Record)</span>
+                <span class="req">*</span>
+              </label>
+              <span style="font-size: 0.78rem; color: #64748b;">قاعدة بيانات الإنتاج الحية (دون قيم ثابتة)</span>
+            </div>
 
-              <div class="lab-field lab-field-full">
-                <select class="lab-select" id="lab-final-prod-select" required style="width: 100%; font-weight: 700; font-size: 0.92rem; border: 2px solid #2563eb; padding: 0.65rem 0.85rem;">
-                  <option value="">— جاري تحميل المنتجات المصنعة من قسم الإنتاج... —</option>
-                </select>
-                <div style="margin-top: 6px; display: flex; justify-content: space-between; align-items: center; font-size: 0.78rem; color: #64748B;">
-                  <span>اختر المنتج النهائي لعرض سلسلة التتبع الكاملة والمواد الخام المعتمدة.</span>
-                  <span id="lab-final-active-tag" style="display:none; font-weight: 700;"></span>
-                </div>
+            <div class="lab-field lab-field-full">
+              <select class="lab-select" id="lab-final-prod-select" required style="width: 100%; font-weight: 700; font-size: 0.92rem; border: 2px solid #2563eb; padding: 0.65rem 0.85rem;">
+                <option value="">— جاري تحميل المنتجات المصنعة من قسم الإنتاج... —</option>
+              </select>
+              <div style="margin-top: 6px; display: flex; justify-content: space-between; align-items: center; font-size: 0.78rem; color: #64748B;">
+                <span>اختر المنتج النهائي لعرض سلسلة التتبع واعتمادات المعملين الفيزيائي والكيميائي.</span>
+                <span id="lab-final-active-tag" style="display:none; font-weight: 700;"></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- SECTION B: Traceability & Associated Incoming Lab Reference Numbers Card -->
+          <div id="lab-final-context-box" style="display: none; background: #ffffff; border: 1.5px solid #94a3b8; border-radius: 10px; padding: 1.25rem; margin-bottom: 1.5rem; box-shadow: 0 2px 4px rgba(0,0,0,0.04);">
+            <div style="border-bottom: 1px solid #e2e8f0; padding-bottom: 0.75rem; margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+              <h4 style="margin: 0; font-size: 1rem; font-weight: 800; color: #0F2A5C; display: flex; align-items: center; gap: 6px;">
+                <span>🔍</span>
+                <span>تفاصيل الإنتاج وسلسلة التتبع للمنتج المختار (Production Traceability)</span>
+              </h4>
+              <span id="lab-context-status-badge" class="lab-badge" style="font-size: 0.85rem; padding: 4px 10px; font-weight: 800;">-</span>
+            </div>
+
+            <!-- 4 KPI context tiles -->
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.85rem; margin-bottom: 1rem;">
+              <div style="background: #f8fafc; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid #e2e8f0;">
+                <span style="font-size: 0.75rem; color: #64748b; display: block;">رقم عملية الإنتاج / أمر الإنتاج</span>
+                <strong id="lab-ctx-proc-num" style="font-size: 1.05rem; color: #1d4ed8; display: block;">—</strong>
+                <small id="lab-ctx-order-num" style="font-size: 0.78rem; color: #475569;">—</small>
+              </div>
+              <div style="background: #f8fafc; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid #e2e8f0;">
+                <span style="font-size: 0.75rem; color: #64748b; display: block;">رقم التصنيع / اسم المنتج النهائي</span>
+                <strong id="lab-ctx-mfg-num" style="font-size: 1.05rem; color: #0F2A5C; display: block;">—</strong>
+                <small id="lab-ctx-prod-name" style="font-size: 0.78rem; color: #059669; font-weight: 700;">—</small>
+              </div>
+              <div style="background: #f8fafc; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid #e2e8f0;">
+                <span style="font-size: 0.75rem; color: #64748b; display: block;">الكمية المستهدفة vs الفعلية المصنعة</span>
+                <div style="font-size: 1.05rem; font-weight: 800; color: #059669;" id="lab-ctx-qty-disp">0.000 طن</div>
+                <small id="lab-ctx-diff-disp" style="font-size: 0.75rem; color: #64748b;">—</small>
+              </div>
+              <div style="background: #f8fafc; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid #e2e8f0;">
+                <span style="font-size: 0.75rem; color: #64748b; display: block;">تاريخ الإنتاج / مسؤول التشغيل</span>
+                <strong id="lab-ctx-date-disp" style="font-size: 0.88rem; color: #1e293b; display: block;">—</strong>
+                <small id="lab-ctx-emp-disp" style="font-size: 0.78rem; color: #64748b;">—</small>
               </div>
             </div>
 
-            <!-- SECTION B: Traceability & Associated Incoming Lab Reference Numbers Card -->
-            <div id="lab-final-context-box" style="display: none; background: #ffffff; border: 1.5px solid #94a3b8; border-radius: 10px; padding: 1.25rem; margin-bottom: 1.5rem; box-shadow: 0 2px 4px rgba(0,0,0,0.04);">
-              <div style="border-bottom: 1px solid #e2e8f0; padding-bottom: 0.75rem; margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
-                <h4 style="margin: 0; font-size: 1rem; font-weight: 800; color: #0F2A5C; display: flex; align-items: center; gap: 6px;">
-                  <span>🔍</span>
-                  <span>تفاصيل الإنتاج وسلسلة التتبع للمنتج المختار (Production Traceability)</span>
-                </h4>
-                <span id="lab-context-status-badge" class="lab-badge" style="font-size: 0.85rem; padding: 4px 10px; font-weight: 800;">-</span>
-              </div>
-
-              <!-- 4 KPI context tiles -->
-              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.85rem; margin-bottom: 1rem;">
-                <div style="background: #f8fafc; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid #e2e8f0;">
-                  <span style="font-size: 0.75rem; color: #64748b; display: block;">رقم عملية الإنتاج / أمر الإنتاج</span>
-                  <strong id="lab-ctx-proc-num" style="font-size: 1.05rem; color: #1d4ed8; display: block;">—</strong>
-                  <small id="lab-ctx-order-num" style="font-size: 0.78rem; color: #475569;">—</small>
-                </div>
-                <div style="background: #f8fafc; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid #e2e8f0;">
-                  <span style="font-size: 0.75rem; color: #64748b; display: block;">رقم التصنيع / اسم المنتج النهائي</span>
-                  <strong id="lab-ctx-mfg-num" style="font-size: 1.05rem; color: #0F2A5C; display: block;">—</strong>
-                  <small id="lab-ctx-prod-name" style="font-size: 0.78rem; color: #059669; font-weight: 700;">—</small>
-                </div>
-                <div style="background: #f8fafc; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid #e2e8f0;">
-                  <span style="font-size: 0.75rem; color: #64748b; display: block;">الكمية المستهدفة vs الفعلية المصنعة</span>
-                  <div style="font-size: 1.05rem; font-weight: 800; color: #059669;" id="lab-ctx-qty-disp">0.000 طن</div>
-                  <small id="lab-ctx-diff-disp" style="font-size: 0.75rem; color: #64748b;">—</small>
-                </div>
-                <div style="background: #f8fafc; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid #e2e8f0;">
-                  <span style="font-size: 0.75rem; color: #64748b; display: block;">تاريخ الإنتاج / مسؤول التشغيل</span>
-                  <strong id="lab-ctx-date-disp" style="font-size: 0.88rem; color: #1e293b; display: block;">—</strong>
-                  <small id="lab-ctx-emp-disp" style="font-size: 0.78rem; color: #64748b;">—</small>
-                </div>
-              </div>
-
-              <!-- Weighbridge & Storage Location strip -->
-              <div style="background: #f1f5f9; border-radius: 6px; padding: 0.5rem 0.85rem; margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; font-size: 0.82rem;">
-                <div>
-                  <span style="color: #64748b;">مستودع وجهة تخزين المنتج: </span>
-                  <strong id="lab-ctx-storage-loc" style="color: #0F2A5C;">—</strong>
-                </div>
-                <div id="lab-ctx-weighbridge-wrap">
-                  <span style="color: #64748b;">تذكرة ميزان البسكول: </span>
-                  <span id="lab-ctx-weighbridge-link">—</span>
-                </div>
-              </div>
-
-              <!-- Associated Raw Materials and Lab Reference Numbers Table -->
+            <!-- Weighbridge & Storage Location strip -->
+            <div style="background: #f1f5f9; border-radius: 6px; padding: 0.5rem 0.85rem; margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; font-size: 0.82rem;">
               <div>
-                <div style="font-size: 0.88rem; font-weight: 800; color: #0F2A5C; margin-bottom: 0.4rem; display: flex; align-items: center; justify-content: space-between;">
-                  <span>🧪 الأرقام المرجعية للمختبر والمواد الخام المستهلكة في التصنيع (Linked Lab References):</span>
-                  <span id="lab-ctx-refs-summary" style="font-size: 0.78rem; color: #0284c7; font-weight: 700;">—</span>
-                </div>
-                <div style="overflow-x: auto; max-height: 200px; border: 1px solid #e2e8f0; border-radius: 8px;">
-                  <table class="lab-table" style="width: 100%; font-size: 0.8rem; text-align: right; border-collapse: collapse;">
-                    <thead style="background: #f8fafc; position: sticky; top: 0;">
-                      <tr>
-                        <th style="padding: 6px 10px;">الرقم المرجعي للمختبر</th>
-                        <th style="padding: 6px 10px;">اسم الخامة المستهلكة</th>
-                        <th style="padding: 6px 10px;">رقم الدفعة (Batch #)</th>
-                        <th style="padding: 6px 10px;">كود العينة</th>
-                        <th style="padding: 6px 10px;">الكمية المستهلكة</th>
-                        <th style="padding: 6px 10px;">موقع المستودع المصدر</th>
-                      </tr>
-                    </thead>
-                    <tbody id="lab-ctx-materials-tbody">
-                      <tr><td colspan="6" style="text-align: center; color: #94a3b8; padding: 1rem;">لا توجد مواد مسجلة</td></tr>
-                    </tbody>
-                  </table>
-                </div>
+                <span style="color: #64748b;">مستودع وجهة تخزين المنتج: </span>
+                <strong id="lab-ctx-storage-loc" style="color: #0F2A5C;">—</strong>
+              </div>
+              <div id="lab-ctx-weighbridge-wrap">
+                <span style="color: #64748b;">تذكرة ميزان البسكول: </span>
+                <span id="lab-ctx-weighbridge-link">—</span>
               </div>
             </div>
 
-            <!-- SECTION C: Laboratory Testing & Inspection Results -->
-            <div style="background: #ffffff; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 1.25rem; margin-bottom: 1.5rem;">
-              <h3 style="margin: 0 0 1rem; font-size: 1.05rem; font-weight: 800; color: #0F2A5C; display: flex; align-items: center; gap: 6px;">
-                <span>🔬</span>
-                <span>نتائج الاختبارات وملاحظات الفاحص للمنتج النهائي</span>
-              </h3>
+            <!-- Associated Raw Materials and Lab Reference Numbers Table -->
+            <div>
+              <div style="font-size: 0.88rem; font-weight: 800; color: #0F2A5C; margin-bottom: 0.4rem; display: flex; align-items: center; justify-content: space-between;">
+                <span>🧪 الأرقام المرجعية للمختبر والمواد الخام المستهلكة في التصنيع (Linked Lab References):</span>
+                <span id="lab-ctx-refs-summary" style="font-size: 0.78rem; color: #0284c7; font-weight: 700;">—</span>
+              </div>
+              <div style="overflow-x: auto; max-height: 200px; border: 1px solid #e2e8f0; border-radius: 8px;">
+                <table class="lab-table" style="width: 100%; font-size: 0.8rem; text-align: right; border-collapse: collapse;">
+                  <thead style="background: #f8fafc; position: sticky; top: 0;">
+                    <tr>
+                      <th style="padding: 6px 10px;">الرقم المرجعي للمختبر</th>
+                      <th style="padding: 6px 10px;">اسم الخامة المستهلكة</th>
+                      <th style="padding: 6px 10px;">رقم الدفعة (Batch #)</th>
+                      <th style="padding: 6px 10px;">كود العينة</th>
+                      <th style="padding: 6px 10px;">الكمية المستهلكة</th>
+                      <th style="padding: 6px 10px;">موقع المستودع المصدر</th>
+                    </tr>
+                  </thead>
+                  <tbody id="lab-ctx-materials-tbody">
+                    <tr><td colspan="6" style="text-align: center; color: #94a3b8; padding: 1rem;">لا توجد مواد مسجلة</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
 
-              <div class="lab-form-grid">
-                <div class="lab-field lab-field-full">
-                  <label class="lab-label" for="lab-final-test-results">نتائج الاختبارات النهائية</label>
-                  <textarea class="lab-textarea" id="lab-final-test-results" rows="3" placeholder="أدخل نتائج الاختبارات النهائية للمنتج النهائي يدوياً..."></textarea>
-                </div>
-
-                <div class="lab-field lab-field-full">
-                  <label class="lab-label" for="lab-final-inspector-notes">ملاحظات الفاحص</label>
-                  <textarea class="lab-textarea" id="lab-final-inspector-notes" rows="3" placeholder="أدخل ملاحظات فاحص الجودة والكيميائي..."></textarea>
-                </div>
+          <!-- OVERALL CERTIFICATION STATUS & WORKFLOW PROGRESS BANNER -->
+          <div id="lab-final-overall-banner" style="display: none; background: #ffffff; border: 2px solid #2563eb; border-radius: 10px; padding: 1.25rem; margin-bottom: 1.5rem; box-shadow: 0 4px 6px -1px rgba(37,99,235,0.1);">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 0.85rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 0.75rem;">
+              <div>
+                <span style="font-size: 0.8rem; font-weight: 700; color: #64748b; text-transform: uppercase;">الحالة العامة للمطابقة المخبرية</span>
+                <h3 id="lab-overall-status-title" style="margin: 0.2rem 0 0; font-size: 1.15rem; font-weight: 900; color: #0F2A5C;">
+                  ⏱️ قيد انتظار استيفاء مراحل الفحص المخبري
+                </h3>
+              </div>
+              <div id="lab-overall-cert-badge-wrap">
+                <span id="lab-overall-cert-badge" class="lab-badge" style="font-size: 0.9rem; padding: 6px 14px; font-weight: 800;">
+                  بانتظار الفحص
+                </span>
               </div>
             </div>
 
-            <!-- SECTION D: Final Inspection Decision & Actions -->
-            <div style="background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 10px; padding: 1.25rem; margin-bottom: 1.5rem;">
-              <h3 style="margin: 0 0 1rem; font-size: 1.05rem; font-weight: 800; color: #0F2A5C; display: flex; align-items: center; gap: 6px;">
-                <span>⚖️</span>
-                <span>القرار النهائي للاعتماد المخبري (Final Inspection Decision)</span>
-              </h3>
+            <!-- Sequential Stepper Bar -->
+            <div style="display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; gap: 0.5rem; align-items: center; text-align: center; font-size: 0.85rem;">
+              <div id="step-node-stage1" style="background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 0.75rem;">
+                <div style="font-size: 0.75rem; color: #64748b; font-weight: 700;">المرحلة الأولى</div>
+                <div style="font-weight: 800; color: #0F2A5C; margin: 2px 0;">الفحص الفيزيائي</div>
+                <span id="badge-stage1-step" class="lab-badge" style="font-size: 0.75rem; padding: 2px 8px; font-weight: 700; background: #fef3c7; color: #92400e;">
+                  ⏱️ بانتظار الفحص
+                </span>
+              </div>
+              <div style="font-size: 1.25rem; font-weight: 900; color: #94a3b8;">➔</div>
+              <div id="step-node-stage2" style="background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 0.75rem;">
+                <div style="font-size: 0.75rem; color: #64748b; font-weight: 700;">المرحلة الثانية</div>
+                <div style="font-weight: 800; color: #0F2A5C; margin: 2px 0;">التحليل الكيميائي</div>
+                <span id="badge-stage2-step" class="lab-badge" style="font-size: 0.75rem; padding: 2px 8px; font-weight: 700; background: #f1f5f9; color: #64748b;">
+                  🔒 مقفل
+                </span>
+              </div>
+              <div style="font-size: 1.25rem; font-weight: 900; color: #94a3b8;">➔</div>
+              <div id="step-node-cert" style="background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 0.75rem;">
+                <div style="font-size: 0.75rem; color: #64748b; font-weight: 700;">الاعتماد النهائي</div>
+                <div style="font-weight: 800; color: #0F2A5C; margin: 2px 0;">شهادة المطابقة</div>
+                <span id="badge-final-step" class="lab-badge" style="font-size: 0.75rem; padding: 2px 8px; font-weight: 700; background: #f1f5f9; color: #64748b;">
+                  معلق
+                </span>
+              </div>
+            </div>
 
+            <div id="lab-overall-status-desc" style="margin-top: 0.85rem; font-size: 0.82rem; color: #475569; background: #f8fafc; padding: 0.6rem 0.85rem; border-radius: 6px; border: 1px dashed #cbd5e1;">
+              يتطلب المنتج اجتياز واعتماد الفحص الفيزيائي أولاً ثم التحليل الكيميائي قبل إصدار الشهادة واعتماد المنتج للصرف أو التوريد.
+            </div>
+          </div>
+
+          <!-- ============================================================= -->
+          <!-- STAGE 1 CARD: PHYSICAL LABORATORY APPROVAL                     -->
+          <!-- ============================================================= -->
+          <div id="lab-stage1-card" style="display: none; background: #ffffff; border: 2px solid #3b82f6; border-radius: 10px; padding: 1.35rem; margin-bottom: 1.5rem; box-shadow: 0 2px 5px rgba(0,0,0,0.04);">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; border-bottom: 1.5px solid #e2e8f0; padding-bottom: 0.75rem; margin-bottom: 1rem;">
+              <div>
+                <h3 style="margin: 0; font-size: 1.1rem; font-weight: 800; color: #1e3a8a; display: flex; align-items: center; gap: 6px;">
+                  <span>🧱</span>
+                  <span>المرحلة الأولى: الفحص والاعتماد المخبري الفيزيائي (Stage 1 — Physical Laboratory)</span>
+                </h3>
+                <small style="color: #64748b; font-size: 0.8rem;">فحص الخواص الميكانيكية والفيزيائية للمنتج التام وتأكيد مطابقته للمواصفات.</small>
+              </div>
+              <span id="lab-stage1-status-badge" class="lab-badge" style="font-size: 0.85rem; padding: 4px 12px; font-weight: 800; background: #fef3c7; color: #92400e;">
+                ⏱️ بانتظار الفحص الفيزيائي
+              </span>
+            </div>
+
+            <!-- Stage 1 Specialist & Date Info Bar (shown if approved/rejected) -->
+            <div id="lab-stage1-specialist-info" style="display: none; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 0.5rem 0.85rem; margin-bottom: 1rem; font-size: 0.82rem; color: #1e40af; font-weight: 700;">
+              —
+            </div>
+
+            <form id="form-stage1-physical" novalidate>
               <div class="lab-form-grid">
+                <div class="lab-field lab-field-full">
+                  <label class="lab-label" for="lab-stage1-test-results" style="font-weight: 700;">نتائج الاختبارات الفيزيائية النهائية (Physical Test Results) <span class="req">*</span></label>
+                  <textarea class="lab-textarea" id="lab-stage1-test-results" rows="3" placeholder="أدخل نتائج الاختبارات الفيزيائية (النعومة، زمن الشك الإبتدائي والنهائي، مقاومة الضغط والكسر، المظهر الخارجي، الأبعاد والتشطيب...)..."></textarea>
+                </div>
+
+                <div class="lab-field lab-field-full">
+                  <label class="lab-label" for="lab-stage1-notes" style="font-weight: 700;">ملاحظات الفاحص الفيزيائي (Physical Inspector Notes)</label>
+                  <textarea class="lab-textarea" id="lab-stage1-notes" rows="2" placeholder="ملاحظات فاحص المعمل الفيزيائي، التوصيات الفنية، وحالة العينة..."></textarea>
+                </div>
+
                 <div class="lab-field">
-                  <label class="lab-label">قرار التفتيش والفحص النهائي <span class="req">*</span></label>
-                  <select class="lab-select" id="lab-final-decision" required style="font-weight: 800; font-size: 0.95rem; padding: 0.65rem 0.85rem;">
-                    <option value="APPROVED" style="color: #166534; font-weight: 800;">Approved – مطابق للمواصفات (معتمد مخبرياً ومصرح بالتوريد)</option>
-                    <option value="REJECTED" style="color: #991B1B; font-weight: 800;">Rejected – غير مطابق للمواصفات (مرفوض مخبرياً)</option>
-                    <option value="UNDER_INSPECTION" style="color: #0369A1; font-weight: 800;">Under Inspection – قيد الفحص والتحليل المخبري</option>
-                    <option value="PENDING_INSPECTION" style="color: #92400E; font-weight: 800;">Pending Laboratory Inspection – قيد انتظار الفحص</option>
+                  <label class="lab-label" for="lab-stage1-decision" style="font-weight: 700;">قرار الفحص الفيزيائي (Stage 1 Decision) <span class="req">*</span></label>
+                  <select class="lab-select" id="lab-stage1-decision" required style="font-weight: 800; font-size: 0.95rem; padding: 0.65rem 0.85rem; border: 1.5px solid #3b82f6;">
+                    <option value="APPROVED" style="color: #166534; font-weight: 800;">Approved – اجتياز واعتماد الفحص الفيزيائي (تمرير للمرحلة الكيميائية)</option>
+                    <option value="REJECTED" style="color: #991B1B; font-weight: 800;">Rejected – رفض الفحص الفيزيائي (إيقاف مسار الاعتماد نهائياً)</option>
                   </select>
                 </div>
 
                 <div class="lab-field">
-                  <label class="lab-label">مرفق تقرير/شهادة الفحص المخبري الموقعة (PDF, JPG, PNG)</label>
-                  <input type="file" class="lab-input" id="lab-final-attachment" accept=".pdf,image/jpeg,image/png">
+                  <label class="lab-label" for="lab-stage1-attachment" style="font-weight: 700;">مرفق تقرير الفحص الفيزيائي الموقع (PDF, JPG, PNG)</label>
+                  <input type="file" class="lab-input" id="lab-stage1-attachment" accept=".pdf,image/jpeg,image/png">
                 </div>
               </div>
 
-              <!-- Rejection Details Box (shown if REJECTED is selected) -->
-              <div id="lab-final-rejection-wrap" style="display: none; background: #FEF2F2; border: 1.5px solid #FCA5A5; border-radius: 8px; padding: 1.25rem; margin-top: 1.25rem;">
-                <div style="font-weight: 800; color: #991B1B; margin-bottom: 0.75rem; font-size: 0.95rem; display: flex; align-items: center; gap: 6px;">
+              <!-- Stage 1 Rejection Wrap -->
+              <div id="lab-stage1-rejection-wrap" style="display: none; background: #FEF2F2; border: 1.5px solid #FCA5A5; border-radius: 8px; padding: 1rem; margin-top: 1rem;">
+                <div style="font-weight: 800; color: #991B1B; margin-bottom: 0.6rem; font-size: 0.92rem; display: flex; align-items: center; gap: 6px;">
                   <span>⚠️</span>
-                  <span>بيانات عدم المطابقة وأسباب الرفض والإجراء التصحيحي المطلوب:</span>
+                  <span>أسباب الرفض الفيزيائي وعدم المطابقة:</span>
                 </div>
                 <div class="lab-form-grid">
                   <div class="lab-field lab-field-full">
-                    <label class="lab-label" style="color: #991B1B;">أسباب الرفض وعدم المطابقة للمواصفات <span class="req">*</span></label>
-                    <textarea class="lab-textarea" id="lab-final-rejection-reason" rows="2" placeholder="حدد بالتفصيل معايير عدم المطابقة (مثل: هبوط المقاومة عن الحد المسموح، عيوب سطحية، نسبة شوائب...)" style="border-color: #F87171;"></textarea>
+                    <label class="lab-label" style="color: #991B1B;">أسباب الرفض الفيزيائي بالتفصيل <span class="req">*</span></label>
+                    <textarea class="lab-textarea" id="lab-stage1-rejection-reason" rows="2" placeholder="حدد بالتفصيل أسباب عدم المطابقة الفيزيائية (هبوط مقاومة الضغط، تشققات، عيوب أبعاد...)" style="border-color: #F87171;"></textarea>
                   </div>
                   <div class="lab-field">
-                    <label class="lab-label" style="color: #991B1B;">توصيات والإجراءات التصحيحية المقترحة لقسم الإنتاج</label>
-                    <input type="text" class="lab-input" id="lab-final-corrective-action" placeholder="مثال: تعديل نسبة الركام والأسمنت، إعادة الخلط..." style="border-color: #F87171;">
+                    <label class="lab-label" style="color: #991B1B;">الإجراء التصحيحي المقترح لقسم الإنتاج</label>
+                    <input type="text" class="lab-input" id="lab-stage1-corrective-action" placeholder="مثال: مراجعة نسب خلط الركام، تعديل المعالجة الحرارية..." style="border-color: #F87171;">
                   </div>
                   <div class="lab-field">
                     <label class="lab-label" style="color: #991B1B;">الإجراء المتخذ على الشحنة المرفوضة</label>
-                    <select class="lab-select" id="lab-final-nonconf-action" style="border-color: #F87171;">
+                    <select class="lab-select" id="lab-stage1-nonconf-action" style="border-color: #F87171;">
                       <option value="REWORK_REMANUFACTURE">إعادة تشغيل وتصنيع (Rework / Remanufacture)</option>
                       <option value="CLASSIFIED_PRODUCT">تخزين كمنتج مصنف / درجة ثانية (Classified Product)</option>
                       <option value="PENDING_DECISION">معلق قيد القرار / حجر فني (Quarantine / Pending Decision)</option>
@@ -1939,16 +1991,146 @@
                   </div>
                 </div>
               </div>
+
+              <div style="display: flex; justify-content: flex-end; margin-top: 1.25rem;">
+                <button type="button" class="lab-btn" id="btn-submit-stage1-physical" style="padding: 0.75rem 2rem; font-weight: 800; font-size: 0.95rem; background: #2563eb; color: #ffffff;">
+                  حفظ واعتماد الفحص الفيزيائي (مرحلة 1)
+                </button>
+              </div>
+            </form>
+          </div>
+
+          <!-- ============================================================= -->
+          <!-- STAGE 2 CARD: CHEMICAL LABORATORY APPROVAL                    -->
+          <!-- ============================================================= -->
+          <div id="lab-stage2-card" style="display: none; background: #ffffff; border: 2px solid #059669; border-radius: 10px; padding: 1.35rem; margin-bottom: 1.5rem; box-shadow: 0 2px 5px rgba(0,0,0,0.04);">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; border-bottom: 1.5px solid #e2e8f0; padding-bottom: 0.75rem; margin-bottom: 1rem;">
+              <div>
+                <h3 style="margin: 0; font-size: 1.1rem; font-weight: 800; color: #065f46; display: flex; align-items: center; gap: 6px;">
+                  <span>🧪</span>
+                  <span>المرحلة الثانية: التحليل والاعتماد المخبري الكيميائي (Stage 2 — Chemical Laboratory)</span>
+                </h3>
+                <small style="color: #64748b; font-size: 0.8rem;">تحليل التركيب الكيميائي ونسب الأكاسيد وإصدار شهادة المطابقة النهائية الرسمية.</small>
+              </div>
+              <span id="lab-stage2-status-badge" class="lab-badge" style="font-size: 0.85rem; padding: 4px 12px; font-weight: 800; background: #f1f5f9; color: #64748b;">
+                🔒 مقفل
+              </span>
             </div>
 
-            <!-- Form Action Buttons -->
-            <div class="lab-form-actions" style="display: flex; justify-content: flex-end; gap: 1rem; align-items: center;">
-              <button type="button" class="lab-btn lab-btn-outline" id="lab-final-btn-reset">إلغاء وتفريغ النموذج</button>
-              <button type="submit" class="lab-btn lab-btn-primary" id="lab-final-submit" style="padding: 0.75rem 2rem; font-weight: 800; font-size: 0.98rem; background: #059669; color: #ffffff;">
-                اعتماد وإصدار شهادة المطابقة المخبرية
-              </button>
+            <!-- LOCKED BANNER (Shown when Stage 1 is not approved) -->
+            <div id="lab-stage2-locked-msg" style="background: #f8fafc; border: 1.5px dashed #94a3b8; border-radius: 8px; padding: 1.5rem; text-align: center; margin-bottom: 0.5rem;">
+              <div style="font-size: 2.2rem; margin-bottom: 0.5rem;">🔒</div>
+              <h4 id="lab-stage2-locked-title" style="margin: 0; color: #334155; font-size: 1rem; font-weight: 800;">
+                المرحلة الكيميائية مقفلة حالياً
+              </h4>
+              <p id="lab-stage2-locked-text" style="margin: 0.4rem 0 0; font-size: 0.85rem; color: #64748b;">
+                لا يمكن إجراء أو اعتماد الفحص الكيميائي قبل إتمام واعتماد الفحص الفيزيائي أولاً (Physical Approval Required).
+              </p>
             </div>
-          </form>
+
+            <!-- UNLOCKED STAGE 2 FORM BODY -->
+            <div id="lab-stage2-body" style="display: none;">
+              
+              <!-- STAGE 1 REVIEW BOX FOR CHEMICAL SPECIALIST -->
+              <div style="background: #eff6ff; border: 1.5px solid #93c5fd; border-radius: 8px; padding: 1rem; margin-bottom: 1.25rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
+                  <strong style="color: #1e40af; font-size: 0.88rem; display: flex; align-items: center; gap: 6px;">
+                    <span>📋</span>
+                    <span>بيانات ونتائج الفحص الفيزيائي المعتمد (المرحلة الأولى) — للمراجعة قبل التحليل الكيميائي:</span>
+                  </strong>
+                  <span id="lab-stage2-review-s1-badge" class="lab-badge" style="background: #dcfce7; color: #166534; font-weight: 800; font-size: 0.78rem;">
+                    ✅ معتمد فيزيائياً
+                  </span>
+                </div>
+                <div style="font-size: 0.82rem; color: #1e3a8a; line-height: 1.6;">
+                  <div style="margin-bottom: 4px;">
+                    <strong>الفاحص الفيزيائي المعتمد: </strong>
+                    <span id="lab-stage2-review-s1-emp">—</span>
+                    <span style="color: #64748b; margin: 0 6px;">|</span>
+                    <strong>تاريخ الاعتماد: </strong>
+                    <span id="lab-stage2-review-s1-date">—</span>
+                  </div>
+                  <div style="margin-bottom: 4px;">
+                    <strong>نتائج الاختبارات الفيزيائية: </strong>
+                    <span id="lab-stage2-review-s1-results" style="font-weight: 700; white-space: pre-wrap;">—</span>
+                  </div>
+                  <div>
+                    <strong>ملاحظات الفاحص الفيزيائي: </strong>
+                    <span id="lab-stage2-review-s1-notes" style="white-space: pre-wrap;">—</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Stage 2 Specialist & Date Info Bar (shown if approved/rejected) -->
+              <div id="lab-stage2-specialist-info" style="display: none; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 6px; padding: 0.5rem 0.85rem; margin-bottom: 1rem; font-size: 0.82rem; color: #065f46; font-weight: 700;">
+                —
+              </div>
+
+              <form id="form-stage2-chemical" novalidate>
+                <div class="lab-form-grid">
+                  <div class="lab-field lab-field-full">
+                    <label class="lab-label" for="lab-stage2-test-results" style="font-weight: 700;">نتائج التحاليل والاختبارات الكيميائية (Chemical Analysis & Test Results) <span class="req">*</span></label>
+                    <textarea class="lab-textarea" id="lab-stage2-test-results" rows="3" placeholder="أدخل نتائج التحاليل الكيميائية ونسب الأكاسيد (SiO₂، Cl⁻، CaO، MgO، Fe₂O₃، Al₂O₃، L.O.I، Moisture)..."></textarea>
+                  </div>
+
+                  <div class="lab-field lab-field-full">
+                    <label class="lab-label" for="lab-stage2-notes" style="font-weight: 700;">ملاحظات الفاحص الكيميائي (Chemical Inspector Notes)</label>
+                    <textarea class="lab-textarea" id="lab-stage2-notes" rows="2" placeholder="ملاحظات وتوصيات الفاحص الكيميائي بشأن نقاوة الخلطة والمطابقة الكيميائية..."></textarea>
+                  </div>
+
+                  <div class="lab-field">
+                    <label class="lab-label" for="lab-stage2-decision" style="font-weight: 700;">قرار الفحص الكيميائي والاعتماد النهائي (Stage 2 Decision) <span class="req">*</span></label>
+                    <select class="lab-select" id="lab-stage2-decision" required style="font-weight: 800; font-size: 0.95rem; padding: 0.65rem 0.85rem; border: 1.5px solid #059669;">
+                      <option value="APPROVED" style="color: #166534; font-weight: 800;">Approved – اعتماد الفحص الكيميائي وإصدار شهادة المطابقة النهائية الرسمية</option>
+                      <option value="REJECTED" style="color: #991B1B; font-weight: 800;">Rejected – رفض الفحص الكيميائي (عدم إصدار شهادة المطابقة)</option>
+                    </select>
+                  </div>
+
+                  <div class="lab-field">
+                    <label class="lab-label" for="lab-stage2-attachment" style="font-weight: 700;">مرفق تقرير التحليل الكيميائي الموقع (PDF, JPG, PNG)</label>
+                    <input type="file" class="lab-input" id="lab-stage2-attachment" accept=".pdf,image/jpeg,image/png">
+                  </div>
+                </div>
+
+                <!-- Stage 2 Rejection Wrap -->
+                <div id="lab-stage2-rejection-wrap" style="display: none; background: #FEF2F2; border: 1.5px solid #FCA5A5; border-radius: 8px; padding: 1rem; margin-top: 1rem;">
+                  <div style="font-weight: 800; color: #991B1B; margin-bottom: 0.6rem; font-size: 0.92rem; display: flex; align-items: center; gap: 6px;">
+                    <span>⚠️</span>
+                    <span>أسباب الرفض الكيميائي وعدم المطابقة:</span>
+                  </div>
+                  <div class="lab-form-grid">
+                    <div class="lab-field lab-field-full">
+                      <label class="lab-label" style="color: #991B1B;">أسباب الرفض الكيميائي بالتفصيل <span class="req">*</span></label>
+                      <textarea class="lab-textarea" id="lab-stage2-rejection-reason" rows="2" placeholder="حدد بالتفصيل أسباب عدم المطابقة الكيميائية (ارتفاع نسبة الكلوريدات، تجاوز الفقد بالحرق، انخفاض السيليكا...)" style="border-color: #F87171;"></textarea>
+                    </div>
+                    <div class="lab-field">
+                      <label class="lab-label" style="color: #991B1B;">الإجراء التصحيحي المقترح لقسم الإنتاج</label>
+                      <input type="text" class="lab-input" id="lab-stage2-corrective-action" placeholder="مثال: تعديل مصادر المواد الخام، غسيل الركام..." style="border-color: #F87171;">
+                    </div>
+                    <div class="lab-field">
+                      <label class="lab-label" style="color: #991B1B;">الإجراء المتخذ على الشحنة المرفوضة</label>
+                      <select class="lab-select" id="lab-stage2-nonconf-action" style="border-color: #F87171;">
+                        <option value="REWORK_REMANUFACTURE">إعادة تشغيل وتصنيع (Rework / Remanufacture)</option>
+                        <option value="CLASSIFIED_PRODUCT">تخزين كمنتج مصنف / درجة ثانية (Classified Product)</option>
+                        <option value="PENDING_DECISION">معلق قيد القرار / حجر فني (Quarantine / Pending Decision)</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; margin-top: 1.25rem;">
+                  <button type="button" class="lab-btn" id="btn-submit-stage2-chemical" style="padding: 0.75rem 2rem; font-weight: 800; font-size: 0.98rem; background: #059669; color: #ffffff;">
+                    حفظ واعتماد الفحص الكيميائي وإصدار الشهادة النهائية الرسمية
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <!-- Form Global Reset Button -->
+          <div style="display: flex; justify-content: flex-end; gap: 1rem; align-items: center; margin-top: 1rem;">
+            <button type="button" class="lab-btn lab-btn-outline" id="lab-final-btn-reset">إلغاء وتفريغ الاختيار</button>
+          </div>
         </div>
 
         <!-- 3. Table: Issued Final Conformity Certificates Log -->
@@ -1956,7 +2138,7 @@
           <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: 1rem; border-bottom: 1px solid #f1f5f9; padding-bottom: 0.75rem;">
             <div>
               <h3 style="margin: 0; font-size: 1.15rem; font-weight: 800; color: #0F2A5C;">سجل شهادات مطابقة المنتج النهائي الصادرة</h3>
-              <p style="margin: 0.25rem 0 0; font-size: 0.82rem; color: #64748B;">استعراض وطباعة كافة شهادات المطابقة المعتمدة والمرفوضة ومتابعة ترحيلها للمستودع.</p>
+              <p style="margin: 0.25rem 0 0; font-size: 0.82rem; color: #64748B;">استعراض وطباعة شهادات المطابقة ذات الاعتمادين وتوثيق نتائج المرحلتين الفيزيائية والكيميائية.</p>
             </div>
             <div style="display: flex; gap: 0.5rem; align-items: center;">
               <input type="text" id="lab-final-log-search" class="lab-input" placeholder="بحث برقم الشهادة / رقم التصنيع..." style="font-size: 0.82rem; padding: 0.4rem 0.75rem; width: 220px;">
@@ -1975,14 +2157,15 @@
                   <th style="padding: 8px 12px;">اسم المنتج النهائي</th>
                   <th style="padding: 8px 12px;">عملية الإنتاج</th>
                   <th style="padding: 8px 12px;">الكمية (طن)</th>
-                  <th style="padding: 8px 12px;">قرار المطابقة</th>
-                  <th style="padding: 8px 12px;">الفاحص المعتمد</th>
+                  <th style="padding: 8px 12px;">الفحص الفيزيائي (م1)</th>
+                  <th style="padding: 8px 12px;">التحليل الكيميائي (م2)</th>
+                  <th style="padding: 8px 12px;">القرار النهائي</th>
                   <th style="padding: 8px 12px;">تاريخ الاعتماد</th>
                   <th style="padding: 8px 12px; text-align: center;">إجراءات</th>
                 </tr>
               </thead>
               <tbody id="lab-final-certs-tbody">
-                <tr><td colspan="9" style="text-align: center; color: #94a3b8; padding: 2rem;">جاري تحميل سجل شهادات المطابقة...</td></tr>
+                <tr><td colspan="10" style="text-align: center; color: #94a3b8; padding: 2rem;">جاري تحميل سجل شهادات المطابقة...</td></tr>
               </tbody>
             </table>
           </div>
@@ -2023,58 +2206,63 @@
         this.onFinalProductSelected(val);
       });
 
-      // Decision change (shows/hides rejection wrap and alters submit text)
-      const decisionSelect = document.getElementById('lab-final-decision');
-      const rejWrap = document.getElementById('lab-final-rejection-wrap');
-      const submitBtn = document.getElementById('lab-final-submit');
-
-      decisionSelect?.addEventListener('change', () => {
-        const val = decisionSelect.value;
-        if (val === 'REJECTED') {
-          if (rejWrap) rejWrap.style.display = 'block';
-          if (submitBtn) {
-            submitBtn.textContent = 'حفظ قرار الرفض المخبري للمنتج';
-            submitBtn.style.background = '#dc2626';
-          }
-        } else if (val === 'UNDER_INSPECTION') {
-          if (rejWrap) rejWrap.style.display = 'none';
-          if (submitBtn) {
-            submitBtn.textContent = 'حفظ حالة الفحص (قيد الفحص المخبري)';
-            submitBtn.style.background = '#0284c7';
-          }
-        } else if (val === 'PENDING_INSPECTION') {
-          if (rejWrap) rejWrap.style.display = 'none';
-          if (submitBtn) {
-            submitBtn.textContent = 'تعيين الحالة كـ (قيد انتظار الفحص)';
-            submitBtn.style.background = '#d97706';
+      // Stage 1 Decision change
+      const s1Dec = document.getElementById('lab-stage1-decision');
+      const s1RejWrap = document.getElementById('lab-stage1-rejection-wrap');
+      const s1SubmitBtn = document.getElementById('btn-submit-stage1-physical');
+      s1Dec?.addEventListener('change', () => {
+        if (s1Dec.value === 'REJECTED') {
+          if (s1RejWrap) s1RejWrap.style.display = 'block';
+          if (s1SubmitBtn) {
+            s1SubmitBtn.textContent = 'تسجيل قرار الرفض الفيزيائي للمنتج';
+            s1SubmitBtn.style.background = '#dc2626';
           }
         } else {
-          if (rejWrap) rejWrap.style.display = 'none';
-          if (submitBtn) {
-            submitBtn.textContent = 'اعتماد وإصدار شهادة المطابقة المخبرية';
-            submitBtn.style.background = '#059669';
+          if (s1RejWrap) s1RejWrap.style.display = 'none';
+          if (s1SubmitBtn) {
+            s1SubmitBtn.textContent = 'حفظ واعتماد الفحص الفيزيائي (مرحلة 1)';
+            s1SubmitBtn.style.background = '#2563eb';
           }
         }
       });
 
-      // Reset button
-      document.getElementById('lab-final-btn-reset')?.addEventListener('click', () => {
-        document.getElementById('lab-final-form')?.reset();
-        const ctxBox = document.getElementById('lab-final-context-box');
-        if (ctxBox) ctxBox.style.display = 'none';
-        this.selectedFinishedProduct = null;
-        if (decisionSelect) decisionSelect.value = 'APPROVED';
-        if (rejWrap) rejWrap.style.display = 'none';
-        if (submitBtn) {
-          submitBtn.textContent = 'اعتماد وإصدار شهادة المطابقة المخبرية';
-          submitBtn.style.background = '#059669';
+      // Stage 2 Decision change
+      const s2Dec = document.getElementById('lab-stage2-decision');
+      const s2RejWrap = document.getElementById('lab-stage2-rejection-wrap');
+      const s2SubmitBtn = document.getElementById('btn-submit-stage2-chemical');
+      s2Dec?.addEventListener('change', () => {
+        if (s2Dec.value === 'REJECTED') {
+          if (s2RejWrap) s2RejWrap.style.display = 'block';
+          if (s2SubmitBtn) {
+            s2SubmitBtn.textContent = 'تسجيل قرار الرفض الكيميائي للمنتج';
+            s2SubmitBtn.style.background = '#dc2626';
+          }
+        } else {
+          if (s2RejWrap) s2RejWrap.style.display = 'none';
+          if (s2SubmitBtn) {
+            s2SubmitBtn.textContent = 'حفظ واعتماد الفحص الكيميائي وإصدار الشهادة النهائية الرسمية';
+            s2SubmitBtn.style.background = '#059669';
+          }
         }
       });
 
-      // Form submission
-      document.getElementById('lab-final-form')?.addEventListener('submit', async (e) => {
+      // Stage 1 Submit
+      document.getElementById('btn-submit-stage1-physical')?.addEventListener('click', async (e) => {
         e.preventDefault();
-        await this.handleFinalCertificateSubmit();
+        await this.handleFinalPhysicalSubmit();
+      });
+
+      // Stage 2 Submit
+      document.getElementById('btn-submit-stage2-chemical')?.addEventListener('click', async (e) => {
+        e.preventDefault();
+        await this.handleFinalChemicalSubmit();
+      });
+
+      // Global Reset button
+      document.getElementById('lab-final-btn-reset')?.addEventListener('click', () => {
+        const prodSelect = document.getElementById('lab-final-prod-select');
+        if (prodSelect) prodSelect.value = '';
+        this.onFinalProductSelected(null);
       });
 
       // Certificates Log Search
@@ -2091,20 +2279,20 @@
 
           // Update counts
           const allCount = res.data.length;
-          const pendingCount = res.data.filter(x => x.laboratoryConformityStatus === 'PENDING_INSPECTION').length;
-          const underCount = res.data.filter(x => x.laboratoryConformityStatus === 'UNDER_INSPECTION').length;
-          const appCount = res.data.filter(x => x.laboratoryConformityStatus === 'APPROVED').length;
-          const rejCount = res.data.filter(x => x.laboratoryConformityStatus === 'REJECTED').length;
+          const pendingPhysCount = res.data.filter(x => x.overallStatus === 'PENDING_PHYSICAL' || (!x.physicalApprovalStatus || x.physicalApprovalStatus === 'PENDING')).length;
+          const pendingChemCount = res.data.filter(x => x.physicalApprovalStatus === 'APPROVED' && (!x.chemicalApprovalStatus || x.chemicalApprovalStatus === 'PENDING')).length;
+          const appCount = res.data.filter(x => x.overallStatus === 'APPROVED').length;
+          const rejCount = res.data.filter(x => x.overallStatus === 'REJECTED' || x.physicalApprovalStatus === 'REJECTED' || x.chemicalApprovalStatus === 'REJECTED').length;
 
           const cAll = document.getElementById('count-final-all');
-          const cPend = document.getElementById('count-final-pending');
-          const cUnd = document.getElementById('count-final-under');
+          const cPhys = document.getElementById('count-final-pending-physical');
+          const cChem = document.getElementById('count-final-pending-chemical');
           const cApp = document.getElementById('count-final-approved');
           const cRej = document.getElementById('count-final-rejected');
 
           if (cAll) cAll.textContent = allCount;
-          if (cPend) cPend.textContent = pendingCount;
-          if (cUnd) cUnd.textContent = underCount;
+          if (cPhys) cPhys.textContent = pendingPhysCount;
+          if (cChem) cChem.textContent = pendingChemCount;
           if (cApp) cApp.textContent = appCount;
           if (cRej) cRej.textContent = rejCount;
 
@@ -2123,16 +2311,27 @@
       if (!select) return;
 
       let list = this.eligibleFinishedProducts || [];
-      if (status && status !== 'ALL') {
-        list = list.filter(x => x.laboratoryConformityStatus === status);
+      if (status === 'PENDING_PHYSICAL') {
+        list = list.filter(x => x.overallStatus === 'PENDING_PHYSICAL' || (!x.physicalApprovalStatus || x.physicalApprovalStatus === 'PENDING'));
+      } else if (status === 'PENDING_CHEMICAL') {
+        list = list.filter(x => x.physicalApprovalStatus === 'APPROVED' && (!x.chemicalApprovalStatus || x.chemicalApprovalStatus === 'PENDING'));
+      } else if (status === 'APPROVED') {
+        list = list.filter(x => x.overallStatus === 'APPROVED');
+      } else if (status === 'REJECTED') {
+        list = list.filter(x => x.overallStatus === 'REJECTED' || x.physicalApprovalStatus === 'REJECTED' || x.chemicalApprovalStatus === 'REJECTED');
       }
 
       let html = '<option value="">-- اختر المنتج النهائي من قسم الإنتاج لإجراء الفحص والاعتماد --</option>';
       list.forEach(p => {
         const isSel = selectedId && p.finishedProductId === selectedId;
-        const statusBadge = p.laboratoryConformityStatus === 'APPROVED' ? '✅ معتمد'
-          : (p.laboratoryConformityStatus === 'REJECTED' ? '❌ مرفوض'
-            : (p.laboratoryConformityStatus === 'UNDER_INSPECTION' ? '🔬 قيد الفحص' : '⏱️ بانتظار الفحص'));
+        let statusBadge = '⏱️ بانتظار الفحص الفيزيائي (مرحلة 1)';
+        if (p.overallStatus === 'APPROVED' || (p.physicalApprovalStatus === 'APPROVED' && p.chemicalApprovalStatus === 'APPROVED')) {
+          statusBadge = '✅ معتمد رسمياً (فيزيائي + كيميائي)';
+        } else if (p.overallStatus === 'REJECTED' || p.physicalApprovalStatus === 'REJECTED' || p.chemicalApprovalStatus === 'REJECTED') {
+          statusBadge = '❌ مرفوض مخبرياً';
+        } else if (p.physicalApprovalStatus === 'APPROVED' && (!p.chemicalApprovalStatus || p.chemicalApprovalStatus === 'PENDING')) {
+          statusBadge = '⏱️ بانتظار الاعتماد الكيميائي (مرحلة 2)';
+        }
         const orderTxt = p.productionOrderNumber ? ` [أمر: ${p.productionOrderNumber}]` : '';
 
         html += `<option value="${p.finishedProductId}" ${isSel ? 'selected' : ''}>
@@ -2152,9 +2351,16 @@
 
     static onFinalProductSelected(finishedProductId) {
       const contextBox = document.getElementById('lab-final-context-box');
+      const overallBanner = document.getElementById('lab-final-overall-banner');
+      const stage1Card = document.getElementById('lab-stage1-card');
+      const stage2Card = document.getElementById('lab-stage2-card');
+
       if (!finishedProductId) {
         this.selectedFinishedProduct = null;
         if (contextBox) contextBox.style.display = 'none';
+        if (overallBanner) overallBanner.style.display = 'none';
+        if (stage1Card) stage1Card.style.display = 'none';
+        if (stage2Card) stage2Card.style.display = 'none';
         return;
       }
 
@@ -2162,13 +2368,19 @@
       if (!prod) {
         this.selectedFinishedProduct = null;
         if (contextBox) contextBox.style.display = 'none';
+        if (overallBanner) overallBanner.style.display = 'none';
+        if (stage1Card) stage1Card.style.display = 'none';
+        if (stage2Card) stage2Card.style.display = 'none';
         return;
       }
 
       this.selectedFinishedProduct = prod;
       if (contextBox) contextBox.style.display = 'block';
+      if (overallBanner) overallBanner.style.display = 'block';
+      if (stage1Card) stage1Card.style.display = 'block';
+      if (stage2Card) stage2Card.style.display = 'block';
 
-      // Update Context Fields
+      // 1. Update Production Traceability Context
       const procEl = document.getElementById('lab-ctx-proc-num');
       const orderEl = document.getElementById('lab-ctx-order-num');
       const mfgEl = document.getElementById('lab-ctx-mfg-num');
@@ -2202,28 +2414,6 @@
           : '<span style="color: #94a3b8;">غير مرفق</span>';
       }
 
-      // Status Badge
-      if (statusBadge) {
-        const st = prod.laboratoryConformityStatus;
-        if (st === 'APPROVED') {
-          statusBadge.textContent = '✅ معتمد مخبرياً (مطابق للمواصفات)';
-          statusBadge.style.background = '#dcfce7';
-          statusBadge.style.color = '#166534';
-        } else if (st === 'REJECTED') {
-          statusBadge.textContent = '❌ مرفوض مخبرياً (غير مطابق)';
-          statusBadge.style.background = '#fee2e2';
-          statusBadge.style.color = '#991b1b';
-        } else if (st === 'UNDER_INSPECTION') {
-          statusBadge.textContent = '🔬 قيد الفحص والتحليل المخبري';
-          statusBadge.style.background = '#e0f2fe';
-          statusBadge.style.color = '#0369a1';
-        } else {
-          statusBadge.textContent = '⏱️ قيد فحص المختبر (بانتظار القرار)';
-          statusBadge.style.background = '#fef3c7';
-          statusBadge.style.color = '#92400e';
-        }
-      }
-
       // References Summary
       const refs = prod.associatedReferenceNumbers || [];
       if (refsSummary) {
@@ -2254,47 +2444,312 @@
         }
       }
 
-      // Set default form values according to existing decision if any
-      const decSelect = document.getElementById('lab-final-decision');
-      const rejWrap = document.getElementById('lab-final-rejection-wrap');
-      const rejReason = document.getElementById('lab-final-rejection-reason');
-      const corAction = document.getElementById('lab-final-corrective-action');
-      const submitBtn = document.getElementById('lab-final-submit');
+      // 2. Resolve Statuses
+      const physStatus = prod.physicalApprovalStatus || (prod.laboratoryConformityStatus === 'APPROVED' ? 'APPROVED' : 'PENDING');
+      const chemStatus = prod.chemicalApprovalStatus || (prod.laboratoryConformityStatus === 'APPROVED' ? 'APPROVED' : 'PENDING');
+      const overallStatus = prod.overallStatus || (prod.laboratoryConformityStatus || 'PENDING_PHYSICAL');
 
-      if (prod.laboratoryConformityStatus === 'REJECTED') {
-        if (decSelect) decSelect.value = 'REJECTED';
-        if (rejWrap) rejWrap.style.display = 'block';
-        if (rejReason) rejReason.value = prod.laboratoryRejectionReason || '';
-        if (corAction) corAction.value = prod.laboratoryCorrectiveAction || '';
-        if (submitBtn) {
-          submitBtn.textContent = 'تحديث قرار الرفض المخبري';
-          submitBtn.style.background = '#dc2626';
+      // 3. Update Overall Status Banner & Stepper
+      const overallTitle = document.getElementById('lab-overall-status-title');
+      const overallBadge = document.getElementById('lab-overall-cert-badge');
+      const overallDesc = document.getElementById('lab-overall-status-desc');
+      const bStage1 = document.getElementById('badge-stage1-step');
+      const bStage2 = document.getElementById('badge-stage2-step');
+      const bFinal = document.getElementById('badge-final-step');
+
+      // Step 1 node badge
+      if (physStatus === 'APPROVED') {
+        if (bStage1) {
+          bStage1.textContent = '✅ معتمد فيزيائياً';
+          bStage1.style.background = '#dcfce7';
+          bStage1.style.color = '#166534';
         }
-      } else if (prod.laboratoryConformityStatus === 'UNDER_INSPECTION') {
-        if (decSelect) decSelect.value = 'UNDER_INSPECTION';
-        if (rejWrap) rejWrap.style.display = 'none';
-        if (submitBtn) {
-          submitBtn.textContent = 'حفظ حالة الفحص (قيد الفحص المخبري)';
-          submitBtn.style.background = '#0284c7';
-        }
-      } else if (prod.laboratoryConformityStatus === 'APPROVED') {
-        if (decSelect) decSelect.value = 'APPROVED';
-        if (rejWrap) rejWrap.style.display = 'none';
-        if (submitBtn) {
-          submitBtn.textContent = 'إعادة اعتماد شهادة المطابقة المخبرية';
-          submitBtn.style.background = '#059669';
+      } else if (physStatus === 'REJECTED') {
+        if (bStage1) {
+          bStage1.textContent = '❌ مرفوض فيزيائياً';
+          bStage1.style.background = '#fee2e2';
+          bStage1.style.color = '#991b1b';
         }
       } else {
-        if (decSelect) decSelect.value = 'APPROVED';
-        if (rejWrap) rejWrap.style.display = 'none';
-        if (submitBtn) {
-          submitBtn.textContent = 'اعتماد وإصدار شهادة المطابقة المخبرية';
-          submitBtn.style.background = '#059669';
+        if (bStage1) {
+          bStage1.textContent = '⏱️ بانتظار الفحص';
+          bStage1.style.background = '#fef3c7';
+          bStage1.style.color = '#92400e';
+        }
+      }
+
+      // Step 2 node badge
+      if (physStatus !== 'APPROVED') {
+        if (bStage2) {
+          bStage2.textContent = physStatus === 'REJECTED' ? '⛔ متوقف (مرفوض م1)' : '🔒 مقفل (بانتظار م1)';
+          bStage2.style.background = '#f1f5f9';
+          bStage2.style.color = '#64748b';
+        }
+      } else if (chemStatus === 'APPROVED') {
+        if (bStage2) {
+          bStage2.textContent = '✅ معتمد كيميائياً';
+          bStage2.style.background = '#dcfce7';
+          bStage2.style.color = '#166534';
+        }
+      } else if (chemStatus === 'REJECTED') {
+        if (bStage2) {
+          bStage2.textContent = '❌ مرفوض كيميائياً';
+          bStage2.style.background = '#fee2e2';
+          bStage2.style.color = '#991b1b';
+        }
+      } else {
+        if (bStage2) {
+          bStage2.textContent = '⏱️ بانتظار التحليل';
+          bStage2.style.background = '#e0f2fe';
+          bStage2.style.color = '#0369a1';
+        }
+      }
+
+      // Final step badge & overall title
+      if (overallStatus === 'APPROVED' || (physStatus === 'APPROVED' && chemStatus === 'APPROVED')) {
+        if (overallTitle) overallTitle.textContent = '✅ شهادة مطابقة معتمدة رسمياً ومطابقة للمواصفات';
+        if (overallBadge) {
+          overallBadge.textContent = 'معتمد ومطابق للمواصفات (Approved)';
+          overallBadge.style.background = '#dcfce7';
+          overallBadge.style.color = '#166534';
+        }
+        if (bFinal) {
+          bFinal.textContent = '✅ معتمد رسمياً';
+          bFinal.style.background = '#dcfce7';
+          bFinal.style.color = '#166534';
+        }
+        if (overallDesc) overallDesc.innerHTML = '🎉 <strong>مكتمل ومصرح بالصرف:</strong> تم اجتياز واعتماد كلا الفحصين الفيزيائي والكيميائي بنجاح. المنتج جاهز للتوريد ومطابق لجميع المواصفات القياسية.';
+        if (statusBadge) {
+          statusBadge.textContent = '✅ معتمد مخبرياً';
+          statusBadge.style.background = '#dcfce7';
+          statusBadge.style.color = '#166534';
+        }
+      } else if (overallStatus === 'REJECTED' || physStatus === 'REJECTED' || chemStatus === 'REJECTED') {
+        const rejStage = physStatus === 'REJECTED' ? 'المعمل الفيزيائي (مرحلة 1)' : 'المعمل الكيميائي (مرحلة 2)';
+        if (overallTitle) overallTitle.textContent = `❌ منتج غير مطابق للمواصفات — مرفوض من قبل ${rejStage}`;
+        if (overallBadge) {
+          overallBadge.textContent = 'مرفوض مخبرياً (Rejected)';
+          overallBadge.style.background = '#fee2e2';
+          overallBadge.style.color = '#991b1b';
+        }
+        if (bFinal) {
+          bFinal.textContent = '❌ مرفوض مخبرياً';
+          bFinal.style.background = '#fee2e2';
+          bFinal.style.color = '#991b1b';
+        }
+        if (overallDesc) overallDesc.innerHTML = `⚠️ <strong>تم إيقاف الاعتماد:</strong> تم رفض المنتج في ${rejStage}. لا يمكن إصدار شهادة مطابقة ولا يجوز صرف المنتج أو توريده قبل معالجة عدم المطابقة.`;
+        if (statusBadge) {
+          statusBadge.textContent = '❌ مرفوض مخبرياً';
+          statusBadge.style.background = '#fee2e2';
+          statusBadge.style.color = '#991b1b';
+        }
+      } else if (physStatus === 'APPROVED' && chemStatus !== 'APPROVED') {
+        if (overallTitle) overallTitle.textContent = '⏱️ المرحلة 1 مكتملة بنجاح — قيد انتظار الفحص والاعتماد الكيميائي (مرحلة 2)';
+        if (overallBadge) {
+          overallBadge.textContent = 'بانتظار التحليل الكيميائي (Stage 2 Pending)';
+          overallBadge.style.background = '#e0f2fe';
+          overallBadge.style.color = '#0369a1';
+        }
+        if (bFinal) {
+          bFinal.textContent = 'معلق (مرحلة 2)';
+          bFinal.style.background = '#fef3c7';
+          bFinal.style.color = '#92400e';
+        }
+        if (overallDesc) overallDesc.innerHTML = 'ℹ️ <strong>مطلوب الفحص الكيميائي:</strong> تم اجتياز الفحص الفيزيائي بنجاح. يلزم الآن اعتماد الفحص الكيميائي من فاحص المعمل الكيميائي لإصدار الشهادة النهائية.';
+        if (statusBadge) {
+          statusBadge.textContent = '⏱️ بانتظار الاعتماد الكيميائي';
+          statusBadge.style.background = '#e0f2fe';
+          statusBadge.style.color = '#0369a1';
+        }
+      } else {
+        if (overallTitle) overallTitle.textContent = '⏱️ قيد انتظار الفحص والاعتماد الفيزيائي (المرحلة الأولى)';
+        if (overallBadge) {
+          overallBadge.textContent = 'بانتظار الفحص الفيزيائي (Stage 1 Pending)';
+          overallBadge.style.background = '#fef3c7';
+          overallBadge.style.color = '#92400e';
+        }
+        if (bFinal) {
+          bFinal.textContent = 'معلق (مرحلة 1)';
+          bFinal.style.background = '#f1f5f9';
+          bFinal.style.color = '#64748b';
+        }
+        if (overallDesc) overallDesc.innerHTML = 'ℹ️ <strong>مطلوب الفحص الفيزيائي:</strong> يجب على فاحص المعمل الفيزيائي فحص المنتج أولاً وتسجيل نتائج الاختبارات الفيزيائية واعتمادها لتفعيل المرحلة الكيميائية.';
+        if (statusBadge) {
+          statusBadge.textContent = '⏱️ بانتظار الفحص الفيزيائي';
+          statusBadge.style.background = '#fef3c7';
+          statusBadge.style.color = '#92400e';
+        }
+      }
+
+      // 4. Update STAGE 1 (Physical Approval) UI
+      const s1Badge = document.getElementById('lab-stage1-status-badge');
+      const s1SpecInfo = document.getElementById('lab-stage1-specialist-info');
+      const s1TestRes = document.getElementById('lab-stage1-test-results');
+      const s1Notes = document.getElementById('lab-stage1-notes');
+      const s1Dec = document.getElementById('lab-stage1-decision');
+      const s1RejWrap = document.getElementById('lab-stage1-rejection-wrap');
+      const s1RejReason = document.getElementById('lab-stage1-rejection-reason');
+      const s1CorAction = document.getElementById('lab-stage1-corrective-action');
+      const s1SubmitBtn = document.getElementById('btn-submit-stage1-physical');
+
+      if (s1TestRes) s1TestRes.value = prod.physicalTestResults || '';
+      if (s1Notes) s1Notes.value = prod.physicalNotes || '';
+
+      if (physStatus === 'APPROVED') {
+        if (s1Badge) {
+          s1Badge.textContent = '✅ تم اعتماد الفحص الفيزيائي';
+          s1Badge.style.background = '#dcfce7';
+          s1Badge.style.color = '#166534';
+        }
+        if (s1SpecInfo) {
+          s1SpecInfo.style.display = 'block';
+          s1SpecInfo.innerHTML = `✅ <strong>تم الاعتماد الفيزيائي بواسطة:</strong> ${this.esc(prod.physicalApprovedBy || 'فاحص المعمل الفيزيائي')} — <strong>التاريخ:</strong> ${(prod.physicalApprovedAt || '').slice(0, 16).replace('T', ' ') || '—'}`;
+        }
+        if (s1Dec) s1Dec.value = 'APPROVED';
+        if (s1RejWrap) s1RejWrap.style.display = 'none';
+        if (s1SubmitBtn) {
+          s1SubmitBtn.textContent = 'إعادة اعتماد وتحديث الفحص الفيزيائي';
+          s1SubmitBtn.style.background = '#2563eb';
+        }
+      } else if (physStatus === 'REJECTED') {
+        if (s1Badge) {
+          s1Badge.textContent = '❌ مرفوض فيزيائياً';
+          s1Badge.style.background = '#fee2e2';
+          s1Badge.style.color = '#991b1b';
+        }
+        if (s1SpecInfo) {
+          s1SpecInfo.style.display = 'block';
+          s1SpecInfo.innerHTML = `❌ <strong>تم الرفض الفيزيائي بواسطة:</strong> ${this.esc(prod.physicalApprovedBy || 'فاحص المعمل الفيزيائي')} — <strong>التاريخ:</strong> ${(prod.physicalApprovedAt || '').slice(0, 16).replace('T', ' ') || '—'}`;
+        }
+        if (s1Dec) s1Dec.value = 'REJECTED';
+        if (s1RejWrap) s1RejWrap.style.display = 'block';
+        if (s1RejReason) s1RejReason.value = prod.laboratoryRejectionReason || '';
+        if (s1CorAction) s1CorAction.value = prod.laboratoryCorrectiveAction || '';
+        if (s1SubmitBtn) {
+          s1SubmitBtn.textContent = 'تحديث قرار الرفض الفيزيائي';
+          s1SubmitBtn.style.background = '#dc2626';
+        }
+      } else {
+        if (s1Badge) {
+          s1Badge.textContent = '⏱️ بانتظار الفحص الفيزيائي';
+          s1Badge.style.background = '#fef3c7';
+          s1Badge.style.color = '#92400e';
+        }
+        if (s1SpecInfo) s1SpecInfo.style.display = 'none';
+        if (s1Dec) s1Dec.value = 'APPROVED';
+        if (s1RejWrap) s1RejWrap.style.display = 'none';
+        if (s1SubmitBtn) {
+          s1SubmitBtn.textContent = 'حفظ واعتماد الفحص الفيزيائي (مرحلة 1)';
+          s1SubmitBtn.style.background = '#2563eb';
+        }
+      }
+
+      // 5. Update STAGE 2 (Chemical Approval) UI
+      const s2Badge = document.getElementById('lab-stage2-status-badge');
+      const s2LockedMsg = document.getElementById('lab-stage2-locked-msg');
+      const s2LockedText = document.getElementById('lab-stage2-locked-text');
+      const s2Body = document.getElementById('lab-stage2-body');
+      const s2SpecInfo = document.getElementById('lab-stage2-specialist-info');
+      const s2TestRes = document.getElementById('lab-stage2-test-results');
+      const s2Notes = document.getElementById('lab-stage2-notes');
+      const s2Dec = document.getElementById('lab-stage2-decision');
+      const s2RejWrap = document.getElementById('lab-stage2-rejection-wrap');
+      const s2RejReason = document.getElementById('lab-stage2-rejection-reason');
+      const s2CorAction = document.getElementById('lab-stage2-corrective-action');
+      const s2SubmitBtn = document.getElementById('btn-submit-stage2-chemical');
+
+      // Stage 1 review elements inside Stage 2
+      const revEmp = document.getElementById('lab-stage2-review-s1-emp');
+      const revDate = document.getElementById('lab-stage2-review-s1-date');
+      const revRes = document.getElementById('lab-stage2-review-s1-results');
+      const revNotes = document.getElementById('lab-stage2-review-s1-notes');
+
+      if (physStatus !== 'APPROVED') {
+        // LOCKED - Chemical Approval is forbidden until Physical Approval is granted!
+        if (s2LockedMsg) s2LockedMsg.style.display = 'block';
+        if (s2Body) s2Body.style.display = 'none';
+
+        if (physStatus === 'REJECTED') {
+          if (s2Badge) {
+            s2Badge.textContent = '⛔ مسار متوقف (مرفوض فيزيائياً)';
+            s2Badge.style.background = '#fee2e2';
+            s2Badge.style.color = '#991b1b';
+          }
+          if (s2LockedText) s2LockedText.innerHTML = '⛔ <strong>تم إيقاف سير العمل:</strong> تم رفض المنتج في المرحلة الفيزيائية. لا يمكن إجراء أو اعتماد الفحص الكيميائي لمنتج مرفوض مخبرياً.';
+        } else {
+          if (s2Badge) {
+            s2Badge.textContent = '🔒 مقفل (بانتظار الفحص الفيزيائي)';
+            s2Badge.style.background = '#f1f5f9';
+            s2Badge.style.color = '#64748b';
+          }
+          if (s2LockedText) s2LockedText.innerHTML = '🔒 <strong>المرحلة الكيميائية مقفلة:</strong> لا يمكن إجراء أو اعتماد الفحص الكيميائي قبل إتمام واعتماد الفحص الفيزيائي أولاً (Physical Approval Required).';
+        }
+      } else {
+        // UNLOCKED - Physical Approval is granted!
+        if (s2LockedMsg) s2LockedMsg.style.display = 'none';
+        if (s2Body) s2Body.style.display = 'block';
+
+        // Fill Stage 1 review data for chemical specialist
+        if (revEmp) revEmp.textContent = prod.physicalApprovedBy || 'فاحص المعمل الفيزيائي';
+        if (revDate) revDate.textContent = (prod.physicalApprovedAt || '').slice(0, 16).replace('T', ' ') || '—';
+        if (revRes) revRes.textContent = prod.physicalTestResults || 'تم اجتياز الفحص والمطابقة الفيزيائية.';
+        if (revNotes) revNotes.textContent = prod.physicalNotes || 'لا توجد ملاحظات إضافية.';
+
+        if (s2TestRes) s2TestRes.value = prod.chemicalTestResults || '';
+        if (s2Notes) s2Notes.value = prod.chemicalNotes || '';
+
+        if (chemStatus === 'APPROVED') {
+          if (s2Badge) {
+            s2Badge.textContent = '✅ تم اعتماد الفحص الكيميائي';
+            s2Badge.style.background = '#dcfce7';
+            s2Badge.style.color = '#166534';
+          }
+          if (s2SpecInfo) {
+            s2SpecInfo.style.display = 'block';
+            s2SpecInfo.innerHTML = `✅ <strong>تم الاعتماد الكيميائي بواسطة:</strong> ${this.esc(prod.chemicalApprovedBy || 'فاحص المعمل الكيميائي')} — <strong>التاريخ:</strong> ${(prod.chemicalApprovedAt || '').slice(0, 16).replace('T', ' ') || '—'}`;
+          }
+          if (s2Dec) s2Dec.value = 'APPROVED';
+          if (s2RejWrap) s2RejWrap.style.display = 'none';
+          if (s2SubmitBtn) {
+            s2SubmitBtn.textContent = 'إعادة اعتماد وتحديث الفحص الكيميائي';
+            s2SubmitBtn.style.background = '#059669';
+          }
+        } else if (chemStatus === 'REJECTED') {
+          if (s2Badge) {
+            s2Badge.textContent = '❌ مرفوض كيميائياً';
+            s2Badge.style.background = '#fee2e2';
+            s2Badge.style.color = '#991b1b';
+          }
+          if (s2SpecInfo) {
+            s2SpecInfo.style.display = 'block';
+            s2SpecInfo.innerHTML = `❌ <strong>تم الرفض الكيميائي بواسطة:</strong> ${this.esc(prod.chemicalApprovedBy || 'فاحص المعمل الكيميائي')} — <strong>التاريخ:</strong> ${(prod.chemicalApprovedAt || '').slice(0, 16).replace('T', ' ') || '—'}`;
+          }
+          if (s2Dec) s2Dec.value = 'REJECTED';
+          if (s2RejWrap) s2RejWrap.style.display = 'block';
+          if (s2RejReason) s2RejReason.value = prod.laboratoryRejectionReason || '';
+          if (s2CorAction) s2CorAction.value = prod.laboratoryCorrectiveAction || '';
+          if (s2SubmitBtn) {
+            s2SubmitBtn.textContent = 'تحديث قرار الرفض الكيميائي';
+            s2SubmitBtn.style.background = '#dc2626';
+          }
+        } else {
+          if (s2Badge) {
+            s2Badge.textContent = '⏱️ بانتظار التحليل الكيميائي';
+            s2Badge.style.background = '#e0f2fe';
+            s2Badge.style.color = '#0369a1';
+          }
+          if (s2SpecInfo) s2SpecInfo.style.display = 'none';
+          if (s2Dec) s2Dec.value = 'APPROVED';
+          if (s2RejWrap) s2RejWrap.style.display = 'none';
+          if (s2SubmitBtn) {
+            s2SubmitBtn.textContent = 'حفظ واعتماد الفحص الكيميائي وإصدار الشهادة النهائية الرسمية';
+            s2SubmitBtn.style.background = '#059669';
+          }
         }
       }
     }
 
-    static async handleFinalCertificateSubmit() {
+    static async handleFinalPhysicalSubmit() {
       const alertBox = document.getElementById('lab-final-alert');
       if (!this.selectedFinishedProduct) {
         if (alertBox) alertBox.innerHTML = '<div class="lab-alert lab-alert-error">يرجى اختيار المنتج النهائي من القائمة أولاً.</div>';
@@ -2302,105 +2757,187 @@
       }
 
       const p = this.selectedFinishedProduct;
-      const decision = document.getElementById('lab-final-decision')?.value || 'APPROVED';
-      const finalTestResults = document.getElementById('lab-final-test-results')?.value?.trim() || '';
-      const inspectorNotes = document.getElementById('lab-final-inspector-notes')?.value?.trim() || '';
-      const rejReason = document.getElementById('lab-final-rejection-reason')?.value?.trim() || '';
-      const corAction = document.getElementById('lab-final-corrective-action')?.value?.trim() || '';
-      const nonConf = document.getElementById('lab-final-nonconf-action')?.value || 'PENDING_DECISION';
+      const decision = document.getElementById('lab-stage1-decision')?.value || 'APPROVED';
+      const testResults = document.getElementById('lab-stage1-test-results')?.value?.trim() || '';
+      const notes = document.getElementById('lab-stage1-notes')?.value?.trim() || '';
+      const rejReason = document.getElementById('lab-stage1-rejection-reason')?.value?.trim() || '';
+      const corAction = document.getElementById('lab-stage1-corrective-action')?.value?.trim() || '';
+      const nonConf = document.getElementById('lab-stage1-nonconf-action')?.value || 'PENDING_DECISION';
 
-      if (decision === 'REJECTED' && !rejReason) {
-        if (alertBox) alertBox.innerHTML = '<div class="lab-alert lab-alert-error">يرجى توضيح سبب الرفض الإلزامي للمنتج غير المطابق.</div>';
-        document.getElementById('lab-final-rejection-reason')?.focus();
+      if (!testResults && decision === 'APPROVED') {
+        if (alertBox) alertBox.innerHTML = '<div class="lab-alert lab-alert-error">يرجى إدخال نتائج الاختبارات الفيزيائية النهائية قبل الاعتماد.</div>';
+        document.getElementById('lab-stage1-test-results')?.focus();
         return;
       }
 
-      const qualityParams = {
-        finalTestResults: finalTestResults,
-        inspectorNotes: inspectorNotes,
-        evaluatedAt: new Date().toISOString()
-      };
-
-      const primaryRef = (p.associatedReferenceNumbers && p.associatedReferenceNumbers.length > 0)
-        ? p.associatedReferenceNumbers[0]
-        : 1;
+      if (decision === 'REJECTED' && !rejReason) {
+        if (alertBox) alertBox.innerHTML = '<div class="lab-alert lab-alert-error">يرجى توضيح سبب الرفض الفيزيائي الإلزامي للمنتج غير المطابق.</div>';
+        document.getElementById('lab-stage1-rejection-reason')?.focus();
+        return;
+      }
 
       const fd = new FormData();
       fd.append('productionFinishedProductId', String(p.finishedProductId));
+      fd.append('physicalApprovalStatus', decision);
+      fd.append('physicalTestResults', testResults);
+      fd.append('physicalNotes', notes);
       fd.append('productionProcessId', String(p.productionProcessId));
-      fd.append('productionProcessNumber', p.processNumber);
-      fd.append('manufactureNumber', p.manufactureNumber);
-      fd.append('finalProductName', p.finishedProductName);
-      fd.append('productionReferenceNumber', String(primaryRef));
+      fd.append('productionProcessNumber', p.processNumber || '');
+      fd.append('manufactureNumber', p.manufactureNumber || '');
+      fd.append('finalProductName', p.finishedProductName || '');
+      if (p.productionOrderId) fd.append('productionOrderId', String(p.productionOrderId));
+      if (p.productionOrderNumber) fd.append('productionOrderNumber', p.productionOrderNumber);
+      fd.append('actualFinalProductQuantity', String(p.manufacturedQuantity || 0));
+      fd.append('targetQuantity', String(p.targetQuantity || p.manufacturedQuantity || 0));
+      fd.append('actualRawMaterialInputQuantity', String(p.totalInputQuantity || p.manufacturedQuantity || 0));
+      fd.append('quantityUnit', p.unit || 'طن');
       if (p.associatedReferenceNumbers && p.associatedReferenceNumbers.length > 0) {
         fd.append('associatedReferenceNumbers', p.associatedReferenceNumbers.join(', '));
+        fd.append('productionReferenceNumber', String(p.associatedReferenceNumbers[0]));
+      } else {
+        fd.append('productionReferenceNumber', '1');
       }
-      if (p.productionOrderId) {
-        fd.append('productionOrderId', String(p.productionOrderId));
-      }
-      if (p.productionOrderNumber) {
-        fd.append('productionOrderNumber', p.productionOrderNumber);
-      }
-      fd.append('actualFinalProductQuantity', String(p.manufacturedQuantity));
-      fd.append('targetQuantity', String(p.targetQuantity || p.manufacturedQuantity));
-      fd.append('actualRawMaterialInputQuantity', String(p.totalInputQuantity || p.manufacturedQuantity));
-      fd.append('quantityUnit', p.unit || 'طن');
-      fd.append('wasteClassification', 'ORDINARY_WASTE');
-      fd.append('conformityDecision', decision);
-      fd.append('laboratorySection', this.activeSection || 'PHYSICAL');
-      fd.append('specificationResultsJson', finalTestResults || JSON.stringify(qualityParams));
-      fd.append('qualityParametersJson', JSON.stringify(qualityParams));
-      fd.append('observations', inspectorNotes || finalTestResults || `فحص مواصفات المنتج النهائي ${p.finishedProductName} - قرار: ${decision}`);
-      fd.append('finalTestResults', finalTestResults);
-      fd.append('inspectorNotes', inspectorNotes);
-      
+
       if (decision === 'REJECTED') {
         fd.append('rejectionReason', rejReason);
         fd.append('correctiveAction', corAction);
         fd.append('nonConformityAction', nonConf);
       }
 
-      const fileInput = document.getElementById('lab-final-attachment');
+      const fileInput = document.getElementById('lab-stage1-attachment');
       if (fileInput && fileInput.files && fileInput.files.length > 0) {
         fd.append('attachment', fileInput.files[0]);
       }
 
-      const submitBtn = document.getElementById('lab-final-submit');
-      if (submitBtn) {
-        submitBtn.disabled = true;
-        submitBtn.textContent = 'جاري حفظ وتوثيق شهادة المطابقة...';
+      const btn = document.getElementById('btn-submit-stage1-physical');
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'جاري حفظ واعتماد الفحص الفيزيائي...';
       }
 
       try {
-        const res = await window.ChatApi.submitLaboratoryFinalCertificate(fd);
+        const res = await window.ChatApi.submitLaboratoryFinalPhysicalApproval(fd);
+        if (res && res.success) {
+          const msg = decision === 'APPROVED'
+            ? `✅ تم اعتماد الفحص الفيزيائي بنجاح! تم فتح المرحلة الثانية (المعمل الكيميائي) للفحص والاعتماد النهائي.`
+            : `❌ تم تسجيل قرار الرفض الفيزيائي للمنتج وتحديث حالته إلى مرفوض مخبرياً وإيقاف مسار الاعتماد.`;
+          if (alertBox) {
+            alertBox.innerHTML = `<div class="lab-alert lab-alert-success">${msg}</div>`;
+          }
+          await this.loadEligibleFinishedProductsForLab(this.finalCertFilterStatus || 'ALL', p.finishedProductId);
+          await this.loadIssuedCertificatesLog();
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        } else {
+          if (alertBox) alertBox.innerHTML = `<div class="lab-alert lab-alert-error">${this.esc(res?.message || 'فشل حفظ الاعتماد الفيزيائي')}</div>`;
+        }
+      } catch (err) {
+        console.error('Error submitting physical approval:', err);
+        if (alertBox) alertBox.innerHTML = `<div class="lab-alert lab-alert-error">حدث خطأ: ${this.esc(err.message || 'خطأ غير معروف')}</div>`;
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = 'حفظ واعتماد الفحص الفيزيائي (مرحلة 1)';
+        }
+      }
+    }
+
+    static async handleFinalChemicalSubmit() {
+      const alertBox = document.getElementById('lab-final-alert');
+      if (!this.selectedFinishedProduct) {
+        if (alertBox) alertBox.innerHTML = '<div class="lab-alert lab-alert-error">يرجى اختيار المنتج النهائي من القائمة أولاً.</div>';
+        return;
+      }
+
+      const p = this.selectedFinishedProduct;
+      if (p.physicalApprovalStatus !== 'APPROVED') {
+        if (alertBox) {
+          alertBox.innerHTML = '<div class="lab-alert lab-alert-error">غير مصرح: لا يمكن إجراء أو اعتماد الفحص الكيميائي قبل إتمام واعتماد الفحص الفيزيائي أولاً (Physical Approval Required).</div>';
+        }
+        return;
+      }
+
+      const decision = document.getElementById('lab-stage2-decision')?.value || 'APPROVED';
+      const testResults = document.getElementById('lab-stage2-test-results')?.value?.trim() || '';
+      const notes = document.getElementById('lab-stage2-notes')?.value?.trim() || '';
+      const rejReason = document.getElementById('lab-stage2-rejection-reason')?.value?.trim() || '';
+      const corAction = document.getElementById('lab-stage2-corrective-action')?.value?.trim() || '';
+      const nonConf = document.getElementById('lab-stage2-nonconf-action')?.value || 'PENDING_DECISION';
+
+      if (!testResults && decision === 'APPROVED') {
+        if (alertBox) alertBox.innerHTML = '<div class="lab-alert lab-alert-error">يرجى إدخال نتائج التحاليل والاختبارات الكيميائية قبل الاعتماد النهائي.</div>';
+        document.getElementById('lab-stage2-test-results')?.focus();
+        return;
+      }
+
+      if (decision === 'REJECTED' && !rejReason) {
+        if (alertBox) alertBox.innerHTML = '<div class="lab-alert lab-alert-error">يرجى توضيح سبب الرفض الكيميائي الإلزامي للمنتج غير المطابق.</div>';
+        document.getElementById('lab-stage2-rejection-reason')?.focus();
+        return;
+      }
+
+      const fd = new FormData();
+      fd.append('productionFinishedProductId', String(p.finishedProductId));
+      fd.append('chemicalApprovalStatus', decision);
+      fd.append('chemicalTestResults', testResults);
+      fd.append('chemicalNotes', notes);
+      fd.append('productionProcessId', String(p.productionProcessId));
+      fd.append('productionProcessNumber', p.processNumber || '');
+      fd.append('manufactureNumber', p.manufactureNumber || '');
+      fd.append('finalProductName', p.finishedProductName || '');
+      if (p.productionOrderId) fd.append('productionOrderId', String(p.productionOrderId));
+      if (p.productionOrderNumber) fd.append('productionOrderNumber', p.productionOrderNumber);
+      fd.append('actualFinalProductQuantity', String(p.manufacturedQuantity || 0));
+      fd.append('targetQuantity', String(p.targetQuantity || p.manufacturedQuantity || 0));
+      fd.append('actualRawMaterialInputQuantity', String(p.totalInputQuantity || p.manufacturedQuantity || 0));
+      fd.append('quantityUnit', p.unit || 'طن');
+      if (p.associatedReferenceNumbers && p.associatedReferenceNumbers.length > 0) {
+        fd.append('associatedReferenceNumbers', p.associatedReferenceNumbers.join(', '));
+        fd.append('productionReferenceNumber', String(p.associatedReferenceNumbers[0]));
+      } else {
+        fd.append('productionReferenceNumber', '1');
+      }
+
+      if (decision === 'REJECTED') {
+        fd.append('rejectionReason', rejReason);
+        fd.append('correctiveAction', corAction);
+        fd.append('nonConformityAction', nonConf);
+      }
+
+      const fileInput = document.getElementById('lab-stage2-attachment');
+      if (fileInput && fileInput.files && fileInput.files.length > 0) {
+        fd.append('attachment', fileInput.files[0]);
+      }
+
+      const btn = document.getElementById('btn-submit-stage2-chemical');
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'جاري حفظ واعتماد الفحص الكيميائي وإصدار الشهادة...';
+      }
+
+      try {
+        const res = await window.ChatApi.submitLaboratoryFinalChemicalApproval(fd);
         if (res && res.success) {
           const cert = res.data;
           const certNo = cert ? cert.certificateNumber : '';
           const msg = decision === 'APPROVED'
-            ? `تم إصدار واعتماد شهادة مطابقة المنتج النهائي رقم <strong>${this.esc(certNo)}</strong> بنجاح! تم اعتماد المنتج رسمياً في قسم الإنتاج وتوثيق مطابقته للمواصفات.`
-            : (decision === 'REJECTED'
-                ? `تم تسجيل قرار الرفض المخبري للمنتج رقم <strong>${this.esc(certNo)}</strong> وتحديث حالة قسم الإنتاج إلى (مرفوض مخبرياً).`
-                : `تم حفظ حالة فحص المنتج رقم <strong>${this.esc(certNo)}</strong> بنجاح.`);
-
+            ? `🎉 تم اعتماد الفحص الكيميائي بنجاح واستيفاء كلا المرحلتين! تم إصدار شهادة مطابقة المنتج النهائي الرسمية رقم <strong>${this.esc(certNo)}</strong> واعتماد المنتج نهائياً في المستودع وقسم الإنتاج.`
+            : `❌ تم تسجيل قرار الرفض الكيميائي للمنتج رقم <strong>${this.esc(certNo)}</strong> وتحديث حالته إلى مرفوض مخبرياً وتوثيق عدم المطابقة.`;
           if (alertBox) {
             alertBox.innerHTML = `<div class="lab-alert lab-alert-success">${msg}</div>`;
           }
-
-          // Reload products & log
           await this.loadEligibleFinishedProductsForLab(this.finalCertFilterStatus || 'ALL', p.finishedProductId);
           await this.loadIssuedCertificatesLog();
-
           window.scrollTo({ top: 0, behavior: 'smooth' });
         } else {
-          if (alertBox) alertBox.innerHTML = `<div class="lab-alert lab-alert-error">${this.esc(res?.message || 'فشل حفظ شهادة المطابقة')}</div>`;
+          if (alertBox) alertBox.innerHTML = `<div class="lab-alert lab-alert-error">${this.esc(res?.message || 'فشل حفظ الاعتماد الكيميائي')}</div>`;
         }
       } catch (err) {
-        console.error('Error submitting lab final certificate:', err);
+        console.error('Error submitting chemical approval:', err);
         if (alertBox) alertBox.innerHTML = `<div class="lab-alert lab-alert-error">حدث خطأ: ${this.esc(err.message || 'خطأ غير معروف')}</div>`;
       } finally {
-        if (submitBtn) {
-          submitBtn.disabled = false;
-          submitBtn.textContent = 'اعتماد وإصدار شهادة المطابقة المخبرية';
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = 'حفظ واعتماد الفحص الكيميائي وإصدار الشهادة النهائية الرسمية';
         }
       }
     }
@@ -2416,11 +2953,11 @@
           this.renderIssuedCertificatesTable(res.data);
         } else {
           this.issuedCertificates = [];
-          tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: #94a3b8; padding: 2rem;">لا توجد شهادات مطابقة مسجلة حتى الآن</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; color: #94a3b8; padding: 2rem;">لا توجد شهادات مطابقة مسجلة حتى الآن</td></tr>';
         }
       } catch (err) {
         console.error('Error loading issued certificates:', err);
-        tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: #ef4444; padding: 1.5rem;">فشل تحميل سجل الشهادات</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; color: #ef4444; padding: 1.5rem;">فشل تحميل سجل الشهادات</td></tr>';
       }
     }
 
@@ -2429,18 +2966,34 @@
       if (!tbody) return;
 
       if (!certs || certs.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: #94a3b8; padding: 2rem;">لا توجد شهادات مطابقة تطابق البحث</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; color: #94a3b8; padding: 2rem;">لا توجد شهادات مطابقة تطابق البحث</td></tr>';
         return;
       }
 
       let html = '';
       certs.forEach(c => {
-        const dec = c.conformityDecision || '';
-        const decBadge = (dec === 'CONFORMS' || dec === 'APPROVED')
-          ? '<span class="lab-badge" style="background:#dcfce7;color:#166534;font-weight:800;">✅ مطابق للمواصفات</span>'
-          : (dec === 'NON_CONFORMING' || dec === 'REJECTED'
-              ? '<span class="lab-badge" style="background:#fee2e2;color:#991b1b;font-weight:800;">❌ غير مطابق</span>'
-              : '<span class="lab-badge" style="background:#e0f2fe;color:#0369a1;font-weight:800;">🔬 قيد الفحص</span>');
+        const dec = c.conformityDecision || c.overallStatus || '';
+        const decBadge = (dec === 'CONFORMS' || dec === 'APPROVED' || c.overallStatus === 'APPROVED')
+          ? '<span class="lab-badge" style="background:#dcfce7;color:#166534;font-weight:800;">✅ معتمد ومطابق</span>'
+          : (dec === 'NON_CONFORMING' || dec === 'REJECTED' || c.overallStatus === 'REJECTED'
+              ? '<span class="lab-badge" style="background:#fee2e2;color:#991b1b;font-weight:800;">❌ غير مطابق (مرفوض)</span>'
+              : '<span class="lab-badge" style="background:#e0f2fe;color:#0369a1;font-weight:800;">⏱️ قيد الفحص</span>');
+
+        const physSt = c.physicalApprovalStatus || (c.approvalStatus === 'APPROVED' ? 'APPROVED' : 'PENDING');
+        const physBadge = physSt === 'APPROVED'
+          ? `<span class="lab-badge" style="background:#dcfce7;color:#166534;font-weight:700;">✅ معتمد</span><br><small style="color:#64748b;">${this.esc(c.physicalApprovedBy || 'فاحص فيزيائي')}</small>`
+          : (physSt === 'REJECTED'
+              ? `<span class="lab-badge" style="background:#fee2e2;color:#991b1b;font-weight:700;">❌ مرفوض</span>`
+              : `<span class="lab-badge" style="background:#fef3c7;color:#92400e;font-weight:700;">⏱️ قيد الانتظار</span>`);
+
+        const chemSt = c.chemicalApprovalStatus || (c.approvalStatus === 'APPROVED' ? 'APPROVED' : 'PENDING');
+        const chemBadge = chemSt === 'APPROVED'
+          ? `<span class="lab-badge" style="background:#dcfce7;color:#166534;font-weight:700;">✅ معتمد</span><br><small style="color:#64748b;">${this.esc(c.chemicalApprovedBy || 'فاحص كيميائي')}</small>`
+          : (chemSt === 'REJECTED'
+              ? `<span class="lab-badge" style="background:#fee2e2;color:#991b1b;font-weight:700;">❌ مرفوض</span>`
+              : (physSt === 'APPROVED'
+                  ? `<span class="lab-badge" style="background:#e0f2fe;color:#0369a1;font-weight:700;">⏱️ قيد الانتظار</span>`
+                  : `<span class="lab-badge" style="background:#f1f5f9;color:#64748b;font-weight:700;">🔒 مقفل</span>`));
 
         const procTxt = c.productionProcessNumber ? c.productionProcessNumber : (c.productionReferenceNumber ? `#${c.productionReferenceNumber}` : '—');
         const mfgTxt = c.manufactureNumber ? c.manufactureNumber : (c.productionBatchNumber || '—');
@@ -2457,8 +3010,9 @@
             <td style="padding: 8px 12px; font-weight: 700; color: #059669;">${this.esc(c.finalProductName)}</td>
             <td style="padding: 8px 12px; color: #64748b;">${this.esc(procTxt)}</td>
             <td style="padding: 8px 12px; font-weight: 800; color: #0284c7;">${parseFloat(c.actualFinalProductQuantity).toFixed(3)} ${this.esc(c.quantityUnit || 'طن')}</td>
+            <td style="padding: 8px 12px;">${physBadge}</td>
+            <td style="padding: 8px 12px;">${chemBadge}</td>
             <td style="padding: 8px 12px;">${decBadge}</td>
-            <td style="padding: 8px 12px; color: #475569;">${this.esc(c.responsibleEmployee || 'فاحص المعمل')}</td>
             <td style="padding: 8px 12px; color: #64748b; font-size: 0.78rem;">${this.esc(dateTxt)}</td>
             <td style="padding: 8px 12px; text-align: center;">
               <button type="button" class="lab-btn lab-btn-outline" onclick="LaboratoryApp.openFinalCertModalById(${c.id})" style="padding: 0.3rem 0.75rem; font-size: 0.78rem; font-weight: 700;">
@@ -2483,7 +3037,9 @@
         (c.certificateNumber && c.certificateNumber.toLowerCase().includes(q)) ||
         (c.manufactureNumber && c.manufactureNumber.toLowerCase().includes(q)) ||
         (c.finalProductName && c.finalProductName.toLowerCase().includes(q)) ||
-        (c.productionProcessNumber && c.productionProcessNumber.toLowerCase().includes(q))
+        (c.productionProcessNumber && c.productionProcessNumber.toLowerCase().includes(q)) ||
+        (c.physicalApprovedBy && c.physicalApprovedBy.toLowerCase().includes(q)) ||
+        (c.chemicalApprovedBy && c.chemicalApprovedBy.toLowerCase().includes(q))
       );
       this.renderIssuedCertificatesTable(filtered);
     }
@@ -2509,61 +3065,19 @@
     }
 
     static generateFinalCertPrintSheetHtml(cert) {
-      const dec = cert.conformityDecision || '';
-      const isApproved = dec === 'CONFORMS' || dec === 'APPROVED';
-      const statusTitle = isApproved ? 'مطابق للمواصفات القياسية (APPROVED)' : 'غير مطابق للمواصفات (REJECTED)';
+      const isApproved = cert.overallStatus === 'APPROVED' || cert.conformityDecision === 'APPROVED' || cert.conformityDecision === 'CONFORMS';
+      const statusTitle = isApproved ? 'معتمد ومطابق للمواصفات القياسية (APPROVED)' : 'غير مطابق للمواصفات — مرفوض مخبرياً (REJECTED)';
       const statusColor = isApproved ? '#15803d' : '#b91c1c';
       const statusBg = isApproved ? '#f0fdf4' : '#fef2f2';
       const statusBorder = isApproved ? '#86efac' : '#fca5a5';
 
-      let qualityHtml = '';
-      try {
-        let q = null;
-        if (cert.qualityParametersJson) {
-          try { q = JSON.parse(cert.qualityParametersJson); } catch (e) { }
-        }
+      const physResults = cert.physicalTestResults || cert.finalTestResults || cert.specificationResultsJson || 'تم استيفاء معايير الفحص الفيزيائي.';
+      const physNotes = cert.physicalNotes || cert.inspectorNotes || '—';
+      const chemResults = cert.chemicalTestResults || 'تم استيفاء معايير التحليل الكيميائي ونسب الأكاسيد.';
+      const chemNotes = cert.chemicalNotes || cert.observations || '—';
 
-        const finalTestResults = (q && q.finalTestResults) || cert.finalTestResults || cert.specificationResultsJson || '';
-        const inspectorNotes = (q && q.inspectorNotes) || cert.inspectorNotes || (q && q.notes) || '';
-
-        if (finalTestResults || inspectorNotes) {
-          qualityHtml = `
-            <div style="margin-top: 10px; font-size: 11pt;">
-              <table style="width: 100%; border-collapse: collapse; margin-top: 5px;">
-                ${finalTestResults ? `
-                  <tr style="border-bottom: 1px solid #e2e8f0;">
-                    <td style="padding: 6px 4px; font-weight: bold; width: 30%; color: #0F2A5C; vertical-align: top;">نتائج الاختبارات النهائية:</td>
-                    <td style="padding: 6px 4px; white-space: pre-wrap; font-weight: 600;">${this.esc(finalTestResults)}</td>
-                  </tr>` : ''}
-                ${inspectorNotes ? `
-                  <tr style="border-bottom: 1px solid #e2e8f0;">
-                    <td style="padding: 6px 4px; font-weight: bold; width: 30%; color: #0F2A5C; vertical-align: top;">ملاحظات الفاحص:</td>
-                    <td style="padding: 6px 4px; white-space: pre-wrap;">${this.esc(inspectorNotes)}</td>
-                  </tr>` : ''}
-              </table>
-            </div>
-          `;
-        } else if (q && (q.appearance || q.dimensions || q.strength || q.density)) {
-          qualityHtml = `
-            <div style="margin-top: 10px; font-size: 11pt;">
-              <table style="width: 100%; border-collapse: collapse; margin-top: 5px;">
-                <tr style="border-bottom: 1px solid #e2e8f0;">
-                  <td style="padding: 4px; font-weight: bold; width: 35%;">المظهر الخارجي والتجانس:</td>
-                  <td style="padding: 4px;">${this.esc(q.appearance || 'مطابق')}</td>
-                </tr>
-                <tr style="border-bottom: 1px solid #e2e8f0;">
-                  <td style="padding: 4px; font-weight: bold;">الأبعاد الهندسية والتشطيب:</td>
-                  <td style="padding: 4px;">${this.esc(q.dimensions || 'مطابق')}</td>
-                </tr>
-                ${q.strength ? `<tr style="border-bottom: 1px solid #e2e8f0;"><td style="padding: 4px; font-weight: bold;">مقاومة الضغط والصلابة:</td><td style="padding: 4px;">${this.esc(q.strength)}</td></tr>` : ''}
-                ${q.density ? `<tr style="border-bottom: 1px solid #e2e8f0;"><td style="padding: 4px; font-weight: bold;">الكثافة والوزن النوعي:</td><td style="padding: 4px;">${this.esc(q.density)}</td></tr>` : ''}
-              </table>
-            </div>
-          `;
-        }
-      } catch (e) {
-        // Fallback
-      }
+      const physApprovedTxt = cert.physicalApprovalStatus === 'APPROVED' ? 'معتمد ومطابق فيزيائياً' : (cert.physicalApprovalStatus === 'REJECTED' ? 'مرفوض فيزيائياً' : 'قيد الانتظار');
+      const chemApprovedTxt = cert.chemicalApprovalStatus === 'APPROVED' ? 'معتمد ومطابق كيميائياً' : (cert.chemicalApprovalStatus === 'REJECTED' ? 'مرفوض كيميائياً' : 'قيد الانتظار');
 
       return `
         <div style="font-family: 'Cairo', 'Segoe UI', Tahoma, sans-serif; direction: rtl; text-align: right; color: #0F172A; padding: 20px; line-height: 1.6;">
@@ -2572,7 +3086,7 @@
             <div>
               <h1 style="margin: 0; font-size: 18pt; font-weight: 800; color: #0F2A5C;">شركة فيس ستون للمنتجات الأسمنتية</h1>
               <div style="font-size: 11pt; color: #64748B;">FaceStone Industrial Cement Products — Quality Assurance Dept</div>
-              <div style="font-size: 12pt; font-weight: 700; color: #D97706; margin-top: 4px;">شهادة مطابقة واعتماد المنتج النهائي الرسمي</div>
+              <div style="font-size: 12pt; font-weight: 700; color: #D97706; margin-top: 4px;">شهادة مطابقة واعتماد المنتج النهائي (اعتماد مرحلي مزدوج: فيزيائي + كيميائي)</div>
             </div>
             <div style="text-align: left; border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 8px 14px; background: #f8fafc;">
               <div style="font-size: 10pt; color: #64748B;">رقم الشهادة:</div>
@@ -2581,10 +3095,10 @@
             </div>
           </div>
 
-          <!-- Production & Traceability Info -->
+          <!-- Section 1: Production & Traceability Info -->
           <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px; margin-bottom: 16px;">
             <div style="font-weight: 800; font-size: 12pt; color: #0F2A5C; margin-bottom: 8px; border-bottom: 1px dashed #cbd5e1; padding-bottom: 4px;">
-              1. بيانات المنتج النهائي وتتبع عملية الإنتاج
+              1. بيانات المنتج النهائي وتتبع عملية الإنتاج (Production & Traceability Data)
             </div>
             <table style="width: 100%; font-size: 11pt; border-collapse: collapse;">
               <tr>
@@ -2602,42 +3116,94 @@
               <tr>
                 <td style="padding: 4px; font-weight: bold; color: #475569;">الكمية الفعلية المصنعة:</td>
                 <td style="padding: 4px; font-weight: 800; color: #0284c7;">${parseFloat(cert.actualFinalProductQuantity).toFixed(3)} ${this.esc(cert.quantityUnit || 'طن')}</td>
-                <td style="padding: 4px; font-weight: bold; color: #475569;">الأرقام المرجعية المشتركة:</td>
+                <td style="padding: 4px; font-weight: bold; color: #475569;">الأرقام المرجعية المرتبطة:</td>
                 <td style="padding: 4px; font-weight: 700; color: #7c3aed;">#${this.esc(cert.associatedReferenceNumbers || cert.productionReferenceNumber)}</td>
               </tr>
             </table>
           </div>
 
-          <!-- Quality Testing & Criteria -->
-          <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px; margin-bottom: 16px;">
-            <div style="font-weight: 800; font-size: 12pt; color: #0F2A5C; margin-bottom: 8px; border-bottom: 1px dashed #cbd5e1; padding-bottom: 4px;">
-              2. نتائج الفحوصات والتحاليل المخبرية
+          <!-- Section 2: Physical Laboratory Approval (Stage 1) -->
+          <div style="background: #ffffff; border: 1.5px solid #bfdbfe; border-radius: 8px; padding: 14px; margin-bottom: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; border-bottom: 1px dashed #bfdbfe; padding-bottom: 4px;">
+              <div style="font-weight: 800; font-size: 12pt; color: #1e3a8a;">
+                2. المرحلة الأولى: نتائج الفحص والاعتماد الفيزيائي (Physical Laboratory Approval)
+              </div>
+              <span style="font-size: 10pt; font-weight: 800; padding: 2px 10px; border-radius: 6px; background: ${cert.physicalApprovalStatus === 'APPROVED' ? '#dcfce7; color: #166534;' : '#fee2e2; color: #991b1b;'}">
+                ${physApprovedTxt}
+              </span>
             </div>
-            ${qualityHtml}
-            ${cert.observations ? `<div style="margin-top: 10px; font-size: 11pt; color: #334155;"><strong>ملاحظات وتوصيات المختبر:</strong> ${this.esc(cert.observations)}</div>` : ''}
+            <table style="width: 100%; border-collapse: collapse; font-size: 11pt;">
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 6px 4px; font-weight: bold; width: 30%; color: #1e3a8a; vertical-align: top;">نتائج الاختبارات الفيزيائية:</td>
+                <td style="padding: 6px 4px; white-space: pre-wrap; font-weight: 600;">${this.esc(physResults)}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 6px 4px; font-weight: bold; width: 30%; color: #1e3a8a; vertical-align: top;">ملاحظات الفاحص الفيزيائي:</td>
+                <td style="padding: 6px 4px; white-space: pre-wrap;">${this.esc(physNotes)}</td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 4px; font-weight: bold; width: 30%; color: #475569;">فاحص المعمل الفيزيائي:</td>
+                <td style="padding: 6px 4px; color: #1e293b;">
+                  ${this.esc(cert.physicalApprovedBy || cert.responsibleEmployee || 'فاحص المعمل')}
+                  ${cert.physicalApprovedAt ? ` <span style="font-size: 9pt; color: #64748b;">(تاريخ الاعتماد: ${cert.physicalApprovedAt.slice(0, 16).replace('T', ' ')})</span>` : ''}
+                </td>
+              </tr>
+            </table>
           </div>
 
-          <!-- Decision Box -->
+          <!-- Section 3: Chemical Laboratory Approval (Stage 2) -->
+          <div style="background: #ffffff; border: 1.5px solid #a7f3d0; border-radius: 8px; padding: 14px; margin-bottom: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; border-bottom: 1px dashed #a7f3d0; padding-bottom: 4px;">
+              <div style="font-weight: 800; font-size: 12pt; color: #065f46;">
+                3. المرحلة الثانية: نتائج التحليل والاعتماد الكيميائي (Chemical Laboratory Approval)
+              </div>
+              <span style="font-size: 10pt; font-weight: 800; padding: 2px 10px; border-radius: 6px; background: ${cert.chemicalApprovalStatus === 'APPROVED' ? '#dcfce7; color: #166534;' : '#fee2e2; color: #991b1b;'}">
+                ${chemApprovedTxt}
+              </span>
+            </div>
+            <table style="width: 100%; border-collapse: collapse; font-size: 11pt;">
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 6px 4px; font-weight: bold; width: 30%; color: #065f46; vertical-align: top;">نتائج التحاليل الكيميائية:</td>
+                <td style="padding: 6px 4px; white-space: pre-wrap; font-weight: 600;">${this.esc(chemResults)}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 6px 4px; font-weight: bold; width: 30%; color: #065f46; vertical-align: top;">ملاحظات الفاحص الكيميائي:</td>
+                <td style="padding: 6px 4px; white-space: pre-wrap;">${this.esc(chemNotes)}</td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 4px; font-weight: bold; width: 30%; color: #475569;">فاحص المعمل الكيميائي:</td>
+                <td style="padding: 6px 4px; color: #1e293b;">
+                  ${this.esc(cert.chemicalApprovedBy || 'فاحص المعمل الكيميائي')}
+                  ${cert.chemicalApprovedAt ? ` <span style="font-size: 9pt; color: #64748b;">(تاريخ الاعتماد: ${cert.chemicalApprovedAt.slice(0, 16).replace('T', ' ')})</span>` : ''}
+                </td>
+              </tr>
+            </table>
+          </div>
+
+          <!-- Section 4: Final Certification Decision Box -->
           <div style="background: ${statusBg}; border: 2px solid ${statusBorder}; border-radius: 8px; padding: 16px; margin-bottom: 24px; text-align: center;">
-            <div style="font-size: 11pt; font-weight: bold; color: ${statusColor};">قرار التفتيش والمطابقة النهائي:</div>
-            <div style="font-size: 16pt; font-weight: 900; color: ${statusColor}; margin-top: 4px;">${statusTitle}</div>
-            ${cert.rejectionReason ? `<div style="margin-top: 8px; font-size: 11pt; color: #991b1b;"><strong>سبب عدم المطابقة:</strong> ${this.esc(cert.rejectionReason)}</div>` : ''}
+            <div style="font-size: 11pt; font-weight: bold; color: ${statusColor};">قرار التفتيش والمطابقة النهائي (Final Certification Decision):</div>
+            <div style="font-size: 15pt; font-weight: 900; color: ${statusColor}; margin-top: 4px;">${statusTitle}</div>
+            ${cert.rejectionReason ? `<div style="margin-top: 8px; font-size: 11pt; color: #991b1b;"><strong>سبب عدم المطابقة والرفض:</strong> ${this.esc(cert.rejectionReason)}</div>` : ''}
             ${cert.correctiveAction ? `<div style="margin-top: 4px; font-size: 10.5pt; color: #475569;"><strong>الإجراء التصحيحي الموصى به:</strong> ${this.esc(cert.correctiveAction)}</div>` : ''}
           </div>
 
-          <!-- Signatures -->
+          <!-- Section 5: Signatures & Certification Endorsement -->
           <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; text-align: center; margin-top: 30px; font-size: 11pt;">
-            <div style="border-top: 1px solid #cbd5e1; padding-top: 8px;">
-              <div style="font-weight: bold; color: #475569;">فاحص / كيميائي المعمل</div>
-              <div style="margin-top: 6px; font-weight: 700; color: #0F2A5C;">${this.esc(cert.responsibleEmployee || 'فاحص المعمل')}</div>
+            <div style="border-top: 1.5px solid #cbd5e1; padding-top: 8px;">
+              <div style="font-weight: bold; color: #1e3a8a;">فاحص المعمل الفيزيائي (م1)</div>
+              <div style="margin-top: 6px; font-weight: 700; color: #0F2A5C;">${this.esc(cert.physicalApprovedBy || cert.responsibleEmployee || 'فاحص المعمل الفيزيائي')}</div>
+              <div style="margin-top: 2px; font-size: 9pt; color: #64748B;">اعتماد فني موثق إلكترونياً</div>
             </div>
-            <div style="border-top: 1px solid #cbd5e1; padding-top: 8px;">
-              <div style="font-weight: bold; color: #475569;">مدير إدارة توكيد الجودة</div>
-              <div style="margin-top: 6px; font-weight: 700; color: #0F2A5C;">معتمد وموثق إلكترونياً</div>
+            <div style="border-top: 1.5px solid #cbd5e1; padding-top: 8px;">
+              <div style="font-weight: bold; color: #065f46;">فاحص المعمل الكيميائي (م2)</div>
+              <div style="margin-top: 6px; font-weight: 700; color: #0F2A5C;">${this.esc(cert.chemicalApprovedBy || 'فاحص المعمل الكيميائي')}</div>
+              <div style="margin-top: 2px; font-size: 9pt; color: #64748B;">اعتماد كيميائي موثق إلكترونياً</div>
             </div>
-            <div style="border-top: 1px solid #cbd5e1; padding-top: 8px;">
-              <div style="font-weight: bold; color: #475569;">ختم الاعتماد المخبري الرسمي</div>
-              <div style="margin-top: 4px; font-size: 9pt; color: #94a3b8;">[ختم إلكتروني رسمي معتمد]</div>
+            <div style="border-top: 1.5px solid #cbd5e1; padding-top: 8px;">
+              <div style="font-weight: bold; color: #D97706;">مدير إدارة توكيد الجودة</div>
+              <div style="margin-top: 6px; font-weight: 700; color: #0F2A5C;">معتمد وموثق رسمياً</div>
+              <div style="margin-top: 2px; font-size: 9pt; color: #94a3b8;">[ختم إلكتروني رسمي معتمد]</div>
             </div>
           </div>
         </div>

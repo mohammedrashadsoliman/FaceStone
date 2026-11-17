@@ -297,6 +297,13 @@ public class CreateFinalConformityCertificateDto
     public string? Observations { get; set; }
     public string? FinalTestResults { get; set; }
     public string? InspectorNotes { get; set; }
+    public string? ApprovalStage { get; set; } // PHYSICAL | CHEMICAL
+    public string? PhysicalApprovalStatus { get; set; }
+    public string? PhysicalTestResults { get; set; }
+    public string? PhysicalNotes { get; set; }
+    public string? ChemicalApprovalStatus { get; set; }
+    public string? ChemicalTestResults { get; set; }
+    public string? ChemicalNotes { get; set; }
     [JsonIgnore]
     public IFormFile? Attachment { get; set; }
     public string? AttachmentPath { get; set; }
@@ -347,6 +354,25 @@ public class FinalConformityCertificateDto
     public string? Observations { get; set; }
     public string? FinalTestResults { get; set; }
     public string? InspectorNotes { get; set; }
+    public string PhysicalApprovalStatus { get; set; } = "PENDING";
+    public string? PhysicalApprovedBy { get; set; }
+    public DateTime? PhysicalApprovedAt { get; set; }
+    public string? PhysicalNotes { get; set; }
+    public string? PhysicalTestResults { get; set; }
+    public string ChemicalApprovalStatus { get; set; } = "PENDING";
+    public string? ChemicalApprovedBy { get; set; }
+    public DateTime? ChemicalApprovedAt { get; set; }
+    public string? ChemicalNotes { get; set; }
+    public string? ChemicalTestResults { get; set; }
+    public string OverallStatus { get; set; } = "PENDING_PHYSICAL";
+    public string OverallStatusArabic => OverallStatus switch
+    {
+        "APPROVED" => "معتمد ومطابق للمواصفات",
+        "REJECTED" or "PHYSICAL_REJECTED" or "CHEMICAL_REJECTED" => "مرفوض مخبرياً",
+        "PENDING_CHEMICAL" => "بانتظار التحليل الكيميائي",
+        "PENDING_PHYSICAL" => "بانتظار الفحص الفيزيائي",
+        _ => "قيد الفحص المخبري"
+    };
     public string? AttachmentPath { get; set; }
     public string? AttachmentFileName { get; set; }
     public string? AttachmentFileType { get; set; }
@@ -390,6 +416,8 @@ public class EligibleFinishedProductForLabDto
     {
         "APPROVED" or "CONFORMS" => "معتمد مخبرياً – مطابق للمواصفات",
         "REJECTED" or "NON_CONFORMING" => "مرفوض مخبرياً – غير مطابق للمواصفات",
+        "PENDING_CHEMICAL" => "بانتظار التحليل الكيميائي (مرحلة 2)",
+        "PENDING_PHYSICAL" => "بانتظار الفحص الفيزيائي (مرحلة 1)",
         "UNDER_INSPECTION" or "PENDING_TESTING" => "قيد الفحص المخبري",
         _ => "قيد فحص المختبر"
     };
@@ -399,6 +427,17 @@ public class EligibleFinishedProductForLabDto
     public string? LaboratoryCertifiedBy { get; set; }
     public string? LaboratoryRejectionReason { get; set; }
     public string? LaboratoryCorrectiveAction { get; set; }
+    public string PhysicalApprovalStatus { get; set; } = "PENDING";
+    public string? PhysicalApprovedBy { get; set; }
+    public DateTime? PhysicalApprovedAt { get; set; }
+    public string? PhysicalNotes { get; set; }
+    public string? PhysicalTestResults { get; set; }
+    public string ChemicalApprovalStatus { get; set; } = "PENDING";
+    public string? ChemicalApprovedBy { get; set; }
+    public DateTime? ChemicalApprovedAt { get; set; }
+    public string? ChemicalNotes { get; set; }
+    public string? ChemicalTestResults { get; set; }
+    public string OverallStatus { get; set; } = "PENDING_PHYSICAL";
     public List<int> AssociatedReferenceNumbers { get; set; } = new();
     public List<string> AssociatedBatchNumbers { get; set; } = new();
     public List<EligibleFinishedProductMaterialDto> ConsumedMaterials { get; set; } = new();

@@ -1265,6 +1265,13 @@ public class LaboratoryController : ControllerBase
             .Take(200)
             .ToListAsync();
 
+        var prodIds = list.Select(f => f.Id).ToList();
+        var certs = await _db.LaboratoryFinalConformityCertificates
+            .AsNoTracking()
+            .Where(c => c.ProductionFinishedProductId.HasValue && prodIds.Contains(c.ProductionFinishedProductId.Value))
+            .ToListAsync();
+        var certsByProdId = certs.GroupBy(c => c.ProductionFinishedProductId!.Value).ToDictionary(g => g.Key, g => g.OrderByDescending(c => c.Id).First());
+
         var dtos = list.Select(f =>
         {
             var proc = f.ProductionProcess;
@@ -1273,6 +1280,16 @@ public class LaboratoryController : ControllerBase
                             ?? proc?.ProductionOrder?.RequestedQuantity 
                             ?? proc?.TotalInputQuantity 
                             ?? f.ManufacturedQuantity;
+
+            LaboratoryFinalConformityCertificate? linkedCert = null;
+            if (certsByProdId.TryGetValue(f.Id, out var cVal))
+            {
+                linkedCert = cVal;
+            }
+
+            var physStatus = linkedCert != null ? linkedCert.PhysicalApprovalStatus : (f.LaboratoryConformityStatus == "APPROVED" ? "APPROVED" : "PENDING");
+            var chemStatus = linkedCert != null ? linkedCert.ChemicalApprovalStatus : (f.LaboratoryConformityStatus == "APPROVED" ? "APPROVED" : "PENDING");
+            var overallSt = linkedCert != null ? linkedCert.OverallStatus : (f.LaboratoryConformityStatus == "APPROVED" ? "APPROVED" : (f.LaboratoryConformityStatus == "REJECTED" ? "REJECTED" : (physStatus == "APPROVED" ? "PENDING_CHEMICAL" : "PENDING_PHYSICAL")));
 
             return new EligibleFinishedProductForLabDto
             {
@@ -1295,13 +1312,24 @@ public class LaboratoryController : ControllerBase
                 ResponsibleEmployee = proc?.ResponsibleEmployee ?? f.CreatedBy,
                 Notes = f.Notes,
                 WeighbridgeAttachmentPath = f.WeighbridgeAttachmentPath,
-                LaboratoryConformityStatus = string.IsNullOrWhiteSpace(f.LaboratoryConformityStatus) ? "PENDING_INSPECTION" : f.LaboratoryConformityStatus,
-                LaboratoryCertificateId = f.LaboratoryCertificateId,
-                LaboratoryCertificateNumber = f.LaboratoryCertificateNumber,
+                LaboratoryConformityStatus = string.IsNullOrWhiteSpace(f.LaboratoryConformityStatus) ? "PENDING_PHYSICAL" : f.LaboratoryConformityStatus,
+                LaboratoryCertificateId = linkedCert?.Id ?? f.LaboratoryCertificateId,
+                LaboratoryCertificateNumber = linkedCert?.CertificateNumber ?? f.LaboratoryCertificateNumber,
                 LaboratoryCertifiedAt = f.LaboratoryCertifiedAt,
                 LaboratoryCertifiedBy = f.LaboratoryCertifiedBy,
-                LaboratoryRejectionReason = f.LaboratoryRejectionReason,
-                LaboratoryCorrectiveAction = f.LaboratoryCorrectiveAction,
+                LaboratoryRejectionReason = linkedCert?.RejectionReason ?? f.LaboratoryRejectionReason,
+                LaboratoryCorrectiveAction = linkedCert?.CorrectiveAction ?? f.LaboratoryCorrectiveAction,
+                PhysicalApprovalStatus = physStatus,
+                PhysicalApprovedBy = linkedCert?.PhysicalApprovedBy,
+                PhysicalApprovedAt = linkedCert?.PhysicalApprovedAt,
+                PhysicalNotes = linkedCert?.PhysicalNotes,
+                PhysicalTestResults = linkedCert?.PhysicalTestResults,
+                ChemicalApprovalStatus = chemStatus,
+                ChemicalApprovedBy = linkedCert?.ChemicalApprovedBy,
+                ChemicalApprovedAt = linkedCert?.ChemicalApprovedAt,
+                ChemicalNotes = linkedCert?.ChemicalNotes,
+                ChemicalTestResults = linkedCert?.ChemicalTestResults,
+                OverallStatus = overallSt,
                 AssociatedReferenceNumbers = mats.Where(m => m.ProductionReferenceNumber > 0).Select(m => m.ProductionReferenceNumber).Distinct().ToList(),
                 AssociatedBatchNumbers = mats.Where(m => !string.IsNullOrEmpty(m.BatchNumber)).Select(m => m.BatchNumber).Distinct().ToList(),
                 ConsumedMaterials = mats.Select(m => new EligibleFinishedProductMaterialDto
@@ -1427,6 +1455,430 @@ public class LaboratoryController : ControllerBase
         return Ok(ApiResponse<FinalConformityCertificateDto>.Ok(MapFinalCertToDto(cert)));
     }
 
+    /// <summary>
+    /// المرحلة الأولى: اعتماد المعمل الفيزيائي لشهادة مطابقة المنتج النهائي
+    /// Physical Laboratory Specialist Approval
+    /// </summary>
+    [HttpPost("final-certificates/physical-approval")]
+    [Consumes("multipart/form-data", "application/x-www-form-urlencoded")]
+    [ProducesResponseType(typeof(ApiResponse<FinalConformityCertificateDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<FinalConformityCertificateDto>), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> SubmitFinalPhysicalApproval()
+    {
+        var (isAuth, role, userName, userId) = GetAuthenticatedUser();
+        if (!isAuth)
+        {
+            return StatusCode(StatusCodes.Status401Unauthorized, ApiResponse.Fail("المصادقة مطلوبة للوصول إلى المعمل."));
+        }
+
+        if (!AppRoles.HasPhysicalLabAccess(role) && !AppRoles.HasLaboratoryAccess(role))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponse.Fail("غير مصرح: اعتماد الفحص الفيزيائي مقتصر على أخصائي المعمل الفيزيائي المعتمد."));
+        }
+
+        var dto = await ParseFinalCertificateRequestAsync();
+        if (dto == null)
+        {
+            return BadRequest(ApiResponse.Fail("بيانات فحص المعمل الفيزيائي غير صالحة."));
+        }
+
+        ProductionFinishedProduct? finishedProd = null;
+        if (dto.ProductionFinishedProductId.HasValue && dto.ProductionFinishedProductId.Value > 0)
+        {
+            finishedProd = await _db.ProductionFinishedProducts
+                .Include(f => f.ProductionProcess)
+                    .ThenInclude(p => p.Materials)
+                .Include(f => f.ProductionProcess)
+                    .ThenInclude(p => p.ProductionOrder)
+                .Include(f => f.ProductionOrder)
+                .FirstOrDefaultAsync(f => f.Id == dto.ProductionFinishedProductId.Value);
+        }
+        else if (!string.IsNullOrWhiteSpace(dto.ManufactureNumber))
+        {
+            finishedProd = await _db.ProductionFinishedProducts
+                .Include(f => f.ProductionProcess)
+                    .ThenInclude(p => p.Materials)
+                .Include(f => f.ProductionProcess)
+                    .ThenInclude(p => p.ProductionOrder)
+                .Include(f => f.ProductionOrder)
+                .FirstOrDefaultAsync(f => f.ManufactureNumber.ToLower() == dto.ManufactureNumber.Trim().ToLower());
+        }
+
+        if (finishedProd == null)
+        {
+            return BadRequest(ApiResponse.Fail("المنتج النهائي المطلوب فحصه غير موجود بقاعدة البيانات."));
+        }
+
+        var inputDecision = (dto.ConformityDecision ?? "APPROVED").Trim().ToUpperInvariant();
+        bool isApproved = inputDecision == "APPROVED" || inputDecision == "CONFORMS" || inputDecision.Contains("مطابق");
+        string physDecision = isApproved ? "APPROVED" : "REJECTED";
+
+        if (!isApproved && string.IsNullOrWhiteSpace(dto.RejectionReason))
+        {
+            return BadRequest(ApiResponse.Fail("يرجى توضيح سبب الرفض الإلزامي للمنتج غير المطابق فيزيائياً."));
+        }
+
+        var attachRes = await ValidateAndSaveAttachmentAsync(dto.Attachment, dto.AttachmentPath, "مرفق الفحص الفيزيائي", isRequired: false);
+        if (!attachRes.Success)
+        {
+            return BadRequest(ApiResponse.Fail(attachRes.ErrorMessage ?? "مرفق الفحص الفيزيائي غير صالح."));
+        }
+
+        using var dbTransaction = await _db.Database.BeginTransactionAsync();
+        try
+        {
+            LaboratoryFinalConformityCertificate? cert = null;
+            if (finishedProd.LaboratoryCertificateId.HasValue && finishedProd.LaboratoryCertificateId.Value > 0)
+            {
+                cert = await _db.LaboratoryFinalConformityCertificates.FirstOrDefaultAsync(c => c.Id == finishedProd.LaboratoryCertificateId.Value);
+            }
+            if (cert == null)
+            {
+                cert = await _db.LaboratoryFinalConformityCertificates.FirstOrDefaultAsync(c => c.ProductionFinishedProductId == finishedProd.Id);
+            }
+
+            var physicalResults = !string.IsNullOrWhiteSpace(dto.PhysicalTestResults) ? dto.PhysicalTestResults : dto.FinalTestResults;
+            var physicalNotes = !string.IsNullOrWhiteSpace(dto.PhysicalNotes) ? dto.PhysicalNotes : dto.InspectorNotes;
+
+            var qualityDict = new Dictionary<string, string>
+            {
+                ["finalTestResults"] = physicalResults ?? string.Empty,
+                ["inspectorNotes"] = physicalNotes ?? string.Empty,
+                ["physicalApprovedBy"] = userName,
+                ["physicalApprovedAt"] = DateTime.UtcNow.ToString("o")
+            };
+
+            if (cert == null)
+            {
+                var certIndex = await _db.LaboratoryFinalConformityCertificates.CountAsync() + 1;
+                var certNumber = $"CERT-{DateTime.UtcNow:yyyy}-{certIndex:D4}";
+
+                cert = new LaboratoryFinalConformityCertificate
+                {
+                    CertificateNumber = certNumber,
+                    ProductionReferenceNumber = dto.ProductionReferenceNumber ?? (finishedProd.Id > 0 ? finishedProd.Id : 1),
+                    LaboratorySection = "PHYSICAL",
+                    FinalProductName = finishedProd.FinishedProductName,
+                    ActualFinalProductQuantity = finishedProd.ManufacturedQuantity,
+                    QuantityUnit = finishedProd.Unit ?? "طن",
+                    ProductionBatchNumber = finishedProd.ManufactureNumber,
+                    ProductionProcessId = finishedProd.ProductionProcessId,
+                    ProductionProcessNumber = finishedProd.ProductionProcess?.ProcessNumber,
+                    ProductionFinishedProductId = finishedProd.Id,
+                    ManufactureNumber = finishedProd.ManufactureNumber,
+                    ProductionOrderId = finishedProd.ProductionOrderId ?? finishedProd.ProductionProcess?.ProductionOrderId,
+                    ProductionOrderNumber = finishedProd.ProductionOrderNumber ?? finishedProd.ProductionProcess?.ProductionOrderNumber,
+                    TargetQuantity = finishedProd.ProductionOrder?.RequestedQuantity ?? finishedProd.ManufacturedQuantity,
+                    AssociatedReferenceNumbers = dto.AssociatedReferenceNumbers,
+                    ProductionCompletionDateTime = finishedProd.ProductionDate,
+                    ActualRawMaterialInputQuantity = finishedProd.ProductionProcess?.TotalInputQuantity ?? finishedProd.ManufacturedQuantity,
+                    CalculatedDifference = (finishedProd.ProductionProcess?.TotalInputQuantity ?? finishedProd.ManufacturedQuantity) - finishedProd.ManufacturedQuantity,
+                    PhysicalApprovalStatus = physDecision,
+                    PhysicalApprovedBy = userName,
+                    PhysicalApprovedByUserId = userId,
+                    PhysicalApprovedAt = DateTime.UtcNow,
+                    PhysicalNotes = physicalNotes,
+                    PhysicalTestResults = physicalResults,
+                    ChemicalApprovalStatus = "PENDING",
+                    OverallStatus = isApproved ? "PENDING_CHEMICAL" : "REJECTED",
+                    ApprovalStatus = isApproved ? "PENDING" : "REJECTED",
+                    ConformityDecision = isApproved ? "PENDING_TESTING" : "NON_CONFORMING",
+                    RejectionReason = !isApproved ? (dto.RejectionReason ?? "غير مطابق فيزيائياً") : null,
+                    CorrectiveAction = !isApproved ? dto.CorrectiveAction : null,
+                    NonConformityAction = !isApproved ? dto.NonConformityAction : null,
+                    SpecificationResultsJson = physicalResults,
+                    QualityParametersJson = System.Text.Json.JsonSerializer.Serialize(qualityDict),
+                    Observations = physicalNotes,
+                    AttachmentPath = !string.IsNullOrWhiteSpace(attachRes.StoredFileName) ? $"/uploads/laboratory/{attachRes.StoredFileName}" : null,
+                    AttachmentFileName = attachRes.OriginalFileName,
+                    AttachmentFileType = attachRes.ContentType,
+                    AttachmentFileSize = attachRes.FileSize,
+                    ResponsibleEmployee = userName,
+                    ResponsibleUserId = userId,
+                    CreatedAt = DateTime.UtcNow,
+                    CreatedBy = userName
+                };
+
+                await _db.LaboratoryFinalConformityCertificates.AddAsync(cert);
+            }
+            else
+            {
+                if (cert.OverallStatus == "APPROVED")
+                {
+                    return BadRequest(ApiResponse.Fail("تم اعتماد هذه الشهادة رسمياً مسبقاً ولا يمكن تعديل الفحص الفيزيائي."));
+                }
+
+                cert.PhysicalApprovalStatus = physDecision;
+                cert.PhysicalApprovedBy = userName;
+                cert.PhysicalApprovedByUserId = userId;
+                cert.PhysicalApprovedAt = DateTime.UtcNow;
+                cert.PhysicalNotes = physicalNotes;
+                cert.PhysicalTestResults = physicalResults;
+                cert.SpecificationResultsJson = physicalResults;
+                cert.QualityParametersJson = System.Text.Json.JsonSerializer.Serialize(qualityDict);
+                cert.Observations = physicalNotes;
+
+                if (isApproved)
+                {
+                    cert.OverallStatus = "PENDING_CHEMICAL";
+                    cert.ApprovalStatus = "PENDING";
+                    cert.ConformityDecision = "PENDING_TESTING";
+                    cert.RejectionReason = null;
+                    cert.CorrectiveAction = null;
+                }
+                else
+                {
+                    cert.ChemicalApprovalStatus = "NOT_APPLICABLE";
+                    cert.OverallStatus = "REJECTED";
+                    cert.ApprovalStatus = "REJECTED";
+                    cert.ConformityDecision = "NON_CONFORMING";
+                    cert.RejectionReason = dto.RejectionReason ?? "غير مطابق فيزيائياً";
+                    cert.CorrectiveAction = dto.CorrectiveAction;
+                    cert.NonConformityAction = dto.NonConformityAction;
+                }
+
+                if (!string.IsNullOrWhiteSpace(attachRes.StoredFileName))
+                {
+                    cert.AttachmentPath = $"/uploads/laboratory/{attachRes.StoredFileName}";
+                    cert.AttachmentFileName = attachRes.OriginalFileName;
+                    cert.AttachmentFileType = attachRes.ContentType;
+                    cert.AttachmentFileSize = attachRes.FileSize;
+                }
+            }
+
+            await _db.SaveChangesAsync();
+
+            finishedProd.LaboratoryCertificateId = cert.Id;
+            finishedProd.LaboratoryCertificateNumber = cert.CertificateNumber;
+            finishedProd.LaboratoryConformityStatus = isApproved ? "PENDING_CHEMICAL" : "REJECTED";
+            finishedProd.LaboratoryNotes = cert.Observations;
+            finishedProd.LaboratoryQualityParametersJson = cert.QualityParametersJson;
+
+            var wb = await _db.WarehouseBatches.FirstOrDefaultAsync(b => b.BatchNumber == finishedProd.ManufactureNumber);
+            if (!isApproved)
+            {
+                finishedProd.LaboratoryRejectionReason = cert.RejectionReason;
+                finishedProd.LaboratoryCorrectiveAction = cert.CorrectiveAction;
+                if (wb != null) wb.Status = "REJECTED";
+            }
+            else
+            {
+                finishedProd.LaboratoryRejectionReason = null;
+                finishedProd.LaboratoryCorrectiveAction = null;
+                if (wb != null) wb.Status = "PENDING_LAB_INSPECTION";
+            }
+
+            await _db.SaveChangesAsync();
+            await dbTransaction.CommitAsync();
+
+            return Ok(ApiResponse<FinalConformityCertificateDto>.Ok(MapFinalCertToDto(cert), isApproved 
+                ? "تم اعتماد الفحص الفيزيائي للمنتج بنجاح! تم تحويل الشهادة إلى المعمل الكيميائي (المرحلة الثانية)."
+                : "تم تسجيل قرار الرفض الفيزيائي للمنتج وإيقاف دورة الاعتماد."));
+        }
+        catch (Exception ex)
+        {
+            await dbTransaction.RollbackAsync();
+            _logger.LogError(ex, "Error submitting laboratory final physical approval.");
+            return StatusCode(StatusCodes.Status500InternalServerError, ApiResponse.Fail("حدث خطأ أثناء حفظ الفحص الفيزيائي: " + ex.Message));
+        }
+    }
+
+    /// <summary>
+    /// المرحلة الثانية: اعتماد المعمل الكيميائي لشهادة مطابقة المنتج النهائي
+    /// Chemical Laboratory Specialist Confirmation
+    /// </summary>
+    [HttpPost("final-certificates/chemical-approval")]
+    [Consumes("multipart/form-data", "application/x-www-form-urlencoded")]
+    [ProducesResponseType(typeof(ApiResponse<FinalConformityCertificateDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> SubmitFinalChemicalApproval()
+    {
+        var (isAuth, role, userName, userId) = GetAuthenticatedUser();
+        if (!isAuth)
+        {
+            return StatusCode(StatusCodes.Status401Unauthorized, ApiResponse.Fail("المصادقة مطلوبة للوصول إلى المعمل."));
+        }
+
+        if (!AppRoles.HasChemicalLabAccess(role) && !AppRoles.HasLaboratoryAccess(role))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponse.Fail("غير مصرح: اعتماد الفحص الكيميائي مقتصر على أخصائي المعمل الكيميائي المعتمد."));
+        }
+
+        var form = await Request.ReadFormAsync();
+        int certId = 0;
+        int finishedProdId = 0;
+        int.TryParse(form["certificateId"].FirstOrDefault(), out certId);
+        int.TryParse(form["productionFinishedProductId"].FirstOrDefault(), out finishedProdId);
+
+        LaboratoryFinalConformityCertificate? cert = null;
+        if (certId > 0)
+        {
+            cert = await _db.LaboratoryFinalConformityCertificates.FirstOrDefaultAsync(c => c.Id == certId);
+        }
+        if (cert == null && finishedProdId > 0)
+        {
+            cert = await _db.LaboratoryFinalConformityCertificates.FirstOrDefaultAsync(c => c.ProductionFinishedProductId == finishedProdId);
+        }
+
+        if (cert == null)
+        {
+            return NotFound(ApiResponse.Fail("شهادة المطابقة غير موجودة. يرجى إتمام واعتماد الفحص الفيزيائي أولاً."));
+        }
+
+        // CRITICAL WORKFLOW ENFORCEMENT:
+        // Physical Laboratory must be approved first!
+        if (cert.PhysicalApprovalStatus != "APPROVED")
+        {
+            if (cert.PhysicalApprovalStatus == "REJECTED")
+            {
+                return BadRequest(ApiResponse.Fail("غير مصرح: لا يمكن اعتماد الفحص الكيميائي لمنتج تم رفضه مسبقاً في المرحلة الفيزيائية."));
+            }
+            return BadRequest(ApiResponse.Fail("غير مصرح: لا يمكن اعتماد الفحص الكيميائي قبل إتمام واعتماد الفحص الفيزيائي أولاً (Physical Approval Required)."));
+        }
+
+        if (cert.OverallStatus == "APPROVED")
+        {
+            return BadRequest(ApiResponse.Fail("تم اعتماد الشهادة مسبقاً بشكل نهائي ولا يمكن تكرار الاعتماد."));
+        }
+
+        var decision = (form["decision"].FirstOrDefault() ?? form["conformityDecision"].FirstOrDefault() ?? "APPROVED").Trim().ToUpperInvariant();
+        bool isApproved = decision == "APPROVED" || decision == "CONFORMS" || decision.Contains("مطابق");
+        string chemDecision = isApproved ? "APPROVED" : "REJECTED";
+
+        var chemicalTestResults = form["chemicalTestResults"].FirstOrDefault()?.Trim();
+        var chemicalNotes = form["chemicalNotes"].FirstOrDefault()?.Trim() ?? form["notes"].FirstOrDefault()?.Trim();
+        var rejectionReason = form["rejectionReason"].FirstOrDefault()?.Trim();
+        var correctiveAction = form["correctiveAction"].FirstOrDefault()?.Trim();
+        var nonConfAction = form["nonConformityAction"].FirstOrDefault()?.Trim();
+
+        if (!isApproved && string.IsNullOrWhiteSpace(rejectionReason))
+        {
+            return BadRequest(ApiResponse.Fail("يرجى توضيح سبب الرفض الإلزامي للمنتج غير المطابق كيميائياً."));
+        }
+
+        var attachFile = form.Files.GetFile("attachment");
+        var attachRes = await ValidateAndSaveAttachmentAsync(attachFile, form["attachmentPath"].FirstOrDefault(), "مرفق الفحص الكيميائي", isRequired: false);
+        if (!attachRes.Success)
+        {
+            return BadRequest(ApiResponse.Fail(attachRes.ErrorMessage ?? "مرفق الفحص الكيميائي غير صالح."));
+        }
+
+        using var dbTransaction = await _db.Database.BeginTransactionAsync();
+        try
+        {
+            cert.ChemicalApprovalStatus = chemDecision;
+            cert.ChemicalApprovedBy = userName;
+            cert.ChemicalApprovedByUserId = userId;
+            cert.ChemicalApprovedAt = DateTime.UtcNow;
+            cert.ChemicalNotes = chemicalNotes;
+            cert.ChemicalTestResults = chemicalTestResults;
+
+            // Merge into QualityParametersJson
+            var qualityMap = new Dictionary<string, string>();
+            if (!string.IsNullOrWhiteSpace(cert.QualityParametersJson))
+            {
+                try
+                {
+                    qualityMap = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(cert.QualityParametersJson) ?? new Dictionary<string, string>();
+                }
+                catch { }
+            }
+            qualityMap["chemicalTestResults"] = chemicalTestResults ?? string.Empty;
+            qualityMap["chemicalNotes"] = chemicalNotes ?? string.Empty;
+            qualityMap["chemicalApprovedBy"] = userName;
+            qualityMap["chemicalApprovedAt"] = DateTime.UtcNow.ToString("o");
+            cert.QualityParametersJson = System.Text.Json.JsonSerializer.Serialize(qualityMap);
+
+            if (isApproved)
+            {
+                // BOTH STAGES ARE APPROVED! Final Certificate is officially Approved!
+                cert.OverallStatus = "APPROVED";
+                cert.ApprovalStatus = "APPROVED";
+                cert.ConformityDecision = "CONFORMS";
+                cert.ReviewedBy = userName;
+                cert.ReviewedByUserId = userId;
+                cert.ReviewedAt = DateTime.UtcNow;
+                cert.RejectionReason = null;
+                cert.CorrectiveAction = null;
+            }
+            else
+            {
+                cert.OverallStatus = "REJECTED";
+                cert.ApprovalStatus = "REJECTED";
+                cert.ConformityDecision = "NON_CONFORMING";
+                cert.RejectionReason = rejectionReason ?? "غير مطابق كيميائياً";
+                cert.CorrectiveAction = correctiveAction;
+                cert.NonConformityAction = nonConfAction;
+                cert.ReviewedBy = userName;
+                cert.ReviewedAt = DateTime.UtcNow;
+            }
+
+            if (!string.IsNullOrWhiteSpace(attachRes.StoredFileName))
+            {
+                cert.AttachmentPath = $"/uploads/laboratory/{attachRes.StoredFileName}";
+                cert.AttachmentFileName = attachRes.OriginalFileName;
+                cert.AttachmentFileType = attachRes.ContentType;
+                cert.AttachmentFileSize = attachRes.FileSize;
+            }
+
+            await _db.SaveChangesAsync();
+
+            var finishedProd = await _db.ProductionFinishedProducts.FirstOrDefaultAsync(f => f.Id == cert.ProductionFinishedProductId);
+            if (finishedProd != null)
+            {
+                finishedProd.LaboratoryConformityStatus = isApproved ? "APPROVED" : "REJECTED";
+                finishedProd.LaboratoryCertificateId = cert.Id;
+                finishedProd.LaboratoryCertificateNumber = cert.CertificateNumber;
+                finishedProd.LaboratoryNotes = string.Join(" | ", new[] { cert.PhysicalNotes, cert.ChemicalNotes }.Where(s => !string.IsNullOrWhiteSpace(s)));
+                finishedProd.LaboratoryQualityParametersJson = cert.QualityParametersJson;
+
+                var wb = await _db.WarehouseBatches.FirstOrDefaultAsync(b => b.BatchNumber == finishedProd.ManufactureNumber);
+
+                if (isApproved)
+                {
+                    finishedProd.LaboratoryCertifiedAt = DateTime.UtcNow;
+                    finishedProd.LaboratoryCertifiedBy = userName;
+                    finishedProd.LaboratoryRejectionReason = null;
+                    finishedProd.LaboratoryCorrectiveAction = null;
+                    if (wb != null)
+                    {
+                        wb.Status = "APPROVED";
+                        wb.IsActive = true;
+                    }
+                }
+                else
+                {
+                    finishedProd.LaboratoryCertifiedAt = DateTime.UtcNow;
+                    finishedProd.LaboratoryCertifiedBy = userName;
+                    finishedProd.LaboratoryRejectionReason = cert.RejectionReason;
+                    finishedProd.LaboratoryCorrectiveAction = cert.CorrectiveAction;
+                    if (wb != null)
+                    {
+                        wb.Status = "REJECTED";
+                    }
+                }
+
+                await _db.SaveChangesAsync();
+            }
+
+            await dbTransaction.CommitAsync();
+
+            return Ok(ApiResponse<FinalConformityCertificateDto>.Ok(MapFinalCertToDto(cert), isApproved
+                ? $"تم اعتماد الفحص الكيميائي بنجاح! اكتملت مرحلتا الاعتماد المخبري وأصبحت الشهادة رقم ({cert.CertificateNumber}) معتمدة رسمياً ومطابقة للمواصفات."
+                : $"تم تسجيل قرار الرفض الكيميائي للمنتج رقم ({cert.CertificateNumber})."));
+        }
+        catch (Exception ex)
+        {
+            await dbTransaction.RollbackAsync();
+            _logger.LogError(ex, "Error submitting laboratory final chemical approval.");
+            return StatusCode(StatusCodes.Status500InternalServerError, ApiResponse.Fail("حدث خطأ أثناء حفظ الفحص الكيميائي: " + ex.Message));
+        }
+    }
+
     [HttpPost("final-certificates")]
     [HttpPost("final-conformity-certificates")]
     [ProducesResponseType(typeof(ApiResponse<FinalConformityCertificateDto>), StatusCodes.Status201Created)]
@@ -1449,6 +1901,15 @@ public class LaboratoryController : ControllerBase
         if (dto == null)
         {
             return BadRequest(ApiResponse.Fail("بيانات شهادة مطابقة المنتج النهائي غير صالحة."));
+        }
+
+        if (dto.ApprovalStage == "CHEMICAL")
+        {
+            return await SubmitFinalChemicalApproval();
+        }
+        if (dto.ApprovalStage == "PHYSICAL")
+        {
+            return await SubmitFinalPhysicalApproval();
         }
 
         // 1. Resolve ProductionFinishedProduct and linked Production Process if provided
@@ -2340,6 +2801,13 @@ public class LaboratoryController : ControllerBase
                 Observations = form["inspectorNotes"].FirstOrDefault() ?? form["observations"].FirstOrDefault() ?? form["notes"].FirstOrDefault(),
                 FinalTestResults = form["finalTestResults"].FirstOrDefault() ?? form["specificationResultsJson"].FirstOrDefault(),
                 InspectorNotes = form["inspectorNotes"].FirstOrDefault() ?? form["observations"].FirstOrDefault() ?? form["notes"].FirstOrDefault(),
+                ApprovalStage = form["approvalStage"].FirstOrDefault() ?? form["stage"].FirstOrDefault(),
+                PhysicalApprovalStatus = form["physicalApprovalStatus"].FirstOrDefault(),
+                PhysicalTestResults = form["physicalTestResults"].FirstOrDefault() ?? form["finalTestResults"].FirstOrDefault(),
+                PhysicalNotes = form["physicalNotes"].FirstOrDefault() ?? form["inspectorNotes"].FirstOrDefault(),
+                ChemicalApprovalStatus = form["chemicalApprovalStatus"].FirstOrDefault(),
+                ChemicalTestResults = form["chemicalTestResults"].FirstOrDefault(),
+                ChemicalNotes = form["chemicalNotes"].FirstOrDefault(),
                 ProductionProcessNumber = form["productionProcessNumber"].FirstOrDefault(),
                 ManufactureNumber = form["manufactureNumber"].FirstOrDefault(),
                 ProductionOrderNumber = form["productionOrderNumber"].FirstOrDefault(),
@@ -2661,6 +3129,10 @@ public class LaboratoryController : ControllerBase
             inspectorNotes = c.Observations;
         }
 
+        var physStatus = !string.IsNullOrWhiteSpace(c.PhysicalApprovalStatus) ? c.PhysicalApprovalStatus : (c.ApprovalStatus == "APPROVED" ? "APPROVED" : "PENDING");
+        var chemStatus = !string.IsNullOrWhiteSpace(c.ChemicalApprovalStatus) ? c.ChemicalApprovalStatus : (c.ApprovalStatus == "APPROVED" ? "APPROVED" : "PENDING");
+        var overallStatus = !string.IsNullOrWhiteSpace(c.OverallStatus) ? c.OverallStatus : (c.ApprovalStatus == "APPROVED" ? "APPROVED" : (physStatus == "REJECTED" || chemStatus == "REJECTED" ? "REJECTED" : (physStatus == "APPROVED" ? "PENDING_CHEMICAL" : "PENDING_PHYSICAL")));
+
         return new FinalConformityCertificateDto
         {
             Id = c.Id,
@@ -2697,8 +3169,19 @@ public class LaboratoryController : ControllerBase
             SpecificationResultsJson = c.SpecificationResultsJson,
             QualityParametersJson = c.QualityParametersJson,
             Observations = c.Observations,
-            FinalTestResults = finalTestResults,
-            InspectorNotes = inspectorNotes,
+            FinalTestResults = finalTestResults ?? c.PhysicalTestResults,
+            InspectorNotes = inspectorNotes ?? c.PhysicalNotes,
+            PhysicalApprovalStatus = physStatus,
+            PhysicalApprovedBy = c.PhysicalApprovedBy ?? (c.ApprovalStatus == "APPROVED" ? (c.ReviewedBy ?? c.ResponsibleEmployee) : null),
+            PhysicalApprovedAt = c.PhysicalApprovedAt ?? (c.ApprovalStatus == "APPROVED" ? c.ReviewedAt : null),
+            PhysicalNotes = c.PhysicalNotes ?? inspectorNotes,
+            PhysicalTestResults = c.PhysicalTestResults ?? finalTestResults,
+            ChemicalApprovalStatus = chemStatus,
+            ChemicalApprovedBy = c.ChemicalApprovedBy ?? (c.ApprovalStatus == "APPROVED" ? (c.ReviewedBy ?? c.ResponsibleEmployee) : null),
+            ChemicalApprovedAt = c.ChemicalApprovedAt ?? (c.ApprovalStatus == "APPROVED" ? c.ReviewedAt : null),
+            ChemicalNotes = c.ChemicalNotes,
+            ChemicalTestResults = c.ChemicalTestResults,
+            OverallStatus = overallStatus,
             AttachmentPath = c.AttachmentPath,
             AttachmentFileName = c.AttachmentFileName,
             AttachmentFileType = c.AttachmentFileType,

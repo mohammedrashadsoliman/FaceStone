@@ -452,6 +452,8 @@ public class ProductionFinishedProductDto
     {
         "APPROVED" or "CONFORMS" => "معتمد مخبرياً – مطابق للمواصفات",
         "REJECTED" or "NON_CONFORMING" => "مرفوض مخبرياً – غير مطابق للمواصفات",
+        "PENDING_CHEMICAL" => "بانتظار التحليل الكيميائي (مرحلة 2)",
+        "PENDING_PHYSICAL" => "بانتظار الفحص الفيزيائي (مرحلة 1)",
         "UNDER_INSPECTION" or "PENDING_TESTING" => "قيد الفحص المخبري",
         _ => "قيد فحص المختبر"
     };

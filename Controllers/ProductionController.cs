@@ -1723,11 +1723,11 @@ public class ProductionController : ControllerBase
                 {
                     hasPassedFinal = await _db.LaboratoryFinalConformityCertificates
                         .AnyAsync(c => c.ProductionReferenceNumber == o.ProductionReferenceNumber.Value &&
-                                       c.ConformityDecision == "CONFORMS" &&
+                                       (c.ConformityDecision == "CONFORMS" || c.ConformityDecision == "APPROVED") &&
                                        c.ApprovalStatus == "APPROVED");
                 }
 
-                if (hasPassedFinal || o.LaboratoryConformityStatus == "CONFORMS")
+                if (hasPassedFinal || o.LaboratoryConformityStatus == "CONFORMS" || o.LaboratoryConformityStatus == "APPROVED")
                 {
                     eligible.Add(o);
                 }
@@ -1789,12 +1789,12 @@ public class ProductionController : ControllerBase
         // =========================================================================
         if (output.Classification == "FINISHED")
         {
-            var isConforming = output.LaboratoryConformityStatus == "CONFORMS";
+            var isConforming = output.LaboratoryConformityStatus == "CONFORMS" || output.LaboratoryConformityStatus == "APPROVED";
             if (!isConforming && output.ProductionReferenceNumber.HasValue)
             {
                 isConforming = await _db.LaboratoryFinalConformityCertificates
                     .AnyAsync(c => c.ProductionReferenceNumber == output.ProductionReferenceNumber.Value &&
-                                   c.ConformityDecision == "CONFORMS" &&
+                                   (c.ConformityDecision == "CONFORMS" || c.ConformityDecision == "APPROVED") &&
                                    c.ApprovalStatus == "APPROVED");
             }
 

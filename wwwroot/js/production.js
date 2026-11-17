@@ -2467,6 +2467,10 @@
                   labBadgeHtml = `<span class="prd-badge" style="background:#dcfce7;color:#166534;font-size:0.75rem;font-weight:700;">✅ معتمد مخبرياً</span>`;
                 } else if (labStatus === 'REJECTED' || labStatus === 'NON_CONFORMING') {
                   labBadgeHtml = `<span class="prd-badge" style="background:#fee2e2;color:#991b1b;font-size:0.75rem;font-weight:700;" title="${this.escape(f.laboratoryRejectionReason || 'غير مطابق')}">❌ مرفوض مخبرياً</span>`;
+                } else if (labStatus === 'PENDING_CHEMICAL') {
+                  labBadgeHtml = `<span class="prd-badge" style="background:#e0f2fe;color:#0369a1;font-size:0.75rem;font-weight:700;">⏱️ بانتظار الكيميائي (م2)</span>`;
+                } else if (labStatus === 'PENDING_PHYSICAL') {
+                  labBadgeHtml = `<span class="prd-badge" style="background:#fef3c7;color:#92400e;font-size:0.75rem;font-weight:700;">⏱️ بانتظار الفيزيائي (م1)</span>`;
                 } else if (labStatus === 'UNDER_INSPECTION') {
                   labBadgeHtml = `<span class="prd-badge" style="background:#e0f2fe;color:#0369a1;font-size:0.75rem;font-weight:700;">🔬 قيد الفحص</span>`;
                 } else {
@@ -2606,6 +2610,10 @@
               labBadge = `<span class="prd-badge" style="background:#dcfce7;color:#166534;font-weight:700;">✅ معتمد مخبرياً</span>`;
             } else if (labStatus === 'REJECTED' || labStatus === 'NON_CONFORMING') {
               labBadge = `<span class="prd-badge" style="background:#fee2e2;color:#991b1b;font-weight:700;" title="${this.escape(f.laboratoryRejectionReason || '')}">❌ مرفوض مخبرياً</span>`;
+            } else if (labStatus === 'PENDING_CHEMICAL') {
+              labBadge = `<span class="prd-badge" style="background:#e0f2fe;color:#0369a1;font-weight:700;">⏱️ بانتظار الكيميائي (م2)</span>`;
+            } else if (labStatus === 'PENDING_PHYSICAL') {
+              labBadge = `<span class="prd-badge" style="background:#fef3c7;color:#92400e;font-weight:700;">⏱️ بانتظار الفيزيائي (م1)</span>`;
             } else if (labStatus === 'UNDER_INSPECTION') {
               labBadge = `<span class="prd-badge" style="background:#e0f2fe;color:#0369a1;font-weight:700;">🔬 قيد الفحص</span>`;
             } else {

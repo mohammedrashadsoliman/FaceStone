@@ -148,6 +148,32 @@ public class LaboratoryFinalConformityCertificate
 
     public string? Observations { get; set; }
 
+    /// <summary>
+    /// حالة اعتماد المعمل الفيزيائي: PENDING | APPROVED | REJECTED
+    /// </summary>
+    public string PhysicalApprovalStatus { get; set; } = "PENDING";
+    public string? PhysicalApprovedBy { get; set; }
+    public Guid? PhysicalApprovedByUserId { get; set; }
+    public DateTime? PhysicalApprovedAt { get; set; }
+    public string? PhysicalNotes { get; set; }
+    public string? PhysicalTestResults { get; set; }
+
+    /// <summary>
+    /// حالة اعتماد المعمل الكيميائي: PENDING | APPROVED | REJECTED
+    /// </summary>
+    public string ChemicalApprovalStatus { get; set; } = "PENDING";
+    public string? ChemicalApprovedBy { get; set; }
+    public Guid? ChemicalApprovedByUserId { get; set; }
+    public DateTime? ChemicalApprovedAt { get; set; }
+    public string? ChemicalNotes { get; set; }
+    public string? ChemicalTestResults { get; set; }
+
+    /// <summary>
+    /// الحالة الإجمالية للبوابة المعملية المزدوجة للمنتج النهائي:
+    /// PENDING_PHYSICAL | PENDING_CHEMICAL | APPROVED | REJECTED
+    /// </summary>
+    public string OverallStatus { get; set; } = "PENDING_PHYSICAL";
+
     public string? AttachmentPath { get; set; }
     public string? AttachmentFileName { get; set; }
     public string? AttachmentFileType { get; set; }

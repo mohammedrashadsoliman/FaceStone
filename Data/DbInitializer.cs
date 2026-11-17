@@ -1588,6 +1588,41 @@ BEGIN
         ALTER TABLE LaboratoryFinalConformityCertificates ADD QualityParametersJson NVARCHAR(MAX) NULL;
     IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryFinalConformityCertificates') AND name = 'CorrectiveAction')
         ALTER TABLE LaboratoryFinalConformityCertificates ADD CorrectiveAction NVARCHAR(1000) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryFinalConformityCertificates') AND name = 'PhysicalApprovalStatus')
+        ALTER TABLE LaboratoryFinalConformityCertificates ADD PhysicalApprovalStatus NVARCHAR(50) NOT NULL CONSTRAINT DF_LabCert_PhysStatus DEFAULT 'PENDING';
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryFinalConformityCertificates') AND name = 'PhysicalApprovedBy')
+        ALTER TABLE LaboratoryFinalConformityCertificates ADD PhysicalApprovedBy NVARCHAR(150) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryFinalConformityCertificates') AND name = 'PhysicalApprovedByUserId')
+        ALTER TABLE LaboratoryFinalConformityCertificates ADD PhysicalApprovedByUserId UNIQUEIDENTIFIER NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryFinalConformityCertificates') AND name = 'PhysicalApprovedAt')
+        ALTER TABLE LaboratoryFinalConformityCertificates ADD PhysicalApprovedAt DATETIME2 NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryFinalConformityCertificates') AND name = 'PhysicalNotes')
+        ALTER TABLE LaboratoryFinalConformityCertificates ADD PhysicalNotes NVARCHAR(MAX) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryFinalConformityCertificates') AND name = 'PhysicalTestResults')
+        ALTER TABLE LaboratoryFinalConformityCertificates ADD PhysicalTestResults NVARCHAR(MAX) NULL;
+
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryFinalConformityCertificates') AND name = 'ChemicalApprovalStatus')
+        ALTER TABLE LaboratoryFinalConformityCertificates ADD ChemicalApprovalStatus NVARCHAR(50) NOT NULL CONSTRAINT DF_LabCert_ChemStatus DEFAULT 'PENDING';
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryFinalConformityCertificates') AND name = 'ChemicalApprovedBy')
+        ALTER TABLE LaboratoryFinalConformityCertificates ADD ChemicalApprovedBy NVARCHAR(150) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryFinalConformityCertificates') AND name = 'ChemicalApprovedByUserId')
+        ALTER TABLE LaboratoryFinalConformityCertificates ADD ChemicalApprovedByUserId UNIQUEIDENTIFIER NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryFinalConformityCertificates') AND name = 'ChemicalApprovedAt')
+        ALTER TABLE LaboratoryFinalConformityCertificates ADD ChemicalApprovedAt DATETIME2 NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryFinalConformityCertificates') AND name = 'ChemicalNotes')
+        ALTER TABLE LaboratoryFinalConformityCertificates ADD ChemicalNotes NVARCHAR(MAX) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryFinalConformityCertificates') AND name = 'ChemicalTestResults')
+        ALTER TABLE LaboratoryFinalConformityCertificates ADD ChemicalTestResults NVARCHAR(MAX) NULL;
+
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('LaboratoryFinalConformityCertificates') AND name = 'OverallStatus')
+        ALTER TABLE LaboratoryFinalConformityCertificates ADD OverallStatus NVARCHAR(50) NOT NULL CONSTRAINT DF_LabCert_OverallStatus DEFAULT 'PENDING_PHYSICAL';
+
+    -- Historical backfill for existing approved certificates
+    UPDATE LaboratoryFinalConformityCertificates
+    SET PhysicalApprovalStatus = 'APPROVED',
+        ChemicalApprovalStatus = 'APPROVED',
+        OverallStatus = 'APPROVED'
+    WHERE ApprovalStatus = 'APPROVED' AND (PhysicalApprovalStatus = 'PENDING' OR PhysicalApprovalStatus IS NULL);
 END
 
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'WarehouseBatches')
