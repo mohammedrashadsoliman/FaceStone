@@ -1226,7 +1226,11 @@ public class LaboratoryController : ControllerBase
 
     [HttpGet("eligible-finished-products")]
     [ProducesResponseType(typeof(ApiResponse<List<EligibleFinishedProductForLabDto>>), StatusCodes.Status200OK)]
-    public async Task<IActionResult> GetEligibleFinishedProducts([FromQuery] string? status = null, [FromQuery] string? search = null)
+    public async Task<IActionResult> GetEligibleFinishedProducts(
+        [FromQuery] string? status = null, 
+        [FromQuery] string? search = null,
+        [FromQuery] DateTime? dateFrom = null,
+        [FromQuery] DateTime? dateTo = null)
     {
         var (isAuth, role, userName, userId) = GetAuthenticatedUser();
         if (!isAuth)
@@ -1240,14 +1244,15 @@ public class LaboratoryController : ControllerBase
                 .ThenInclude(p => p.Materials)
             .Include(f => f.ProductionProcess)
                 .ThenInclude(p => p.ProductionOrder)
+                    .ThenInclude(o => o.Transfers)
+            .Include(f => f.ProductionProcess)
+                .ThenInclude(p => p.ProductionOrder)
+                    .ThenInclude(o => o.Items)
             .Include(f => f.ProductionOrder)
+                .ThenInclude(o => o.Transfers)
+            .Include(f => f.ProductionOrder)
+                .ThenInclude(o => o.Items)
             .AsQueryable();
-
-        if (!string.IsNullOrWhiteSpace(status) && !status.Equals("ALL", StringComparison.OrdinalIgnoreCase))
-        {
-            var st = status.Trim().ToUpperInvariant();
-            query = query.Where(f => f.LaboratoryConformityStatus == st);
-        }
 
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -1259,10 +1264,21 @@ public class LaboratoryController : ControllerBase
                 (f.ProductionOrderNumber != null && f.ProductionOrderNumber.ToLower().Contains(s)));
         }
 
+        if (dateFrom.HasValue)
+        {
+            query = query.Where(f => f.ProductionDate >= dateFrom.Value);
+        }
+
+        if (dateTo.HasValue)
+        {
+            var endOfDay = dateTo.Value.Date.AddDays(1).AddTicks(-1);
+            query = query.Where(f => f.ProductionDate <= endOfDay);
+        }
+
         var list = await query
             .OrderByDescending(f => f.ProductionDate)
             .ThenByDescending(f => f.Id)
-            .Take(200)
+            .Take(1000)
             .ToListAsync();
 
         var prodIds = list.Select(f => f.Id).ToList();
@@ -1272,10 +1288,26 @@ public class LaboratoryController : ControllerBase
             .ToListAsync();
         var certsByProdId = certs.GroupBy(c => c.ProductionFinishedProductId!.Value).ToDictionary(g => g.Key, g => g.OrderByDescending(c => c.Id).First());
 
+        var filterStatus = !string.IsNullOrWhiteSpace(status) ? status.Trim().ToUpperInvariant() : null;
+
         var dtos = list.Select(f =>
         {
             var proc = f.ProductionProcess;
             var mats = proc?.Materials?.ToList() ?? new List<ProductionProcessMaterial>();
+            var orderTransfers = (f.ProductionOrder?.Transfers ?? proc?.ProductionOrder?.Transfers)?.ToList() ?? new List<ProductionOrderTransfer>();
+            var orderItems = (f.ProductionOrder?.Items ?? proc?.ProductionOrder?.Items)?.ToList() ?? new List<ProductionOrderItem>();
+
+            var refSet = new HashSet<int>();
+            foreach (var m in mats) { if (m.ProductionReferenceNumber > 0) refSet.Add(m.ProductionReferenceNumber); }
+            foreach (var t in orderTransfers) { if (t.ProductionReferenceNumber.HasValue && t.ProductionReferenceNumber.Value > 0) refSet.Add(t.ProductionReferenceNumber.Value); }
+            foreach (var i in orderItems) { if (i.ProductionReferenceNumber.HasValue && i.ProductionReferenceNumber.Value > 0) refSet.Add(i.ProductionReferenceNumber.Value); }
+            var refNumbers = refSet.ToList();
+
+            var batchSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var m in mats) { if (!string.IsNullOrWhiteSpace(m.BatchNumber)) batchSet.Add(m.BatchNumber); }
+            foreach (var t in orderTransfers) { if (!string.IsNullOrWhiteSpace(t.BatchNumber)) batchSet.Add(t.BatchNumber); }
+            var batchNumbers = batchSet.ToList();
+
             var targetQty = f.ProductionOrder?.RequestedQuantity 
                             ?? proc?.ProductionOrder?.RequestedQuantity 
                             ?? proc?.TotalInputQuantity 
@@ -1289,7 +1321,33 @@ public class LaboratoryController : ControllerBase
 
             var physStatus = linkedCert != null ? linkedCert.PhysicalApprovalStatus : (f.LaboratoryConformityStatus == "APPROVED" ? "APPROVED" : "PENDING");
             var chemStatus = linkedCert != null ? linkedCert.ChemicalApprovalStatus : (f.LaboratoryConformityStatus == "APPROVED" ? "APPROVED" : "PENDING");
-            var overallSt = linkedCert != null ? linkedCert.OverallStatus : (f.LaboratoryConformityStatus == "APPROVED" ? "APPROVED" : (f.LaboratoryConformityStatus == "REJECTED" ? "REJECTED" : (physStatus == "APPROVED" ? "PENDING_CHEMICAL" : "PENDING_PHYSICAL")));
+            var overallSt = linkedCert != null 
+                ? linkedCert.OverallStatus 
+                : (f.LaboratoryConformityStatus == "APPROVED" 
+                    ? "APPROVED" 
+                    : (f.LaboratoryConformityStatus == "REJECTED" 
+                        ? "REJECTED" 
+                        : (physStatus == "APPROVED" ? "PENDING_CHEMICAL" : "PENDING_PHYSICAL")));
+
+            if (!string.IsNullOrWhiteSpace(filterStatus) && !filterStatus.Equals("ALL", StringComparison.OrdinalIgnoreCase))
+            {
+                if (filterStatus == "PENDING_PHYSICAL" || filterStatus == "PENDING_INSPECTION")
+                {
+                    if (overallSt == "APPROVED" || overallSt == "REJECTED" || physStatus == "APPROVED") return null;
+                }
+                else if (filterStatus == "PENDING_CHEMICAL")
+                {
+                    if (overallSt == "APPROVED" || overallSt == "REJECTED" || physStatus != "APPROVED" || chemStatus == "APPROVED") return null;
+                }
+                else if (filterStatus == "APPROVED")
+                {
+                    if (overallSt != "APPROVED") return null;
+                }
+                else if (filterStatus == "REJECTED")
+                {
+                    if (overallSt != "REJECTED") return null;
+                }
+            }
 
             return new EligibleFinishedProductForLabDto
             {
@@ -1330,8 +1388,8 @@ public class LaboratoryController : ControllerBase
                 ChemicalNotes = linkedCert?.ChemicalNotes,
                 ChemicalTestResults = linkedCert?.ChemicalTestResults,
                 OverallStatus = overallSt,
-                AssociatedReferenceNumbers = mats.Where(m => m.ProductionReferenceNumber > 0).Select(m => m.ProductionReferenceNumber).Distinct().ToList(),
-                AssociatedBatchNumbers = mats.Where(m => !string.IsNullOrEmpty(m.BatchNumber)).Select(m => m.BatchNumber).Distinct().ToList(),
+                AssociatedReferenceNumbers = refNumbers,
+                AssociatedBatchNumbers = batchNumbers,
                 ConsumedMaterials = mats.Select(m => new EligibleFinishedProductMaterialDto
                 {
                     MaterialId = m.Id,
@@ -1345,7 +1403,7 @@ public class LaboratoryController : ControllerBase
                     StorageLocationName = m.StorageLocationName
                 }).ToList()
             };
-        }).ToList();
+        }).Where(d => d != null).Select(d => d!).ToList();
 
         return Ok(ApiResponse<List<EligibleFinishedProductForLabDto>>.Ok(dtos));
     }
@@ -1361,7 +1419,14 @@ public class LaboratoryController : ControllerBase
                 .ThenInclude(p => p.Materials)
             .Include(f => f.ProductionProcess)
                 .ThenInclude(p => p.ProductionOrder)
+                    .ThenInclude(o => o.Transfers)
+            .Include(f => f.ProductionProcess)
+                .ThenInclude(p => p.ProductionOrder)
+                    .ThenInclude(o => o.Items)
             .Include(f => f.ProductionOrder)
+                .ThenInclude(o => o.Transfers)
+            .Include(f => f.ProductionOrder)
+                .ThenInclude(o => o.Items)
             .FirstOrDefaultAsync(f => f.Id == id);
 
         if (f == null)
@@ -1371,10 +1436,40 @@ public class LaboratoryController : ControllerBase
 
         var proc = f.ProductionProcess;
         var mats = proc?.Materials?.ToList() ?? new List<ProductionProcessMaterial>();
+        var orderTransfers = (f.ProductionOrder?.Transfers ?? proc?.ProductionOrder?.Transfers)?.ToList() ?? new List<ProductionOrderTransfer>();
+        var orderItems = (f.ProductionOrder?.Items ?? proc?.ProductionOrder?.Items)?.ToList() ?? new List<ProductionOrderItem>();
+
+        var refSet = new HashSet<int>();
+        foreach (var m in mats) { if (m.ProductionReferenceNumber > 0) refSet.Add(m.ProductionReferenceNumber); }
+        foreach (var t in orderTransfers) { if (t.ProductionReferenceNumber.HasValue && t.ProductionReferenceNumber.Value > 0) refSet.Add(t.ProductionReferenceNumber.Value); }
+        foreach (var i in orderItems) { if (i.ProductionReferenceNumber.HasValue && i.ProductionReferenceNumber.Value > 0) refSet.Add(i.ProductionReferenceNumber.Value); }
+        var refNumbers = refSet.ToList();
+
+        var batchSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var m in mats) { if (!string.IsNullOrWhiteSpace(m.BatchNumber)) batchSet.Add(m.BatchNumber); }
+        foreach (var t in orderTransfers) { if (!string.IsNullOrWhiteSpace(t.BatchNumber)) batchSet.Add(t.BatchNumber); }
+        var batchNumbers = batchSet.ToList();
+
         var targetQty = f.ProductionOrder?.RequestedQuantity 
                         ?? proc?.ProductionOrder?.RequestedQuantity 
                         ?? proc?.TotalInputQuantity 
                         ?? f.ManufacturedQuantity;
+
+        var linkedCert = await _db.LaboratoryFinalConformityCertificates
+            .AsNoTracking()
+            .Where(c => c.ProductionFinishedProductId == f.Id)
+            .OrderByDescending(c => c.Id)
+            .FirstOrDefaultAsync();
+
+        var physStatus = linkedCert != null ? linkedCert.PhysicalApprovalStatus : (f.LaboratoryConformityStatus == "APPROVED" ? "APPROVED" : "PENDING");
+        var chemStatus = linkedCert != null ? linkedCert.ChemicalApprovalStatus : (f.LaboratoryConformityStatus == "APPROVED" ? "APPROVED" : "PENDING");
+        var overallSt = linkedCert != null 
+            ? linkedCert.OverallStatus 
+            : (f.LaboratoryConformityStatus == "APPROVED" 
+                ? "APPROVED" 
+                : (f.LaboratoryConformityStatus == "REJECTED" 
+                    ? "REJECTED" 
+                    : (physStatus == "APPROVED" ? "PENDING_CHEMICAL" : "PENDING_PHYSICAL")));
 
         var dto = new EligibleFinishedProductForLabDto
         {
@@ -1397,15 +1492,26 @@ public class LaboratoryController : ControllerBase
             ResponsibleEmployee = proc?.ResponsibleEmployee ?? f.CreatedBy,
             Notes = f.Notes,
             WeighbridgeAttachmentPath = f.WeighbridgeAttachmentPath,
-            LaboratoryConformityStatus = string.IsNullOrWhiteSpace(f.LaboratoryConformityStatus) ? "PENDING_INSPECTION" : f.LaboratoryConformityStatus,
-            LaboratoryCertificateId = f.LaboratoryCertificateId,
-            LaboratoryCertificateNumber = f.LaboratoryCertificateNumber,
+            LaboratoryConformityStatus = string.IsNullOrWhiteSpace(f.LaboratoryConformityStatus) ? "PENDING_PHYSICAL" : f.LaboratoryConformityStatus,
+            LaboratoryCertificateId = linkedCert?.Id ?? f.LaboratoryCertificateId,
+            LaboratoryCertificateNumber = linkedCert?.CertificateNumber ?? f.LaboratoryCertificateNumber,
             LaboratoryCertifiedAt = f.LaboratoryCertifiedAt,
             LaboratoryCertifiedBy = f.LaboratoryCertifiedBy,
-            LaboratoryRejectionReason = f.LaboratoryRejectionReason,
-            LaboratoryCorrectiveAction = f.LaboratoryCorrectiveAction,
-            AssociatedReferenceNumbers = mats.Where(m => m.ProductionReferenceNumber > 0).Select(m => m.ProductionReferenceNumber).Distinct().ToList(),
-            AssociatedBatchNumbers = mats.Where(m => !string.IsNullOrEmpty(m.BatchNumber)).Select(m => m.BatchNumber).Distinct().ToList(),
+            LaboratoryRejectionReason = linkedCert?.RejectionReason ?? f.LaboratoryRejectionReason,
+            LaboratoryCorrectiveAction = linkedCert?.CorrectiveAction ?? f.LaboratoryCorrectiveAction,
+            PhysicalApprovalStatus = physStatus,
+            PhysicalApprovedBy = linkedCert?.PhysicalApprovedBy,
+            PhysicalApprovedAt = linkedCert?.PhysicalApprovedAt,
+            PhysicalNotes = linkedCert?.PhysicalNotes,
+            PhysicalTestResults = linkedCert?.PhysicalTestResults,
+            ChemicalApprovalStatus = chemStatus,
+            ChemicalApprovedBy = linkedCert?.ChemicalApprovedBy,
+            ChemicalApprovedAt = linkedCert?.ChemicalApprovedAt,
+            ChemicalNotes = linkedCert?.ChemicalNotes,
+            ChemicalTestResults = linkedCert?.ChemicalTestResults,
+            OverallStatus = overallSt,
+            AssociatedReferenceNumbers = refNumbers,
+            AssociatedBatchNumbers = batchNumbers,
             ConsumedMaterials = mats.Select(m => new EligibleFinishedProductMaterialDto
             {
                 MaterialId = m.Id,

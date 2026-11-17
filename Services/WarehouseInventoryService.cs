@@ -79,7 +79,7 @@ public class WarehouseInventoryService : IWarehouseInventoryService
             BatchNumber = b.BatchNumber,
             ProductionReferenceNumber = b.ProductionReferenceNumber,
             SampleCode = b.SampleCode,
-            LaboratoryReportId = b.LaboratoryReportId,
+            LaboratoryReportId = b.LaboratoryReportId ?? 0,
             RawMaterialId = b.RawMaterialId,
             MaterialName = !string.IsNullOrWhiteSpace(b.MaterialName)
                 ? b.MaterialName

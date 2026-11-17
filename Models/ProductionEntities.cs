@@ -563,6 +563,13 @@ public class ProductionFinishedProduct
     public string? LaboratoryNotes { get; set; }
     public string? LaboratoryQualityParametersJson { get; set; }
 
+    /// <summary>
+    /// Indicates whether the certified finished product has been officially received/imported into Warehouse inventory
+    /// </summary>
+    public bool IsStorageReceived { get; set; } = false;
+    public int? WarehouseImportOperationId { get; set; }
+    public DateTime? StorageReceivedDate { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public string CreatedBy { get; set; } = string.Empty;
 }

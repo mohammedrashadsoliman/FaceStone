@@ -1181,13 +1181,17 @@
       const payload = {
         transactionDate: new Date(dtVal).toISOString(),
         storageLocationId: locationId,
-        laboratoryReportId: this.selectedImportRef.reportId,
-        sampleCode: this.selectedImportRef.sampleCode,
-        productionReferenceNumber: this.selectedImportRef.productionReferenceNumber,
+        laboratoryReportId: this.selectedImportRef.laboratoryReportId || this.selectedImportRef.reportId || null,
+        laboratoryCertificateId: this.selectedImportRef.laboratoryCertificateId || null,
+        productionFinishedProductId: this.selectedImportRef.productionFinishedProductId || null,
+        sampleCode: this.selectedImportRef.sampleCode || this.selectedImportRef.certificateNumber || null,
+        productionReferenceNumber: this.selectedImportRef.productionReferenceNumber || null,
         source: supplier,
         sourcePhone: phone || null,
         notes: notes || null,
-        materialType: this.selectedImportRef.materialClassification || this.importMaterialType || 'MECHANICAL',
+        materialType: (this.selectedImportRef.isFinishedProduct || this.selectedImportRef.materialClassification === 'FINAL_PRODUCT')
+          ? 'FINAL_PRODUCT'
+          : (this.selectedImportRef.materialClassification || this.importMaterialType || 'MECHANICAL'),
         externalReportedWeight: extW,
         internalLoadedWeight: loadedW,
         internalEmptyWeight: emptyW,
@@ -1258,6 +1262,14 @@
           } else {
             selectEl.innerHTML = `<option value="">-- اختر رقم العينة / المرجع المعملي المطابق للاستلام --</option>` +
               res.data.map(r => {
+                if (r.isFinishedProduct || r.materialClassification === 'FINAL_PRODUCT') {
+                  const val = r.sampleCode || r.certificateNumber || r.productionReferenceNumber;
+                  const mfg = r.manufactureNumber ? ` [تصنيع: ${r.manufactureNumber}]` : '';
+                  const proc = r.productionProcessNumber ? ` [عملية: ${r.productionProcessNumber}]` : '';
+                  return `<option value="${val}" style="font-weight:700; color:#065f46;">` +
+                    `📦 [منتج نهائي معتمد] شهادة [${r.certificateNumber || r.sampleCode}]${proc}${mfg} | ${this.escapeHtml(r.materialName)} - متاح: ${Number(r.remainingAvailableQuantity).toFixed(3)} طن` +
+                    `</option>`;
+                }
                 const classLabel = r.materialClassification === 'CHEMICAL' ? 'كيميائي' : 'ميكانيكي';
                 const sampleLabel = r.sampleCode ? `عينة [${r.sampleCode}]` : `مرجع [#${r.productionReferenceNumber}]`;
                 return `<option value="${r.sampleCode || r.productionReferenceNumber}">` +
@@ -1292,6 +1304,7 @@
 
       const ref = this.importEligibleReferences.find(r => 
         (r.sampleCode && r.sampleCode.toString() === val.toString()) || 
+        (r.certificateNumber && r.certificateNumber.toString() === val.toString()) ||
         (r.productionReferenceNumber && r.productionReferenceNumber.toString() === val.toString())
       );
 
@@ -1307,9 +1320,10 @@
       }
 
       this.selectedImportRef = ref;
+      const isFin = ref.isFinishedProduct || ref.materialClassification === 'FINAL_PRODUCT';
       const isChem = ref.materialClassification === 'CHEMICAL';
-      const classText = isChem ? 'كيميائي' : 'ميكانيكي';
-      const classBg = isChem ? '#1E40AF' : '#047857';
+      const classText = isFin ? 'منتج نهائي معتمد' : (isChem ? 'كيميائي' : 'ميكانيكي');
+      const classBg = isFin ? '#059669' : (isChem ? '#1E40AF' : '#047857');
       const approvedQty = Number(ref.approvedQuantity ?? ref.acceptedQuantity ?? 0).toFixed(3);
       const remQty = Number(ref.remainingAvailableQuantity ?? 0).toFixed(3);
 
@@ -1329,39 +1343,64 @@
       ` : '';
 
       if (infoEl) {
-        infoEl.innerHTML = `
-          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-            <div style="display:flex; align-items:center; gap:10px;">
-              <span style="font-size:1.05rem; font-weight:800; color:#065F46;">🔬 رقم العينة: ${this.escapeHtml(ref.sampleCode || '-')}</span>
-              <span style="background:#E2E8F0; color:#334155; border-radius:4px; padding:2px 8px; font-size:0.8rem; font-weight:700;">المرجع: #${ref.productionReferenceNumber}</span>
+        if (isFin) {
+          infoEl.innerHTML = `
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+              <div style="display:flex; align-items:center; gap:10px;">
+                <span style="font-size:1.05rem; font-weight:800; color:#065F46;">📜 شهادة المطابقة: ${this.escapeHtml(ref.certificateNumber || ref.sampleCode || '-')}</span>
+                <span style="background:#E2E8F0; color:#334155; border-radius:4px; padding:2px 8px; font-size:0.8rem; font-weight:700;">عملية: ${this.escapeHtml(ref.productionProcessNumber || '-')}</span>
+                <span style="background:#E2E8F0; color:#334155; border-radius:4px; padding:2px 8px; font-size:0.8rem; font-weight:700;">تصنيع: ${this.escapeHtml(ref.manufactureNumber || '-')}</span>
+              </div>
+              <span style="background:#059669; color:#fff; border-radius:6px; padding:3px 10px; font-size:0.75rem; font-weight:700;">
+                ✅ معتمد مخبرياً رسمياً (فحص فيزيائي + فحص كيميائي)
+              </span>
             </div>
-            <span style="background:${classBg}; color:#fff; border-radius:6px; padding:3px 10px; font-size:0.75rem; font-weight:700;">
-              مطابق للمواصفات (${classText}) - معتمد ومقروء آلياً
-            </span>
-          </div>
-          <div style="margin-top:8px; display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:8px; font-size:0.82rem;">
-            <div>اسم المادة الخام: <strong style="color:#0F172A;">${this.escapeHtml(ref.materialName)}</strong></div>
-            <div>تصنيف المادة: <strong>${classText}</strong></div>
-            <div>المورد / المصدر: <strong>${this.escapeHtml(ref.supplierName || 'داخلي')}</strong></div>
-            <div>الكمية المعتمدة بالمعمل: <strong>${approvedQty} طن</strong></div>
-            <div>الرصيد المتاح المتبقي للتوريد: <strong style="color:#059669; font-size:1.05rem;">${remQty} طن</strong></div>
-            ${notesHtml}
-            ${attachHtml}
-          </div>
-        `;
+            <div style="margin-top:8px; display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:8px; font-size:0.82rem;">
+              <div>اسم المنتج النهائي: <strong style="color:#0F172A;">${this.escapeHtml(ref.materialName)}</strong></div>
+              <div>أمر الإنتاج: <strong>${this.escapeHtml(ref.productionOrderNumber || 'مباشر')}</strong></div>
+              <div>المصدر: <strong>قسم الإنتاج والتصنيع</strong></div>
+              <div>الكمية المصنعة المعتمدة: <strong>${approvedQty} طن</strong></div>
+              <div>الرصيد المتاح للاستلام: <strong style="color:#059669; font-size:1.05rem;">${remQty} طن</strong></div>
+              ${notesHtml}
+              ${attachHtml}
+            </div>
+          `;
+        } else {
+          infoEl.innerHTML = `
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+              <div style="display:flex; align-items:center; gap:10px;">
+                <span style="font-size:1.05rem; font-weight:800; color:#065F46;">🔬 رقم العينة: ${this.escapeHtml(ref.sampleCode || '-')}</span>
+                <span style="background:#E2E8F0; color:#334155; border-radius:4px; padding:2px 8px; font-size:0.8rem; font-weight:700;">المرجع: #${ref.productionReferenceNumber}</span>
+              </div>
+              <span style="background:${classBg}; color:#fff; border-radius:6px; padding:3px 10px; font-size:0.75rem; font-weight:700;">
+                مطابق للمواصفات (${classText}) - معتمد ومقروء آلياً
+              </span>
+            </div>
+            <div style="margin-top:8px; display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:8px; font-size:0.82rem;">
+              <div>اسم المادة الخام: <strong style="color:#0F172A;">${this.escapeHtml(ref.materialName)}</strong></div>
+              <div>تصنيف المادة: <strong>${classText}</strong></div>
+              <div>المورد / المصدر: <strong>${this.escapeHtml(ref.supplierName || 'داخلي')}</strong></div>
+              <div>الكمية المعتمدة بالمعمل: <strong>${approvedQty} طن</strong></div>
+              <div>الرصيد المتاح المتبقي للتوريد: <strong style="color:#059669; font-size:1.05rem;">${remQty} طن</strong></div>
+              ${notesHtml}
+              ${attachHtml}
+            </div>
+          `;
+        }
         infoEl.style.display = 'block';
       }
 
       // Auto-fill and lock supplier (prevent tampering)
-      if (supplierInput && ref.supplierName) {
-        let optExists = Array.from(supplierInput.options).some(o => o.value === ref.supplierName);
+      const suppVal = isFin ? 'قسم الإنتاج والتصنيع' : ref.supplierName;
+      if (supplierInput && suppVal) {
+        let optExists = Array.from(supplierInput.options).some(o => o.value === suppVal);
         if (!optExists) {
           const opt = document.createElement('option');
-          opt.value = ref.supplierName;
-          opt.textContent = ref.supplierName;
+          opt.value = suppVal;
+          opt.textContent = suppVal;
           supplierInput.appendChild(opt);
         }
-        supplierInput.value = ref.supplierName;
+        supplierInput.value = suppVal;
         supplierInput.disabled = true;
       }
 
@@ -1372,12 +1411,20 @@
       }
 
       // Lock classification
-      const radio = document.querySelector(`input[name="import-material-type"][value="${ref.materialClassification}"]`);
-      if (radio) {
-        radio.checked = true;
+      if (isFin) {
+        matRadios.forEach(r => {
+          r.checked = (r.value === 'FINAL_PRODUCT');
+          r.disabled = true;
+        });
+        this.importMaterialType = 'FINAL_PRODUCT';
+      } else {
+        const radio = document.querySelector(`input[name="import-material-type"][value="${ref.materialClassification}"]`);
+        if (radio) {
+          radio.checked = true;
+        }
+        matRadios.forEach(r => r.disabled = true);
+        this.importMaterialType = ref.materialClassification;
       }
-      matRadios.forEach(r => r.disabled = true);
-      this.importMaterialType = ref.materialClassification;
 
       // Generate batches (default: 1 batch)
       const countInput = document.getElementById('import-batch-count');

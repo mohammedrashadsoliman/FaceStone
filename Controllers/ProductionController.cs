@@ -1478,10 +1478,39 @@ public class ProductionController : ControllerBase
             var diff = Math.Max(0m, batch.TotalInputQuantity - totalOut);
             batch.TotalWasteQuantity = diff;
 
-            // If this is a finished output and batch has fulfilled order, update order status
-            if (classification == "FINISHED" && batch.ProductionOrder != null)
+            // If this is a finished output and batch has fulfilled order, update order status and ensure finished product record exists for Laboratory inspection
+            if (classification == "FINISHED")
             {
-                batch.ProductionOrder.Status = "PENDING_FINAL_LABORATORY_INSPECTION";
+                if (batch.ProductionOrder != null)
+                {
+                    batch.ProductionOrder.Status = "PENDING_FINAL_LABORATORY_INSPECTION";
+                    batch.ProductionOrder.CurrentStage = "قيد فحص واعتماد المعمل (مرحلة 1: فيزيائي)";
+                }
+
+                var mfgNum = batch.BatchNumber ?? output.OutputNumber;
+                var existingFp = await _db.ProductionFinishedProducts.FirstOrDefaultAsync(f => f.ManufactureNumber == mfgNum);
+                if (existingFp == null)
+                {
+                    var fp = new ProductionFinishedProduct
+                    {
+                        ProductionProcessId = batch.ProductionOrderId,
+                        ProductionOrderId = batch.ProductionOrderId,
+                        ProductionOrderNumber = batch.ProductionOrder?.OrderNumber,
+                        FinishedProductName = dto.ProductName.Trim(),
+                        ManufactureNumber = mfgNum,
+                        ManufacturedQuantity = dto.Quantity,
+                        Unit = string.IsNullOrWhiteSpace(dto.Unit) ? "طن" : dto.Unit.Trim(),
+                        DestinationStorageLocationId = destLocation?.Id,
+                        DestinationStorageLocationName = destLocation?.Name,
+                        ProductionDate = DateTime.UtcNow,
+                        Notes = dto.Notes,
+                        LaboratoryConformityStatus = "PENDING_PHYSICAL",
+                        IsStorageReceived = false,
+                        CreatedAt = DateTime.UtcNow,
+                        CreatedBy = userName
+                    };
+                    await _db.ProductionFinishedProducts.AddAsync(fp);
+                }
             }
 
             await _db.SaveChangesAsync();
@@ -2350,7 +2379,8 @@ public class ProductionController : ControllerBase
             .Where(o => (o.Status == "TRANSFERRED_TO_PRODUCTION" || 
                          o.Status == "IN_PRODUCTION" || 
                          o.Status == "PARTIALLY_TRANSFERRED" || 
-                         o.Status == "COMPLETED")
+                         o.Status == "COMPLETED" ||
+                         o.Status == "PENDING_FINAL_LABORATORY_INSPECTION")
                         && (o.TotalTransferredQuantity > 0 || o.Transfers.Any(t => t.TransferredQuantity > 0)))
             .OrderByDescending(o => o.CreatedAt)
             .ToListAsync();
@@ -3038,36 +3068,50 @@ public class ProductionController : ControllerBase
             return StatusCode(StatusCodes.Status403Forbidden, ApiResponse.Fail("غير مصرح لك بتسجيل المنتج النهائي."));
         }
 
-        // Determine effective ProductionOrderId
+        // Determine effective ProductionOrderId or Target Process
         int effectiveOrderId = orderId.HasValue && orderId.Value > 0 ? orderId.Value : dto.ProductionOrderId;
-        if (effectiveOrderId == 0 && id.HasValue && id.Value > 0)
+        int? targetProcessId = (id.HasValue && id.Value > 0) ? id.Value : dto.ProductionProcessId;
+
+        if (effectiveOrderId == 0 && targetProcessId.HasValue && targetProcessId.Value > 0)
         {
-            var pLookup = await _db.ProductionProcesses.AsNoTracking().FirstOrDefaultAsync(p => p.Id == id.Value);
-            if (pLookup?.ProductionOrderId != null) effectiveOrderId = pLookup.ProductionOrderId.Value;
-        }
-        if (effectiveOrderId == 0 && dto.ProductionProcessId.HasValue && dto.ProductionProcessId.Value > 0)
-        {
-            var pLookup = await _db.ProductionProcesses.AsNoTracking().FirstOrDefaultAsync(p => p.Id == dto.ProductionProcessId.Value);
+            var pLookup = await _db.ProductionProcesses.AsNoTracking().FirstOrDefaultAsync(p => p.Id == targetProcessId.Value);
             if (pLookup?.ProductionOrderId != null) effectiveOrderId = pLookup.ProductionOrderId.Value;
         }
 
-        if (effectiveOrderId == 0)
+        ProductionOrder? parentOrder = null;
+        if (effectiveOrderId > 0)
         {
-            return BadRequest(ApiResponse.Fail("أمر الإنتاج (Production Order) مطلوب لتسجيل واعتماد المنتج النهائي."));
+            parentOrder = await _db.ProductionOrders
+                .Include(o => o.Items)
+                .Include(o => o.Transfers)
+                .Include(o => o.FinishedProducts)
+                .FirstOrDefaultAsync(o => o.Id == effectiveOrderId);
         }
 
-        var parentOrder = await _db.ProductionOrders
-            .Include(o => o.Items)
-            .Include(o => o.Transfers)
-            .Include(o => o.FinishedProducts)
-            .FirstOrDefaultAsync(o => o.Id == effectiveOrderId);
-
-        if (parentOrder == null)
+        ProductionProcess? process = null;
+        if (targetProcessId.HasValue && targetProcessId.Value > 0)
         {
-            return NotFound(ApiResponse.Fail("أمر الإنتاج المحدد غير موجود في قاعدة البيانات."));
+            process = await _db.ProductionProcesses
+                .Include(p => p.Materials)
+                .Include(p => p.FinishedProducts)
+                .Include(p => p.StorageLocation)
+                .FirstOrDefaultAsync(p => p.Id == targetProcessId.Value);
+        }
+        else if (parentOrder?.LinkedProductionProcessId.HasValue == true)
+        {
+            process = await _db.ProductionProcesses
+                .Include(p => p.Materials)
+                .Include(p => p.FinishedProducts)
+                .Include(p => p.StorageLocation)
+                .FirstOrDefaultAsync(p => p.Id == parentOrder.LinkedProductionProcessId.Value);
         }
 
-        if (parentOrder.TotalTransferredQuantity <= 0 && !parentOrder.Transfers.Any(t => t.TransferredQuantity > 0))
+        if (parentOrder == null && process == null)
+        {
+            return BadRequest(ApiResponse.Fail("أمر الإنتاج (Production Order) أو عملية الإنتاج مطلوبة لتسجيل واعتماد المنتج النهائي."));
+        }
+
+        if (parentOrder != null && parentOrder.TotalTransferredQuantity <= 0 && !parentOrder.Transfers.Any(t => t.TransferredQuantity > 0) && (process == null || process.TotalInputQuantity <= 0))
         {
             return BadRequest(ApiResponse.Fail($"أمر الإنتاج ({parentOrder.OrderNumber}) لم يتم نقل أي مواد خام له من المستودع بعد. لا يمكن تسجيل منتج نهائي قبل تأكيد نقل المواد."));
         }
@@ -3139,19 +3183,7 @@ public class ProductionController : ControllerBase
         using var transaction = await _db.Database.BeginTransactionAsync();
         try
         {
-            // Determine or create linked ProductionProcess
-            int? targetProcessId = (id.HasValue && id.Value > 0) ? id.Value : (dto.ProductionProcessId ?? parentOrder.LinkedProductionProcessId);
-            ProductionProcess? process = null;
-            if (targetProcessId.HasValue && targetProcessId.Value > 0)
-            {
-                process = await _db.ProductionProcesses
-                    .Include(p => p.Materials)
-                    .Include(p => p.FinishedProducts)
-                    .Include(p => p.StorageLocation)
-                    .FirstOrDefaultAsync(p => p.Id == targetProcessId.Value);
-            }
-
-            if (process == null)
+            if (process == null && parentOrder != null)
             {
                 var year = (dto.ProductionDate ?? DateTime.UtcNow).Year;
                 var seq = await _db.ProductionSequences.FirstOrDefaultAsync(s => s.SequenceType == "PRD_PROC");
@@ -3258,9 +3290,9 @@ public class ProductionController : ControllerBase
 
             var finishedProduct = new ProductionFinishedProduct
             {
-                ProductionProcessId = process.Id,
-                ProductionOrderId = parentOrder?.Id,
-                ProductionOrderNumber = parentOrder?.OrderNumber,
+                ProductionProcessId = process != null ? process.Id : (targetProcessId ?? 0),
+                ProductionOrderId = parentOrder?.Id ?? process?.ProductionOrderId,
+                ProductionOrderNumber = parentOrder?.OrderNumber ?? process?.ProductionOrderNumber,
                 FinishedProductName = dto.FinishedProductName.Trim(),
                 ManufactureNumber = dto.ManufactureNumber.Trim(),
                 ManufacturedQuantity = dto.ManufacturedQuantity,
@@ -3273,7 +3305,10 @@ public class ProductionController : ControllerBase
                 WeighbridgeFileName = storedOrigName,
                 WeighbridgeFileType = storedContentType,
                 WeighbridgeFileSize = storedFileSize,
-                LaboratoryConformityStatus = "PENDING_INSPECTION",
+                LaboratoryConformityStatus = "PENDING_PHYSICAL",
+                IsStorageReceived = false,
+                WarehouseImportOperationId = null,
+                StorageReceivedDate = null,
                 CreatedAt = DateTime.UtcNow,
                 CreatedBy = userName
             };
@@ -3282,31 +3317,34 @@ public class ProductionController : ControllerBase
             await _db.SaveChangesAsync();
 
             // Update Process totals and status
-            process.TotalOutputQuantity = newTotalOutput;
-            process.TotalWasteQuantity = wasteQuantity;
-            process.WastePercentage = wastePercentage;
-            process.Status = "COMPLETED";
-
-            // Create ProductionWasteRecord
-            var wasteRecord = new ProductionWasteRecord
+            if (process != null)
             {
-                ProductionProcessId = process.Id,
-                TotalInputQuantity = totalInput,
-                TotalOutputQuantity = newTotalOutput,
-                WasteQuantity = wasteQuantity,
-                WastePercentage = wastePercentage,
-                Unit = "طن",
-                CalculatedAt = DateTime.UtcNow,
-                CalculatedBy = userName
-            };
-            _db.ProductionWasteRecords.Add(wasteRecord);
+                process.TotalOutputQuantity = newTotalOutput;
+                process.TotalWasteQuantity = wasteQuantity;
+                process.WastePercentage = wastePercentage;
+                process.Status = "COMPLETED";
+
+                // Create ProductionWasteRecord
+                var wasteRecord = new ProductionWasteRecord
+                {
+                    ProductionProcessId = process.Id,
+                    TotalInputQuantity = totalInput,
+                    TotalOutputQuantity = newTotalOutput,
+                    WasteQuantity = wasteQuantity,
+                    WastePercentage = wastePercentage,
+                    Unit = "طن",
+                    CalculatedAt = DateTime.UtcNow,
+                    CalculatedBy = userName
+                };
+                _db.ProductionWasteRecords.Add(wasteRecord);
+            }
 
             // Record Attachment if provided
             if (!string.IsNullOrWhiteSpace(storedPath))
             {
                 var att = new ProductionAttachment
                 {
-                    ProductionProcessId = process.Id,
+                    ProductionProcessId = process != null ? process.Id : 0,
                     FinishedProductId = finishedProduct.Id,
                     AttachmentType = "FinishedProductWeighbridge",
                     FilePath = storedPath,
@@ -3321,155 +3359,10 @@ public class ProductionController : ControllerBase
                 _db.ProductionAttachments.Add(att);
             }
 
-            // --- Atomically create Finished Product Stock Receipt in Destination Warehouse ---
-            var finishedRawMat = await _db.RawMaterials.FirstOrDefaultAsync(m => m.Name == finishedProduct.FinishedProductName);
-            if (finishedRawMat == null)
-            {
-                finishedRawMat = new RawMaterial
-                {
-                    Name = finishedProduct.FinishedProductName,
-                    MaterialType = MaterialProcessType.FinalProduct,
-                    CreatedAt = DateTime.UtcNow,
-                    CreatedBy = userName,
-                    CreatedByUserId = userId
-                };
-                _db.RawMaterials.Add(finishedRawMat);
-                await _db.SaveChangesAsync();
-            }
-
-            var seqImport = await _db.StorageSequences.FirstOrDefaultAsync(s => s.SequenceType == "IMPORT");
-            int txNum = 1;
-            if (seqImport == null)
-            {
-                seqImport = new StorageSequence { SequenceType = "IMPORT", NextValue = 2 };
-                _db.StorageSequences.Add(seqImport);
-            }
-            else
-            {
-                txNum = seqImport.NextValue++;
-            }
-
-            var txDate = finishedProduct.ProductionDate;
-            var op = new StorageOperation
-            {
-                OperationType = "IMPORT",
-                TransactionNumber = txNum,
-                TransactionDate = txDate,
-                StorageLocationId = destLocation.Id,
-                StorageLocationName = destLocation.Name,
-                MaterialType = "FINAL_PRODUCT",
-                Source = "قسم الإنتاج والتصنيع",
-                SourcePhone = "داخلي",
-                DestinationDepartment = "المستودع",
-                ResponsibleEmployee = userName,
-                ResponsibleUserId = userId,
-                Notes = $"استلام وتخزين منتج نهائي من خط الإنتاج - عملية {process.ProcessNumber} - تصنيع {finishedProduct.ManufactureNumber} - {dto.Notes}",
-                ApprovalStatus = "APPROVED",
-                ReviewedBy = userName,
-                ReviewedByUserId = userId,
-                ReviewedAt = DateTime.UtcNow,
-                IsInventoryPosted = true,
-                InternalLoadedWeight = finishedProduct.ManufacturedQuantity,
-                InternalEmptyWeight = 0,
-                InternalNetWeight = finishedProduct.ManufacturedQuantity,
-                WeighbridgeReference = finishedProduct.ManufactureNumber,
-                WeighbridgeAttachmentPath = storedPath,
-                WeighbridgeFileName = storedOrigName,
-                WeighbridgeFileType = storedContentType,
-                WeighbridgeFileSize = storedFileSize,
-                ExportType = "FINISHED_PRODUCT",
-                ProductionOrderId = parentOrder?.Id,
-                ProductionProcessId = process.Id,
-                ManufactureNumber = finishedProduct.ManufactureNumber,
-                CreatedAt = DateTime.UtcNow,
-                CreatedBy = userName,
-                CreatedByUserId = userId
-            };
-            _db.StorageOperations.Add(op);
-            await _db.SaveChangesAsync();
-
-            var opItem = new StorageOperationItem
-            {
-                StorageOperationId = op.Id,
-                RawMaterialId = finishedRawMat.Id,
-                MaterialName = finishedRawMat.Name,
-                Quantity = finishedProduct.ManufacturedQuantity,
-                TrackingNumber = $"FP-{finishedProduct.ManufactureNumber}",
-                ProductionOrderId = parentOrder?.Id,
-                ProductionProcessId = process.Id,
-                ManufactureNumber = finishedProduct.ManufactureNumber
-            };
-            _db.StorageOperationItems.Add(opItem);
-            await _db.SaveChangesAsync();
-
-            var existingBalance = await _db.StorageInventoryLedger
-                .Where(l => l.StorageLocationId == destLocation.Id && l.RawMaterialId == finishedRawMat.Id)
-                .SumAsync(l => (decimal?)l.Quantity) ?? 0m;
-
-            var ledgerEntry = new StorageInventoryLedger
-            {
-                StorageLocationId = destLocation.Id,
-                RawMaterialId = finishedRawMat.Id,
-                StorageOperationId = op.Id,
-                StorageOperationItem = opItem,
-                MovementType = "FINAL_PRODUCT_INFLOW",
-                Quantity = finishedProduct.ManufacturedQuantity,
-                RunningBalance = existingBalance + finishedProduct.ManufacturedQuantity,
-                BatchNumber = finishedProduct.ManufactureNumber,
-                MovementDate = txDate,
-                CreatedAt = DateTime.UtcNow,
-                CreatedBy = userName
-            };
-            _db.StorageInventoryLedger.Add(ledgerEntry);
-
-            int effectiveLabReportId = 0;
-            if (parentOrder != null && parentOrder.Transfers.Any())
-            {
-                effectiveLabReportId = await _db.WarehouseBatches
-                    .Where(b => parentOrder.Transfers.Select(t => t.WarehouseBatchId).Contains(b.Id))
-                    .Select(b => b.LaboratoryReportId)
-                    .FirstOrDefaultAsync();
-            }
-
-            if (effectiveLabReportId == 0)
-            {
-                effectiveLabReportId = await _db.LaboratoryRawMaterialReports.OrderByDescending(r => r.Id).Select(r => r.Id).FirstOrDefaultAsync();
-            }
-
-            int effectivePrn = parentOrder?.Items.FirstOrDefault()?.ProductionReferenceNumber 
-                ?? await _db.LaboratoryRawMaterialReports.Where(r => r.Id == effectiveLabReportId).Select(r => r.ProductionReferenceNumber).FirstOrDefaultAsync();
-
-            var destBatch = new WarehouseBatch
-            {
-                StorageOperationId = op.Id,
-                StorageOperationItemId = opItem.Id,
-                LaboratoryReportId = effectiveLabReportId,
-                ProductionReferenceNumber = effectivePrn,
-                ProductionOrderId = parentOrder?.Id,
-                ProductionProcessId = process.Id,
-                SampleCode = finishedProduct.ManufactureNumber,
-                BatchNumber = finishedProduct.ManufactureNumber,
-                RawMaterialId = finishedRawMat.Id,
-                MaterialName = finishedRawMat.Name,
-                MaterialClassification = "FINAL_PRODUCT",
-                SupplierName = "قسم الإنتاج والتصنيع",
-                StorageLocationId = destLocation.Id,
-                InitialQuantity = finishedProduct.ManufacturedQuantity,
-                CurrentQuantity = finishedProduct.ManufacturedQuantity,
-                ImportDate = txDate,
-                Status = "PENDING_LAB_INSPECTION",
-                IsActive = true,
-                Notes = $"منتج نهائي من عملية إنتاج {process.ProcessNumber} (قيد فحص المختبر)",
-                CreatedAt = DateTime.UtcNow,
-                CreatedBy = userName,
-                CreatedByUserId = userId
-            };
-            _db.WarehouseBatches.Add(destBatch);
-
             if (parentOrder != null)
             {
-                parentOrder.Status = "COMPLETED";
-                parentOrder.CurrentStage = "مكتمل التصنيع";
+                parentOrder.Status = "PENDING_FINAL_LABORATORY_INSPECTION";
+                parentOrder.CurrentStage = "قيد فحص واعتماد المعمل (مرحلة 1: فيزيائي)";
                 parentOrder.CompletedDate = DateTime.UtcNow;
             }
 
@@ -3482,8 +3375,8 @@ public class ProductionController : ControllerBase
                 {
                     Department = "Production",
                     Action = "FINISHED_PRODUCT_RECORDED",
-                    ProcessId = process.Id,
-                    ProcessNumber = process.ProcessNumber,
+                    ProcessId = process?.Id,
+                    ProcessNumber = process?.ProcessNumber,
                     OrderId = parentOrder?.Id,
                     OrderNumber = parentOrder?.OrderNumber,
                     ManufactureNumber = finishedProduct.ManufactureNumber,
@@ -3494,11 +3387,12 @@ public class ProductionController : ControllerBase
                     Department = "Laboratory",
                     Action = "FINISHED_PRODUCT_READY_FOR_INSPECTION",
                     FinishedProductId = finishedProduct.Id,
-                    ProcessId = process.Id,
-                    ProcessNumber = process.ProcessNumber,
+                    ProcessId = process?.Id,
+                    ProcessNumber = process?.ProcessNumber,
                     ManufactureNumber = finishedProduct.ManufactureNumber,
                     ProductName = finishedProduct.FinishedProductName,
                     Quantity = finishedProduct.ManufacturedQuantity,
+                    Message = "تم تسجيل منتج نهائي جديد وبانتظار اعتماد المعمل الفيزيائي (مرحلة 1)",
                     Timestamp = DateTime.UtcNow
                 });
                 if (parentOrder != null)
@@ -3511,26 +3405,16 @@ public class ProductionController : ControllerBase
                         Timestamp = DateTime.UtcNow
                     });
                 }
-                await _hubContext.Clients.All.SendAsync("OnWarehouseInventoryChanged", new
-                {
-                    Action = "FINISHED_PRODUCT_STORED",
-                    LocationId = destLocation.Id,
-                    LocationName = destLocation.Name,
-                    ProductName = finishedProduct.FinishedProductName,
-                    ManufactureNumber = finishedProduct.ManufactureNumber,
-                    Quantity = finishedProduct.ManufacturedQuantity,
-                    Timestamp = DateTime.UtcNow
-                });
             }
             catch (Exception exSignal)
             {
                 _logger.LogWarning(exSignal, "Failed to broadcast finished product SignalR event");
             }
 
-            var orderLabel = parentOrder != null ? $"لأمر الإنتاج {parentOrder.OrderNumber}" : $"للعملية {process.ProcessNumber}";
+            var orderLabel = parentOrder != null ? $"لأمر الإنتاج {parentOrder.OrderNumber}" : (process != null ? $"للعملية {process.ProcessNumber}" : string.Empty);
             return Ok(ApiResponse<ProductionProcessDetailDto>.Ok(
-                MapProcessToDto(process),
-                $"تم تسجيل المنتج النهائي '{finishedProduct.FinishedProductName}' برقم تصنيع {finishedProduct.ManufactureNumber} {orderLabel} وحساب الهالك ({wasteQuantity:N3} طن - {wastePercentage}%) بنجاح وإيداعه في مستودع '{destLocation.Name}'."));
+                process != null ? MapProcessToDto(process) : null!,
+                $"تم تسجيل المنتج النهائي '{finishedProduct.FinishedProductName}' برقم تصنيع {finishedProduct.ManufactureNumber} {orderLabel} وحساب الهالك ({wasteQuantity:N3} طن - {wastePercentage}%) بنجاح وإرساله للمعمل للفحص الفيزيائي والكيميائي."));
         }
         catch (Exception ex)
         {

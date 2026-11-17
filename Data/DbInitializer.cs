@@ -1618,11 +1618,11 @@ BEGIN
         ALTER TABLE LaboratoryFinalConformityCertificates ADD OverallStatus NVARCHAR(50) NOT NULL CONSTRAINT DF_LabCert_OverallStatus DEFAULT 'PENDING_PHYSICAL';
 
     -- Historical backfill for existing approved certificates
-    UPDATE LaboratoryFinalConformityCertificates
-    SET PhysicalApprovalStatus = 'APPROVED',
-        ChemicalApprovalStatus = 'APPROVED',
-        OverallStatus = 'APPROVED'
-    WHERE ApprovalStatus = 'APPROVED' AND (PhysicalApprovalStatus = 'PENDING' OR PhysicalApprovalStatus IS NULL);
+    EXEC(N'UPDATE LaboratoryFinalConformityCertificates
+    SET PhysicalApprovalStatus = ''APPROVED'',
+        ChemicalApprovalStatus = ''APPROVED'',
+        OverallStatus = ''APPROVED''
+    WHERE ApprovalStatus = ''APPROVED'' AND (PhysicalApprovalStatus = ''PENDING'' OR PhysicalApprovalStatus IS NULL);');
 END
 
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'WarehouseBatches')
@@ -1657,6 +1657,21 @@ BEGIN
     CREATE INDEX IX_WarehouseBatches_StorageLocationId ON WarehouseBatches(StorageLocationId);
     CREATE INDEX IX_WarehouseBatches_RawMaterialId ON WarehouseBatches(RawMaterialId);
     CREATE INDEX IX_WarehouseBatches_Status ON WarehouseBatches(Status);
+END
+
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('WarehouseBatches') AND name = 'LaboratoryCertificateId')
+BEGIN
+    ALTER TABLE WarehouseBatches ADD LaboratoryCertificateId INT NULL;
+    CREATE INDEX IX_WarehouseBatches_LaboratoryCertificateId ON WarehouseBatches(LaboratoryCertificateId);
+END
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('WarehouseBatches') AND name = 'ProductionFinishedProductId')
+BEGIN
+    ALTER TABLE WarehouseBatches ADD ProductionFinishedProductId INT NULL;
+    CREATE INDEX IX_WarehouseBatches_ProductionFinishedProductId ON WarehouseBatches(ProductionFinishedProductId);
+END
+IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('WarehouseBatches') AND name = 'LaboratoryReportId' AND is_nullable = 0)
+BEGIN
+    ALTER TABLE WarehouseBatches ALTER COLUMN LaboratoryReportId INT NULL;
 END
 
 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('StorageOperationItems') AND name = 'WarehouseBatchId')
@@ -1830,6 +1845,23 @@ BEGIN
         ALTER TABLE ProductionFinishedProducts ADD LaboratoryNotes NVARCHAR(1000) NULL;
     IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionFinishedProducts') AND name = 'LaboratoryQualityParametersJson')
         ALTER TABLE ProductionFinishedProducts ADD LaboratoryQualityParametersJson NVARCHAR(MAX) NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionFinishedProducts') AND name = 'IsStorageReceived')
+        ALTER TABLE ProductionFinishedProducts ADD IsStorageReceived BIT NOT NULL CONSTRAINT DF_PFP_IsStorageReceived DEFAULT 0;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionFinishedProducts') AND name = 'WarehouseImportOperationId')
+        ALTER TABLE ProductionFinishedProducts ADD WarehouseImportOperationId INT NULL;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionFinishedProducts') AND name = 'StorageReceivedDate')
+        ALTER TABLE ProductionFinishedProducts ADD StorageReceivedDate DATETIME2 NULL;
+
+    -- Normalize finished product status to 2-stage workflow
+    EXEC(N'UPDATE ProductionFinishedProducts 
+    SET LaboratoryConformityStatus = ''PENDING_PHYSICAL'' 
+    WHERE LaboratoryConformityStatus = ''PENDING_INSPECTION'' OR LaboratoryConformityStatus = ''PENDING'' OR LaboratoryConformityStatus IS NULL;');
+
+    EXEC(N'UPDATE pfp
+    SET pfp.LaboratoryConformityStatus = ''APPROVED''
+    FROM ProductionFinishedProducts pfp
+    INNER JOIN LaboratoryFinalConformityCertificates c ON (c.ProductionFinishedProductId = pfp.Id OR (c.ManufactureNumber IS NOT NULL AND c.ManufactureNumber = pfp.ManufactureNumber))
+    WHERE c.OverallStatus = ''APPROVED'' OR c.ApprovalStatus = ''APPROVED'';');
     IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_ProductionFinishedProducts_ProductionOrderId' AND object_id = OBJECT_ID('ProductionFinishedProducts'))
         CREATE INDEX IX_ProductionFinishedProducts_ProductionOrderId ON ProductionFinishedProducts (ProductionOrderId);
     IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'ProductionFinishedProducts' AND COLUMN_NAME = 'StorageLocationId' AND IS_NULLABLE = 'NO')
@@ -1872,14 +1904,20 @@ BEGIN
     END
     IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionAttachments') AND name = 'UploadedBy')
         ALTER TABLE ProductionAttachments ADD UploadedBy NVARCHAR(255) NOT NULL CONSTRAINT DF_PA_UploadedBy DEFAULT '';
-    IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'ProductionAttachments' AND COLUMN_NAME = 'StoredFileName' AND IS_NULLABLE = 'NO')
-        ALTER TABLE ProductionAttachments ALTER COLUMN StoredFileName NVARCHAR(255) NULL;
-    IF NOT EXISTS (SELECT * FROM sys.default_constraints WHERE name = 'DF_PA_StoredFileName')
-        ALTER TABLE ProductionAttachments ADD CONSTRAINT DF_PA_StoredFileName DEFAULT '' FOR StoredFileName;
-    IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'ProductionAttachments' AND COLUMN_NAME = 'ContentType' AND IS_NULLABLE = 'NO')
-        ALTER TABLE ProductionAttachments ALTER COLUMN ContentType NVARCHAR(100) NULL;
-    IF NOT EXISTS (SELECT * FROM sys.default_constraints WHERE name = 'DF_PA_ContentType')
-        ALTER TABLE ProductionAttachments ADD CONSTRAINT DF_PA_ContentType DEFAULT '' FOR ContentType;
+    IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionAttachments') AND name = 'StoredFileName')
+    BEGIN
+        IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'ProductionAttachments' AND COLUMN_NAME = 'StoredFileName' AND IS_NULLABLE = 'NO')
+            ALTER TABLE ProductionAttachments ALTER COLUMN StoredFileName NVARCHAR(255) NULL;
+        IF NOT EXISTS (SELECT * FROM sys.default_constraints WHERE name = 'DF_PA_StoredFileName')
+            ALTER TABLE ProductionAttachments ADD CONSTRAINT DF_PA_StoredFileName DEFAULT '' FOR StoredFileName;
+    END
+    IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('ProductionAttachments') AND name = 'ContentType')
+    BEGIN
+        IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'ProductionAttachments' AND COLUMN_NAME = 'ContentType' AND IS_NULLABLE = 'NO')
+            ALTER TABLE ProductionAttachments ALTER COLUMN ContentType NVARCHAR(100) NULL;
+        IF NOT EXISTS (SELECT * FROM sys.default_constraints WHERE name = 'DF_PA_ContentType')
+            ALTER TABLE ProductionAttachments ADD CONSTRAINT DF_PA_ContentType DEFAULT '' FOR ContentType;
+    END
 END
 
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'ProductionWasteRecords')

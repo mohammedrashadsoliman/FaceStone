@@ -14,8 +14,20 @@ public class WarehouseBatch
     /// <summary>
     /// Foreign key to originating LaboratoryRawMaterialReport (Parent reference)
     /// </summary>
-    public int LaboratoryReportId { get; set; }
+    public int? LaboratoryReportId { get; set; }
     public LaboratoryRawMaterialReport? LaboratoryReport { get; set; }
+
+    /// <summary>
+    /// Foreign key to originating LaboratoryFinalConformityCertificate (Parent reference for finished products)
+    /// </summary>
+    public int? LaboratoryCertificateId { get; set; }
+    public LaboratoryFinalConformityCertificate? LaboratoryCertificate { get; set; }
+
+    /// <summary>
+    /// Foreign key to originating ProductionFinishedProduct (Parent reference for finished products)
+    /// </summary>
+    public int? ProductionFinishedProductId { get; set; }
+    public ProductionFinishedProduct? ProductionFinishedProduct { get; set; }
 
     /// <summary>
     /// Production Reference Number (الرقم المرجعي التتبعي للإنتاج)

@@ -1725,8 +1725,14 @@ class ChatApi {
 
   static async getEligibleFinishedProductsForLab(params = {}) {
     const qs = new URLSearchParams();
-    if (params.status && params.status !== 'ALL') qs.append('status', params.status);
-    if (params.search) qs.append('search', params.search);
+    if (typeof params === 'string') {
+      if (params && params !== 'ALL') qs.append('status', params);
+    } else if (params && typeof params === 'object') {
+      if (params.status && params.status !== 'ALL') qs.append('status', params.status);
+      if (params.search) qs.append('search', params.search);
+      if (params.dateFrom) qs.append('dateFrom', params.dateFrom);
+      if (params.dateTo) qs.append('dateTo', params.dateTo);
+    }
     const queryStr = qs.toString() ? `?${qs.toString()}` : '';
     return await this.request(`/api/laboratory/eligible-finished-products${queryStr}`, { method: 'GET' });
   }

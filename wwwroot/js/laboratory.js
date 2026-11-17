@@ -1787,6 +1787,33 @@
               <span style="font-size: 0.78rem; color: #64748b;">قاعدة بيانات الإنتاج الحية (دون قيم ثابتة)</span>
             </div>
 
+            <!-- Filters Bar (Search & Dates) -->
+            <div style="display: grid; grid-template-columns: 2fr 1fr 1fr auto; gap: 0.75rem; margin-bottom: 0.85rem; align-items: flex-end;">
+              <div>
+                <label for="lab-final-search-inp" style="font-size: 0.78rem; font-weight: 700; color: #475569; display: block; margin-bottom: 3px;">
+                  🔍 بحث بالاسم أو رقم العملية أو رقم التصنيع:
+                </label>
+                <input type="text" id="lab-final-search-inp" class="lab-sheet-input" placeholder="اكتب للبحث في المنتجات..." style="font-size: 0.85rem; padding: 0.45rem 0.65rem; width: 100%;">
+              </div>
+              <div>
+                <label for="lab-final-date-from" style="font-size: 0.78rem; font-weight: 700; color: #475569; display: block; margin-bottom: 3px;">
+                  من تاريخ:
+                </label>
+                <input type="date" id="lab-final-date-from" class="lab-sheet-input" style="font-size: 0.85rem; padding: 0.45rem 0.65rem; width: 100%;">
+              </div>
+              <div>
+                <label for="lab-final-date-to" style="font-size: 0.78rem; font-weight: 700; color: #475569; display: block; margin-bottom: 3px;">
+                  إلى تاريخ:
+                </label>
+                <input type="date" id="lab-final-date-to" class="lab-sheet-input" style="font-size: 0.85rem; padding: 0.45rem 0.65rem; width: 100%;">
+              </div>
+              <div>
+                <button type="button" class="lab-btn lab-btn-secondary" id="btn-final-filter-reset" title="إعادة تعيين الفلاتر" style="padding: 0.45rem 0.75rem; font-size: 0.82rem; height: 35px; white-space: nowrap;">
+                  مسح الفلاتر
+                </button>
+              </div>
+            </div>
+
             <div class="lab-field lab-field-full">
               <select class="lab-select" id="lab-final-prod-select" required style="width: 100%; font-weight: 700; font-size: 0.92rem; border: 2px solid #2563eb; padding: 0.65rem 0.85rem;">
                 <option value="">— جاري تحميل المنتجات المصنعة من قسم الإنتاج... —</option>
@@ -2199,6 +2226,33 @@
         });
       });
 
+      // Search and date filters
+      const searchInp = document.getElementById('lab-final-search-inp');
+      let searchTimeout = null;
+      searchInp?.addEventListener('input', () => {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(() => {
+          this.loadEligibleFinishedProductsForLab(this.finalCertFilterStatus || 'ALL');
+        }, 300);
+      });
+
+      document.getElementById('lab-final-date-from')?.addEventListener('change', () => {
+        this.loadEligibleFinishedProductsForLab(this.finalCertFilterStatus || 'ALL');
+      });
+
+      document.getElementById('lab-final-date-to')?.addEventListener('change', () => {
+        this.loadEligibleFinishedProductsForLab(this.finalCertFilterStatus || 'ALL');
+      });
+
+      document.getElementById('btn-final-filter-reset')?.addEventListener('click', () => {
+        if (searchInp) searchInp.value = '';
+        const dFrom = document.getElementById('lab-final-date-from');
+        const dTo = document.getElementById('lab-final-date-to');
+        if (dFrom) dFrom.value = '';
+        if (dTo) dTo.value = '';
+        this.loadEligibleFinishedProductsForLab(this.finalCertFilterStatus || 'ALL');
+      });
+
       // Select Product change
       const prodSelect = document.getElementById('lab-final-prod-select');
       prodSelect?.addEventListener('change', () => {
@@ -2266,14 +2320,26 @@
       });
 
       // Certificates Log Search
-      const searchInp = document.getElementById('lab-final-log-search');
-      searchInp?.addEventListener('input', () => this.filterIssuedCertificates(searchInp.value));
+      const searchLog = document.getElementById('lab-final-log-search');
+      searchLog?.addEventListener('input', () => this.filterIssuedCertificates(searchLog.value));
       document.getElementById('btn-refresh-final-certs-log')?.addEventListener('click', () => this.loadIssuedCertificatesLog());
     }
 
-    static async loadEligibleFinishedProductsForLab(status = 'ALL', selectedId = null) {
+    static async loadEligibleFinishedProductsForLab(status = 'ALL', selectedId = null, search = null, dateFrom = null, dateTo = null) {
       try {
-        const res = await window.ChatApi.getEligibleFinishedProductsForLab();
+        const currentSearch = search !== null ? search : (document.getElementById('lab-final-search-inp')?.value?.trim() || '');
+        const currentDateFrom = dateFrom !== null ? dateFrom : (document.getElementById('lab-final-date-from')?.value || '');
+        const currentDateTo = dateTo !== null ? dateTo : (document.getElementById('lab-final-date-to')?.value || '');
+        const currentStatus = status || this.finalCertFilterStatus || 'ALL';
+
+        const params = {
+          status: 'ALL', // Keep ALL for backend so counts for all status pills are accurate for the current search/date filters
+          search: currentSearch,
+          dateFrom: currentDateFrom,
+          dateTo: currentDateTo
+        };
+
+        const res = await window.ChatApi.getEligibleFinishedProductsForLab(params);
         if (res && res.success && Array.isArray(res.data)) {
           this.eligibleFinishedProducts = res.data;
 
@@ -2296,10 +2362,10 @@
           if (cApp) cApp.textContent = appCount;
           if (cRej) cRej.textContent = rejCount;
 
-          this.renderFinalProductSelectOptions(status, selectedId);
+          this.renderFinalProductSelectOptions(currentStatus, selectedId);
         } else {
           this.eligibleFinishedProducts = [];
-          this.renderFinalProductSelectOptions(status);
+          this.renderFinalProductSelectOptions(currentStatus);
         }
       } catch (err) {
         console.error('Error loading eligible finished products for lab:', err);
@@ -2319,6 +2385,12 @@
         list = list.filter(x => x.overallStatus === 'APPROVED');
       } else if (status === 'REJECTED') {
         list = list.filter(x => x.overallStatus === 'REJECTED' || x.physicalApprovalStatus === 'REJECTED' || x.chemicalApprovalStatus === 'REJECTED');
+      }
+
+      if (list.length === 0) {
+        select.innerHTML = '<option value="">-- لا توجد منتجات مطابقة لخيارات التصفية المحددة --</option>';
+        this.onFinalProductSelected(null);
+        return;
       }
 
       let html = '<option value="">-- اختر المنتج النهائي من قسم الإنتاج لإجراء الفحص والاعتماد --</option>';
@@ -2341,11 +2413,13 @@
 
       select.innerHTML = html;
 
-      if (selectedId) {
+      if (selectedId && list.some(p => p.finishedProductId === selectedId)) {
         select.value = selectedId;
         this.onFinalProductSelected(selectedId);
-      } else if (select.value) {
+      } else if (select.value && list.some(p => p.finishedProductId === parseInt(select.value, 10))) {
         this.onFinalProductSelected(parseInt(select.value, 10));
+      } else {
+        this.onFinalProductSelected(null);
       }
     }
 

@@ -2000,6 +2000,8 @@ public class StorageController : ControllerBase
             if (int.TryParse(form["transportationId"], out var trId)) dto.TransportationId = trId;
             if (int.TryParse(form["productionReferenceNumber"], out var prnImp)) dto.ProductionReferenceNumber = prnImp;
             if (int.TryParse(form["laboratoryReportId"], out var lrIdImp)) dto.LaboratoryReportId = lrIdImp;
+            if (int.TryParse(form["laboratoryCertificateId"], out var certIdImp)) dto.LaboratoryCertificateId = certIdImp;
+            if (int.TryParse(form["productionFinishedProductId"], out var pfpIdImp)) dto.ProductionFinishedProductId = pfpIdImp;
             dto.SampleCode = form["sampleCode"];
             if (int.TryParse(form["numberOfBatches"], out var nbImp)) dto.NumberOfBatches = nbImp;
             dto.BatchesJson = form["batchesJson"];
@@ -2217,18 +2219,26 @@ public class StorageController : ControllerBase
             return BadRequest(ApiResponse.Fail("مكان التخزين المحدد غير موجود أو غير مفعل."));
         }
 
-        // 2. Validate Raw Material Type (Required: MECHANICAL or CHEMICAL)
+        // 2. Validate Material Type (Required: MECHANICAL or CHEMICAL or FINAL_PRODUCT)
         var materialType = (dto.MaterialType ?? string.Empty).Trim().ToUpperInvariant();
-        if (string.IsNullOrWhiteSpace(materialType) || (materialType != MaterialProcessType.Mechanical && materialType != MaterialProcessType.Chemical))
+        var isFinishedProduct = materialType == "FINAL_PRODUCT" ||
+                                (dto.LaboratoryCertificateId.HasValue && dto.LaboratoryCertificateId.Value > 0) ||
+                                (dto.ProductionFinishedProductId.HasValue && dto.ProductionFinishedProductId.Value > 0);
+
+        if (!isFinishedProduct && (string.IsNullOrWhiteSpace(materialType) || (materialType != MaterialProcessType.Mechanical && materialType != MaterialProcessType.Chemical)))
         {
-            return BadRequest(ApiResponse.Fail("يرجى تحديد نوع الخامات (خامات ميكانيكية أو خامات كيميائية) قبل المتابعة."));
+            return BadRequest(ApiResponse.Fail("يرجى تحديد نوع الخامات (خامات ميكانيكية أو خامات كيميائية أو منتج نهائي) قبل المتابعة."));
         }
 
         // 3. Validate Source / Supplier
         var source = (dto.Source ?? string.Empty).Trim();
         if (string.IsNullOrWhiteSpace(source))
         {
-            return BadRequest(ApiResponse.Fail("المورد / المصدر مطلوب."));
+            source = isFinishedProduct ? "قسم الإنتاج والتصنيع" : string.Empty;
+            if (string.IsNullOrWhiteSpace(source))
+            {
+                return BadRequest(ApiResponse.Fail("المورد / المصدر مطلوب."));
+            }
         }
 
         // 4. Validate Phone Number (Optional, but validate format if entered)
@@ -2238,32 +2248,137 @@ public class StorageController : ControllerBase
             return BadRequest(ApiResponse.Fail("رقم هاتف المورد / المصدر غير صالح. يرجى إدخال رقم هاتف صحيح أو تركه فارغاً."));
         }
 
-        // 5. Check if this is a Laboratory Reference-based Import (Primary Workflow)
-        LaboratoryRawMaterialReport? labReport = null;
-        if (dto.LaboratoryReportId.HasValue && dto.LaboratoryReportId.Value > 0)
+        // 5. Check if this is a Finished Product Certificate Import OR Raw Material Reference-based Import
+        LaboratoryFinalConformityCertificate? finalCert = null;
+        if (dto.LaboratoryCertificateId.HasValue && dto.LaboratoryCertificateId.Value > 0)
         {
-            labReport = await _db.LaboratoryRawMaterialReports
-                .Include(r => r.RawMaterial)
-                .FirstOrDefaultAsync(r => r.Id == dto.LaboratoryReportId.Value);
+            finalCert = await _db.LaboratoryFinalConformityCertificates
+                .Include(c => c.ProductionFinishedProduct)
+                    .ThenInclude(f => f.ProductionProcess)
+                        .ThenInclude(p => p.Materials)
+                .FirstOrDefaultAsync(c => c.Id == dto.LaboratoryCertificateId.Value);
         }
-        else if (!string.IsNullOrWhiteSpace(dto.SampleCode))
+        else if (isFinishedProduct && !string.IsNullOrWhiteSpace(dto.SampleCode))
         {
             var sc = dto.SampleCode.Trim().ToLowerInvariant();
-            labReport = await _db.LaboratoryRawMaterialReports
-                .Include(r => r.RawMaterial)
-                .FirstOrDefaultAsync(r => r.SampleCode != null && r.SampleCode.ToLower() == sc);
+            finalCert = await _db.LaboratoryFinalConformityCertificates
+                .Include(c => c.ProductionFinishedProduct)
+                    .ThenInclude(f => f.ProductionProcess)
+                        .ThenInclude(p => p.Materials)
+                .FirstOrDefaultAsync(c => c.CertificateNumber.ToLower() == sc);
         }
-        else if (dto.ProductionReferenceNumber.HasValue && dto.ProductionReferenceNumber.Value > 0)
+        else if (isFinishedProduct && dto.ProductionFinishedProductId.HasValue && dto.ProductionFinishedProductId.Value > 0)
         {
-            labReport = await _db.LaboratoryRawMaterialReports
-                .Include(r => r.RawMaterial)
-                .FirstOrDefaultAsync(r => r.ProductionReferenceNumber == dto.ProductionReferenceNumber.Value);
+            finalCert = await _db.LaboratoryFinalConformityCertificates
+                .Include(c => c.ProductionFinishedProduct)
+                    .ThenInclude(f => f.ProductionProcess)
+                        .ThenInclude(p => p.Materials)
+                .FirstOrDefaultAsync(c => c.ProductionFinishedProductId == dto.ProductionFinishedProductId.Value);
+        }
+
+        LaboratoryRawMaterialReport? labReport = null;
+        if (finalCert == null)
+        {
+            if (dto.LaboratoryReportId.HasValue && dto.LaboratoryReportId.Value > 0)
+            {
+                labReport = await _db.LaboratoryRawMaterialReports
+                    .Include(r => r.RawMaterial)
+                    .FirstOrDefaultAsync(r => r.Id == dto.LaboratoryReportId.Value);
+            }
+            else if (!string.IsNullOrWhiteSpace(dto.SampleCode))
+            {
+                var sc = dto.SampleCode.Trim().ToLowerInvariant();
+                labReport = await _db.LaboratoryRawMaterialReports
+                    .Include(r => r.RawMaterial)
+                    .FirstOrDefaultAsync(r => r.SampleCode != null && r.SampleCode.ToLower() == sc);
+            }
+            else if (dto.ProductionReferenceNumber.HasValue && dto.ProductionReferenceNumber.Value > 0)
+            {
+                labReport = await _db.LaboratoryRawMaterialReports
+                    .Include(r => r.RawMaterial)
+                    .FirstOrDefaultAsync(r => r.ProductionReferenceNumber == dto.ProductionReferenceNumber.Value);
+            }
         }
 
         decimal remainingAvailable = 0m;
         List<BatchDivisionInputDto> resolvedBatches = new();
 
-        if (labReport != null)
+        if (finalCert != null)
+        {
+            // STRICT QUALITY GATE:
+            // Finished product MUST be APPROVED by BOTH Physical AND Chemical inspections!
+            if (finalCert.OverallStatus != "APPROVED" ||
+                finalCert.PhysicalApprovalStatus != "APPROVED" ||
+                finalCert.ChemicalApprovalStatus != "APPROVED" ||
+                finalCert.ApprovalStatus != "APPROVED" ||
+                finalCert.ConformityDecision != "CONFORMS")
+            {
+                return BadRequest(ApiResponse.Fail($"لا يمكن استلام المنتج النهائي ({finalCert.CertificateNumber}) في المستودع: المنتج لم يجتز اعتمادي قسم المعمل (الفيزيائي والكيميائي) بنجاح (الحالة: {finalCert.OverallStatus})."));
+            }
+
+            if (finalCert.ActualFinalProductQuantity <= 0)
+            {
+                return BadRequest(ApiResponse.Fail($"شهادة مطابقة المنتج النهائي ({finalCert.CertificateNumber}) لا تحتوي على كمية صالحة للاستلام."));
+            }
+
+            var fpObj = finalCert.ProductionFinishedProduct;
+            var mfgNo = finalCert.ManufactureNumber ?? fpObj?.ManufactureNumber ?? string.Empty;
+
+            var alreadyAllocated = await _db.WarehouseBatches
+                .Where(b => (b.LaboratoryCertificateId == finalCert.Id ||
+                            (b.MaterialClassification == "FINAL_PRODUCT" && !string.IsNullOrEmpty(mfgNo) && b.BatchNumber == mfgNo)) &&
+                            b.Status != "REJECTED")
+                .SumAsync(b => (decimal?)b.InitialQuantity) ?? 0m;
+
+            remainingAvailable = Math.Round(finalCert.ActualFinalProductQuantity - alreadyAllocated, 3);
+            if (remainingAvailable <= 0)
+            {
+                return BadRequest(ApiResponse.Fail($"المنتج النهائي المعتمد ({finalCert.CertificateNumber}) تم استلام كامل كميته في المستودع مسبقاً ({alreadyAllocated:N3} طن)."));
+            }
+
+            if (dto.Batches != null && dto.Batches.Count > 0)
+            {
+                resolvedBatches = dto.Batches.Where(b => b.Quantity > 0).ToList();
+            }
+            else if (dto.Items != null && dto.Items.Count > 0)
+            {
+                resolvedBatches = dto.Items.Where(i => i.Quantity > 0).Select(i => new BatchDivisionInputDto
+                {
+                    Quantity = i.Quantity,
+                    Notes = i.Notes
+                }).ToList();
+            }
+            else
+            {
+                resolvedBatches = new List<BatchDivisionInputDto>
+                {
+                    new BatchDivisionInputDto
+                    {
+                        BatchNumber = !string.IsNullOrWhiteSpace(mfgNo) ? mfgNo : $"FP-{finalCert.CertificateNumber}",
+                        Quantity = remainingAvailable
+                    }
+                };
+            }
+
+            if (resolvedBatches.Count == 0)
+            {
+                return BadRequest(ApiResponse.Fail("يجب تحديد دفعة واحدة على الأقل للاستلام."));
+            }
+
+            var sumBatches = Math.Round(resolvedBatches.Sum(b => b.Quantity), 3);
+            if (sumBatches > remainingAvailable)
+            {
+                return BadRequest(ApiResponse.Fail($"إجمالي كميات الدفعات المستلمة ({sumBatches:N3} طن) يتجاوز الرصيد المتبقي المعتمد للاستلام ({remainingAvailable:N3} طن)."));
+            }
+            if (sumBatches <= 0)
+            {
+                return BadRequest(ApiResponse.Fail("يجب أن يكون إجمالي كميات الدفعات أكبر من الصفر."));
+            }
+
+            materialType = "FINAL_PRODUCT";
+            source = !string.IsNullOrWhiteSpace(source) ? source : "قسم الإنتاج والتصنيع";
+        }
+        else if (labReport != null)
         {
             // Strictly validate compliance status
             if (labReport.ApprovalStatus != "APPROVED")
@@ -2457,8 +2572,11 @@ public class StorageController : ControllerBase
                 IsDiscrepancyFlagged = isFlagged,
                 DiscrepancyExplanation = dto.DiscrepancyExplanation?.Trim(),
                 TransportationId = dto.TransportationId,
-                ProductionReferenceNumber = labReport != null ? labReport.ProductionReferenceNumber : dto.ProductionReferenceNumber,
-                SampleCode = labReport != null ? (labReport.SampleCode ?? $"SMP-{labReport.SampleNumber:D4}") : dto.SampleCode,
+                ProductionReferenceNumber = finalCert != null ? (finalCert.ProductionReferenceNumber > 0 ? finalCert.ProductionReferenceNumber : (finalCert.ProductionFinishedProduct?.ProductionOrderId ?? 0)) : (labReport != null ? labReport.ProductionReferenceNumber : (dto.ProductionReferenceNumber ?? 0)),
+                SampleCode = finalCert != null ? finalCert.CertificateNumber : (labReport != null ? (labReport.SampleCode ?? $"SMP-{labReport.SampleNumber:D4}") : dto.SampleCode),
+                ProductionOrderId = finalCert != null ? (finalCert.ProductionOrderId ?? finalCert.ProductionFinishedProduct?.ProductionOrderId) : null,
+                ProductionProcessId = finalCert != null ? (finalCert.ProductionProcessId ?? finalCert.ProductionFinishedProduct?.ProductionProcessId) : null,
+                ManufactureNumber = finalCert != null ? (finalCert.ManufactureNumber ?? finalCert.ProductionFinishedProduct?.ManufactureNumber) : null,
 
                 // Attachments
                 WeighbridgeAttachmentPath = !string.IsNullOrWhiteSpace(weighbridgeRes.StoredFileName) ? $"/uploads/storage/{weighbridgeRes.StoredFileName}" : null,
@@ -2483,7 +2601,117 @@ public class StorageController : ControllerBase
             var createdBatches = new List<WarehouseBatch>();
             var createdItems = new List<StorageOperationItem>();
 
-            if (labReport != null && resolvedBatches.Count > 0)
+            if (finalCert != null && resolvedBatches.Count > 0)
+            {
+                var fpName = (!string.IsNullOrWhiteSpace(finalCert.FinalProductName) ? finalCert.FinalProductName : "منتج نهائي").Trim();
+                var rawMat = await _db.RawMaterials.FirstOrDefaultAsync(m => m.Name.ToLower() == fpName.ToLower());
+                if (rawMat == null)
+                {
+                    rawMat = new RawMaterial
+                    {
+                        Name = fpName,
+                        MaterialType = MaterialProcessType.FinalProduct,
+                        InitialQuantity = 0m,
+                        CreatedAt = DateTime.UtcNow,
+                        CreatedBy = userName,
+                        CreatedByUserId = userId
+                    };
+                    await _db.RawMaterials.AddAsync(rawMat);
+                    await _db.SaveChangesAsync();
+                }
+
+                var fpObj = finalCert.ProductionFinishedProduct;
+                var mfgNo = finalCert.ManufactureNumber ?? fpObj?.ManufactureNumber ?? string.Empty;
+                var batchNumbers = await ReserveBatchNumbersAsync(resolvedBatches.Count);
+
+                int? fallbackLabReportId = null;
+                if (fpObj?.ProductionProcess?.Materials != null)
+                {
+                    fallbackLabReportId = fpObj.ProductionProcess.Materials
+                        .Where(m => m.LaboratoryReportId.HasValue && m.LaboratoryReportId.Value > 0)
+                        .Select(m => m.LaboratoryReportId)
+                        .FirstOrDefault();
+                }
+                if (!fallbackLabReportId.HasValue || fallbackLabReportId.Value == 0)
+                {
+                    fallbackLabReportId = await _db.LaboratoryRawMaterialReports.OrderByDescending(r => r.Id).Select(r => (int?)r.Id).FirstOrDefaultAsync();
+                }
+
+                for (int idx = 0; idx < resolvedBatches.Count; idx++)
+                {
+                    var bIn = resolvedBatches[idx];
+                    var preferredNum = !string.IsNullOrWhiteSpace(bIn.BatchNumber) && !await _db.WarehouseBatches.AnyAsync(b => b.BatchNumber == bIn.BatchNumber.Trim())
+                        ? bIn.BatchNumber.Trim()
+                        : (idx == 0 && !string.IsNullOrWhiteSpace(mfgNo) && !await _db.WarehouseBatches.AnyAsync(b => b.BatchNumber == mfgNo.Trim())
+                            ? mfgNo.Trim()
+                            : batchNumbers[idx]);
+
+                    var batch = new WarehouseBatch
+                    {
+                        LaboratoryReportId = fallbackLabReportId,
+                        LaboratoryCertificateId = finalCert.Id,
+                        ProductionFinishedProductId = finalCert.ProductionFinishedProductId,
+                        ProductionReferenceNumber = finalCert.ProductionReferenceNumber > 0 ? finalCert.ProductionReferenceNumber : (fpObj?.ProductionOrderId ?? 0),
+                        SampleCode = finalCert.CertificateNumber,
+                        BatchNumber = preferredNum,
+                        RawMaterialId = rawMat.Id,
+                        MaterialName = fpName,
+                        MaterialClassification = "FINAL_PRODUCT",
+                        SupplierName = source,
+                        StorageLocationId = location.Id,
+                        InitialQuantity = Math.Round(bIn.Quantity, 3),
+                        CurrentQuantity = Math.Round(bIn.Quantity, 3),
+                        StorageOperationId = op.Id,
+                        ImportDate = txDate,
+                        Status = "APPROVED",
+                        IsActive = true,
+                        CreatedAt = DateTime.UtcNow,
+                        CreatedBy = userName,
+                        CreatedByUserId = userId,
+                        Notes = bIn.Notes ?? $"استلام منتج نهائي معتمد مخبرياً - شهادة {finalCert.CertificateNumber}"
+                    };
+                    await _db.WarehouseBatches.AddAsync(batch);
+                    await _db.SaveChangesAsync();
+
+                    var opItem = new StorageOperationItem
+                    {
+                        StorageOperationId = op.Id,
+                        RawMaterialId = rawMat.Id,
+                        WarehouseBatchId = batch.Id,
+                        BatchNumber = preferredNum,
+                        SampleCode = batch.SampleCode,
+                        ProductionReferenceNumber = batch.ProductionReferenceNumber,
+                        MaterialName = fpName,
+                        Quantity = Math.Round(bIn.Quantity, 3),
+                        TrackingNumber = $"IMP-{txDate:yyyy}-{txNumber:D4}-FP{idx + 1}",
+                        ProductionOrderId = finalCert.ProductionOrderId ?? fpObj?.ProductionOrderId,
+                        ProductionProcessId = finalCert.ProductionProcessId ?? fpObj?.ProductionProcessId,
+                        ManufactureNumber = preferredNum,
+                        Notes = bIn.Notes
+                    };
+                    await _db.StorageOperationItems.AddAsync(opItem);
+                    await _db.SaveChangesAsync();
+
+                    batch.StorageOperationItemId = opItem.Id;
+                    createdBatches.Add(batch);
+                    createdItems.Add(opItem);
+                }
+
+                finalCert.IsStoragePosted = true;
+                finalCert.StoragePostedAt = DateTime.UtcNow;
+
+                if (finalCert.ProductionFinishedProductId.HasValue)
+                {
+                    var fpRecord = await _db.ProductionFinishedProducts.FirstOrDefaultAsync(f => f.Id == finalCert.ProductionFinishedProductId.Value);
+                    if (fpRecord != null)
+                    {
+                        fpRecord.IsStorageReceived = true;
+                        fpRecord.WarehouseImportOperationId = op.Id;
+                        fpRecord.StorageReceivedDate = DateTime.UtcNow;
+                    }
+                }
+            }
+            else if (labReport != null && resolvedBatches.Count > 0)
             {
                 var sampleName = (!string.IsNullOrWhiteSpace(labReport.SampleName) ? labReport.SampleName : labReport.RawMaterialDescription).Trim();
                 var rawMat = labReport.RawMaterial;
@@ -3491,8 +3719,8 @@ public class StorageController : ControllerBase
         var reportIds = reports.Select(r => r.Id).ToList();
         var allocatedGrouped = await _db.WarehouseBatches
             .AsNoTracking()
-            .Where(b => reportIds.Contains(b.LaboratoryReportId) && b.Status != "REJECTED")
-            .GroupBy(b => b.LaboratoryReportId)
+            .Where(b => b.LaboratoryReportId.HasValue && reportIds.Contains(b.LaboratoryReportId.Value) && b.Status != "REJECTED")
+            .GroupBy(b => b.LaboratoryReportId!.Value)
             .Select(g => new { LabId = g.Key, Allocated = g.Sum(x => x.InitialQuantity) })
             .ToDictionaryAsync(x => x.LabId, x => x.Allocated);
 
@@ -3524,8 +3752,98 @@ public class StorageController : ControllerBase
                     RawMaterialId = r.RawMaterialId ?? r.RawMaterial?.Id,
                     AttachmentPath = r.AttachmentPath,
                     AttachmentFileName = r.AttachmentFileName,
-                    Notes = r.Notes
+                    Notes = r.Notes,
+                    IsFinishedProduct = false
                 });
+            }
+        }
+
+        // Include certified finished products that have passed BOTH Physical and Chemical Laboratory approvals
+        var finalCerts = await _db.LaboratoryFinalConformityCertificates
+            .AsNoTracking()
+            .Include(c => c.ProductionFinishedProduct)
+                .ThenInclude(f => f.ProductionProcess)
+            .Include(c => c.ProductionFinishedProduct)
+                .ThenInclude(f => f.ProductionOrder)
+            .Where(c => c.ApprovalStatus == "APPROVED" &&
+                        c.OverallStatus == "APPROVED" &&
+                        c.PhysicalApprovalStatus == "APPROVED" &&
+                        c.ChemicalApprovalStatus == "APPROVED" &&
+                        c.ConformityDecision == "CONFORMS" &&
+                        c.ActualFinalProductQuantity > 0)
+            .OrderByDescending(c => c.Id)
+            .Take(150)
+            .ToListAsync();
+
+        if (finalCerts.Any())
+        {
+            var certIds = finalCerts.Select(c => c.Id).ToList();
+            var certAllocated = await _db.WarehouseBatches
+                .AsNoTracking()
+                .Where(b => (b.LaboratoryCertificateId.HasValue && certIds.Contains(b.LaboratoryCertificateId.Value)) ||
+                            (b.MaterialClassification == "FINAL_PRODUCT" && b.BatchNumber != null))
+                .GroupBy(b => b.LaboratoryCertificateId ?? 0)
+                .Select(g => new { CertId = g.Key, Allocated = g.Sum(x => x.InitialQuantity) })
+                .ToDictionaryAsync(x => x.CertId, x => x.Allocated);
+
+            var batchSumsByNumber = await _db.WarehouseBatches
+                .AsNoTracking()
+                .Where(b => b.MaterialClassification == "FINAL_PRODUCT" && b.Status != "REJECTED")
+                .GroupBy(b => b.BatchNumber)
+                .Select(g => new { BatchNumber = g.Key, TotalAllocated = g.Sum(x => x.InitialQuantity) })
+                .ToDictionaryAsync(x => x.BatchNumber, x => x.TotalAllocated);
+
+            foreach (var cert in finalCerts)
+            {
+                var fp = cert.ProductionFinishedProduct;
+                var mfgNo = cert.ManufactureNumber ?? fp?.ManufactureNumber ?? cert.ProductionBatchNumber ?? string.Empty;
+                decimal allocated = 0m;
+                if (certAllocated.TryGetValue(cert.Id, out var directAlloc))
+                {
+                    allocated += directAlloc;
+                }
+                else if (!string.IsNullOrWhiteSpace(mfgNo) && batchSumsByNumber.TryGetValue(mfgNo, out var byMfg))
+                {
+                    allocated += byMfg;
+                }
+
+                var totalQty = cert.ActualFinalProductQuantity;
+                var remaining = Math.Round(totalQty - allocated, 3);
+                if (remaining > 0)
+                {
+                    var procNumber = cert.ProductionProcessNumber ?? fp?.ProductionProcess?.ProcessNumber ?? string.Empty;
+                    var orderNumber = cert.ProductionOrderNumber ?? fp?.ProductionOrderNumber ?? fp?.ProductionOrder?.OrderNumber ?? string.Empty;
+                    var prodName = cert.FinalProductName ?? fp?.FinishedProductName ?? "منتج نهائي معتمد";
+
+                    result.Add(new WarehouseCompliantReferenceDto
+                    {
+                        LaboratoryCertificateId = cert.Id,
+                        ProductionFinishedProductId = cert.ProductionFinishedProductId,
+                        ProductionReferenceNumber = cert.ProductionReferenceNumber > 0 ? cert.ProductionReferenceNumber : (fp?.ProductionOrderId ?? 0),
+                        SampleNumber = cert.Id,
+                        SampleCode = cert.CertificateNumber,
+                        CertificateNumber = cert.CertificateNumber,
+                        ManufactureNumber = mfgNo,
+                        ProductionProcessNumber = procNumber,
+                        ProductionOrderNumber = orderNumber,
+                        MaterialName = prodName,
+                        MaterialClassification = "FINAL_PRODUCT",
+                        SupplierName = "قسم الإنتاج والتصنيع",
+                        ReceivedQuantity = totalQty,
+                        AcceptedQuantity = totalQty,
+                        AlreadyAllocatedQuantity = allocated,
+                        RemainingAvailableQuantity = remaining,
+                        ComplyStatus = "COMPLY",
+                        InspectionDecision = "ACCEPTED",
+                        ApprovalStatus = "APPROVED",
+                        AnalysisDateTime = cert.ReviewedAt ?? cert.CreatedAt,
+                        SampleReceivedDate = cert.ProductionCompletionDateTime,
+                        AttachmentPath = cert.AttachmentPath ?? fp?.WeighbridgeAttachmentPath,
+                        AttachmentFileName = cert.AttachmentFileName ?? fp?.WeighbridgeFileName,
+                        Notes = $"منتج نهائي معتمد مخبرياً (فيزيائي + كيميائي) - شهادة {cert.CertificateNumber} - عملية {procNumber} - تصنيع {mfgNo}",
+                        IsFinishedProduct = true
+                    });
+                }
             }
         }
 
@@ -3570,7 +3888,7 @@ public class StorageController : ControllerBase
                 BatchNumber = b.BatchNumber,
                 SampleCode = b.SampleCode,
                 ProductionReferenceNumber = b.ProductionReferenceNumber,
-                LaboratoryReportId = b.LaboratoryReportId,
+                LaboratoryReportId = b.LaboratoryReportId ?? 0,
                 RawMaterialId = b.RawMaterialId,
                 MaterialName = b.MaterialName,
                 MaterialClassification = b.MaterialClassification,
@@ -3606,56 +3924,69 @@ public class StorageController : ControllerBase
             return Ok(ApiResponse<List<WarehouseCompliantReferenceDto>>.Ok(new List<WarehouseCompliantReferenceDto>()));
         }
 
-        var labIds = activeBatches.Where(b => b.LaboratoryReportId > 0).Select(b => b.LaboratoryReportId).Distinct().ToList();
+        var labIds = activeBatches.Where(b => b.LaboratoryReportId.HasValue && b.LaboratoryReportId.Value > 0).Select(b => b.LaboratoryReportId!.Value).Distinct().ToList();
         var reportsMap = await _db.LaboratoryRawMaterialReports
             .AsNoTracking()
             .Where(r => labIds.Contains(r.Id))
             .ToDictionaryAsync(r => r.Id);
+
+        var certIds = activeBatches.Where(b => b.LaboratoryCertificateId.HasValue && b.LaboratoryCertificateId.Value > 0).Select(b => b.LaboratoryCertificateId!.Value).Distinct().ToList();
+        var certsMap = await _db.LaboratoryFinalConformityCertificates
+            .AsNoTracking()
+            .Where(c => certIds.Contains(c.Id))
+            .ToDictionaryAsync(c => c.Id);
 
         var grouped = activeBatches
             .GroupBy(b => new
             {
                 RefNo = b.ProductionReferenceNumber,
                 Code = b.SampleCode,
-                LabId = b.LaboratoryReportId,
+                LabId = b.LaboratoryReportId ?? 0,
+                CertId = b.LaboratoryCertificateId ?? 0,
                 Mat = b.MaterialName
             })
             .Select(g =>
             {
                 reportsMap.TryGetValue(g.Key.LabId, out var rep);
+                certsMap.TryGetValue(g.Key.CertId, out var cert);
                 var totalAvailable = g.Sum(x => x.CurrentQuantity);
                 var sampleCode = !string.IsNullOrWhiteSpace(g.Key.Code)
                     ? g.Key.Code
-                    : (rep != null && !string.IsNullOrWhiteSpace(rep.SampleCode)
-                        ? rep.SampleCode
-                        : (g.Key.RefNo > 0 ? $"REF-{g.Key.RefNo:D4}" : $"SMP-{g.Key.LabId:D4}"));
+                    : (cert != null && !string.IsNullOrWhiteSpace(cert.CertificateNumber)
+                        ? cert.CertificateNumber
+                        : (rep != null && !string.IsNullOrWhiteSpace(rep.SampleCode)
+                            ? rep.SampleCode
+                            : (g.Key.RefNo > 0 ? $"REF-{g.Key.RefNo:D4}" : $"SMP-{g.Key.LabId:D4}")));
                 var matName = !string.IsNullOrWhiteSpace(g.Key.Mat)
                     ? g.Key.Mat
-                    : (rep?.SampleName ?? "خام معملي");
-                var matClass = rep?.MaterialClassification ?? g.First().MaterialClassification ?? "MECHANICAL";
-                var suppName = rep?.SupplierName ?? g.First().SupplierName;
+                    : (cert?.FinalProductName ?? rep?.SampleName ?? "خام معملي");
+                var matClass = cert != null ? "FINAL_PRODUCT" : (rep?.MaterialClassification ?? g.First().MaterialClassification ?? "MECHANICAL");
+                var suppName = cert != null ? "قسم الإنتاج والتصنيع" : (rep?.SupplierName ?? g.First().SupplierName);
 
                 return new WarehouseCompliantReferenceDto
                 {
                     LaboratoryReportId = g.Key.LabId,
+                    LaboratoryCertificateId = g.Key.CertId > 0 ? g.Key.CertId : null,
                     ProductionReferenceNumber = g.Key.RefNo,
-                    SampleNumber = rep?.SampleNumber ?? 0,
+                    SampleNumber = cert?.Id ?? rep?.SampleNumber ?? 0,
                     SampleCode = sampleCode,
+                    CertificateNumber = cert?.CertificateNumber,
                     MaterialName = matName,
                     MaterialClassification = matClass,
                     SupplierName = suppName,
-                    ReceivedQuantity = rep?.ReceivedQuantity ?? totalAvailable,
-                    AcceptedQuantity = rep?.AcceptedQuantity ?? totalAvailable,
+                    ReceivedQuantity = cert?.ActualFinalProductQuantity ?? rep?.ReceivedQuantity ?? totalAvailable,
+                    AcceptedQuantity = cert?.ActualFinalProductQuantity ?? rep?.AcceptedQuantity ?? totalAvailable,
                     RemainingAvailableQuantity = totalAvailable,
-                    ComplyStatus = rep?.ComplyStatus ?? "COMPLY",
-                    InspectionDecision = rep?.InspectionDecision ?? "ACCEPTED",
+                    ComplyStatus = cert != null ? "COMPLY" : (rep?.ComplyStatus ?? "COMPLY"),
+                    InspectionDecision = cert != null ? "ACCEPTED" : (rep?.InspectionDecision ?? "ACCEPTED"),
                     ApprovalStatus = "APPROVED",
-                    AnalysisDateTime = rep?.AnalysisDateTime ?? g.First().ImportDate,
-                    SampleReceivedDate = rep?.SampleReceivedDate ?? g.First().ImportDate,
+                    AnalysisDateTime = cert?.ReviewedAt ?? rep?.AnalysisDateTime ?? g.First().ImportDate,
+                    SampleReceivedDate = cert?.ProductionCompletionDateTime ?? rep?.SampleReceivedDate ?? g.First().ImportDate,
                     RawMaterialId = g.First().RawMaterialId,
-                    AttachmentPath = rep?.AttachmentPath,
-                    AttachmentFileName = rep?.AttachmentFileName,
-                    Notes = rep?.Notes
+                    AttachmentPath = cert?.AttachmentPath ?? rep?.AttachmentPath,
+                    AttachmentFileName = cert?.AttachmentFileName ?? rep?.AttachmentFileName,
+                    Notes = cert != null ? $"منتج نهائي معتمد ({cert.CertificateNumber})" : rep?.Notes,
+                    IsFinishedProduct = cert != null || matClass == "FINAL_PRODUCT"
                 };
             })
             .OrderByDescending(r => r.ProductionReferenceNumber)
@@ -4045,7 +4376,7 @@ public class StorageController : ControllerBase
                         StorageOperationItemId = item.Id,
                         WarehouseBatchId = item.WarehouseBatchId,
                         BatchNumber = item.BatchNumber,
-                        MovementType = "IMPORT",
+                        MovementType = op.MaterialType == "FINAL_PRODUCT" ? "FINAL_PRODUCT_INFLOW" : "IMPORT",
                         Quantity = item.Quantity, // Positive for inflow
                         RunningBalance = newStock,
                         MovementDate = op.TransactionDate,
@@ -4248,22 +4579,45 @@ public class StorageController : ControllerBase
             op.RejectionReason = null;
 
             // Mark the Laboratory traceability source as received exactly once (idempotent with IsInventoryPosted guard above)
-            if (opType == "IMPORT" && op.ProductionReferenceNumber.HasValue)
+            if (opType == "IMPORT")
             {
-                var refNo = op.ProductionReferenceNumber.Value;
-                var finalCert = await db.LaboratoryFinalConformityCertificates
-                    .FirstOrDefaultAsync(c => c.ProductionReferenceNumber == refNo &&
-                                              c.ApprovalStatus == "APPROVED" && c.ConformityDecision == "CONFORMS");
-
-                if (finalCert != null && !finalCert.IsStoragePosted)
+                LaboratoryFinalConformityCertificate? finalCert = null;
+                if (!string.IsNullOrEmpty(op.SampleCode))
                 {
-                    finalCert.IsStoragePosted = true;
-                    finalCert.StoragePostedAt = DateTime.UtcNow;
-                    logger.LogInformation("Final Product Conformity Certificate {Cert} (Ref #{Ref}) posted to finished-product storage via Storage Operation #{Tx}.",
-                        finalCert.CertificateNumber, refNo, op.TransactionNumber);
+                    finalCert = await db.LaboratoryFinalConformityCertificates
+                        .FirstOrDefaultAsync(c => c.CertificateNumber == op.SampleCode);
                 }
-                else
+                if (finalCert == null && op.ProductionReferenceNumber.HasValue)
                 {
+                    finalCert = await db.LaboratoryFinalConformityCertificates
+                        .FirstOrDefaultAsync(c => c.ProductionReferenceNumber == op.ProductionReferenceNumber.Value &&
+                                                  c.ApprovalStatus == "APPROVED" && c.ConformityDecision == "CONFORMS");
+                }
+
+                if (finalCert != null)
+                {
+                    if (!finalCert.IsStoragePosted)
+                    {
+                        finalCert.IsStoragePosted = true;
+                        finalCert.StoragePostedAt = DateTime.UtcNow;
+                        logger.LogInformation("Final Product Conformity Certificate {Cert} posted to finished-product storage via Storage Operation #{Tx}.",
+                            finalCert.CertificateNumber, op.TransactionNumber);
+                    }
+
+                    if (finalCert.ProductionFinishedProductId.HasValue)
+                    {
+                        var fp = await db.ProductionFinishedProducts.FirstOrDefaultAsync(f => f.Id == finalCert.ProductionFinishedProductId.Value);
+                        if (fp != null && !fp.IsStorageReceived)
+                        {
+                            fp.IsStorageReceived = true;
+                            fp.WarehouseImportOperationId = op.Id;
+                            fp.StorageReceivedDate = DateTime.UtcNow;
+                        }
+                    }
+                }
+                else if (op.ProductionReferenceNumber.HasValue)
+                {
+                    var refNo = op.ProductionReferenceNumber.Value;
                     var labRaw = await db.LaboratoryRawMaterialReports
                         .FirstOrDefaultAsync(r => r.ProductionReferenceNumber == refNo);
                     if (labRaw != null && !labRaw.IsStorageReceived)

@@ -1561,6 +1561,19 @@ public class FaceStoneDbContext : DbContext
             entity.HasOne(e => e.LaboratoryReport)
                   .WithMany(r => r.Batches)
                   .HasForeignKey(e => e.LaboratoryReportId)
+                  .IsRequired(false)
+                  .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.LaboratoryCertificate)
+                  .WithMany()
+                  .HasForeignKey(e => e.LaboratoryCertificateId)
+                  .IsRequired(false)
+                  .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.ProductionFinishedProduct)
+                  .WithMany()
+                  .HasForeignKey(e => e.ProductionFinishedProductId)
+                  .IsRequired(false)
                   .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasOne(e => e.RawMaterial)
@@ -2353,6 +2366,9 @@ public class FaceStoneDbContext : DbContext
             entity.Property(e => e.LaboratoryRejectionReason).HasMaxLength(1000);
             entity.Property(e => e.LaboratoryCorrectiveAction).HasMaxLength(1000);
             entity.Property(e => e.LaboratoryNotes).HasMaxLength(1000);
+            entity.Property(e => e.IsStorageReceived).HasDefaultValue(false);
+            entity.Property(e => e.WarehouseImportOperationId);
+            entity.Property(e => e.StorageReceivedDate);
 
             entity.Property(e => e.WeighbridgeAttachmentPath).HasMaxLength(1000);
             entity.Property(e => e.WeighbridgeFileName).HasMaxLength(255);

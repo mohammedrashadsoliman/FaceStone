@@ -422,8 +422,8 @@ public class StorageAttachmentItemDto
 
 public class CreateStorageImportRequestDto
 {
-    [Required(ErrorMessage = "نوع الخامة (ميكانيكية أو كيميائية) مطلوب.")]
-    [RegularExpression("^(MECHANICAL|CHEMICAL|خامات ميكانيكية|خامات كيميائية)$", ErrorMessage = "نوع الخامة يجب أن يكون خامات ميكانيكية (MECHANICAL) أو خامات كيميائية (CHEMICAL).")]
+    [Required(ErrorMessage = "نوع الخامة أو الصنف مطلوب.")]
+    [RegularExpression("^(MECHANICAL|CHEMICAL|FINAL_PRODUCT|خامات ميكانيكية|خامات كيميائية|منتج نهائي)$", ErrorMessage = "نوع الخامة يجب أن يكون خامات ميكانيكية (MECHANICAL) أو خامات كيميائية (CHEMICAL) أو منتج نهائي (FINAL_PRODUCT).")]
     public string MaterialType { get; set; } = "MECHANICAL";
 
     [Required(ErrorMessage = "مكان التخزين مطلوب.")]
@@ -464,6 +464,12 @@ public class CreateStorageImportRequestDto
     /// Foreign key to originating LaboratoryRawMaterialReport
     /// </summary>
     public int? LaboratoryReportId { get; set; }
+
+    /// <summary>
+    /// Foreign key to certified LaboratoryFinalConformityCertificate (when importing finished product)
+    /// </summary>
+    public int? LaboratoryCertificateId { get; set; }
+    public int? ProductionFinishedProductId { get; set; }
 
     /// <summary>
     /// Sample Code from Laboratory (رقم العينة, e.g. SMP-0001)
@@ -630,14 +636,21 @@ public class StorageOperationItemDto
 public class WarehouseBatchDto
 {
     public int Id { get; set; }
-    public int LaboratoryReportId { get; set; }
+    public int? LaboratoryReportId { get; set; }
+    public int? LaboratoryCertificateId { get; set; }
+    public int? ProductionFinishedProductId { get; set; }
     public int ProductionReferenceNumber { get; set; }
     public string SampleCode { get; set; } = string.Empty;
     public string BatchNumber { get; set; } = string.Empty;
     public int RawMaterialId { get; set; }
     public string MaterialName { get; set; } = string.Empty;
     public string MaterialClassification { get; set; } = "MECHANICAL";
-    public string MaterialClassificationAr => MaterialClassification == "CHEMICAL" ? "كيميائية" : "ميكانيكية";
+    public string MaterialClassificationAr => MaterialClassification switch
+    {
+        "FINAL_PRODUCT" => "منتج نهائي",
+        "CHEMICAL" => "كيميائية",
+        _ => "ميكانيكية"
+    };
     public string? SupplierName { get; set; }
     public int StorageLocationId { get; set; }
     public string StorageLocationName { get; set; } = string.Empty;
@@ -652,6 +665,7 @@ public class WarehouseBatchDto
         "APPROVED" => "معتمد بالمخزن",
         "CONSUMED" => "تم الصرف بالكامل",
         "REJECTED" => "مرفوض",
+        "PENDING_LAB_INSPECTION" => "قيد فحص المختبر",
         _ => "قيد المراجعة"
     };
     public bool IsActive { get; set; }
@@ -685,6 +699,15 @@ public class WarehouseCompliantReferenceDto
     public string? AttachmentPath { get; set; }
     public string? AttachmentFileName { get; set; }
     public string? Notes { get; set; }
+
+    // Finished Product Traceability Fields
+    public int? LaboratoryCertificateId { get; set; }
+    public int? ProductionFinishedProductId { get; set; }
+    public string? ProductionProcessNumber { get; set; }
+    public string? ManufactureNumber { get; set; }
+    public string? ProductionOrderNumber { get; set; }
+    public string? CertificateNumber { get; set; }
+    public bool IsFinishedProduct { get; set; } = false;
 }
 
 public class LocationBatchAvailabilityDto

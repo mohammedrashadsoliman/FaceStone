@@ -53,8 +53,8 @@ if (args.Contains("--test-storage-queries"))
         var reportIds = reports.Select(r => r.Id).ToList();
         var allocatedGrouped = await db.WarehouseBatches
             .AsNoTracking()
-            .Where(b => reportIds.Contains(b.LaboratoryReportId) && b.Status != "REJECTED")
-            .GroupBy(b => b.LaboratoryReportId)
+            .Where(b => b.LaboratoryReportId.HasValue && reportIds.Contains(b.LaboratoryReportId.Value) && b.Status != "REJECTED")
+            .GroupBy(b => b.LaboratoryReportId!.Value)
             .Select(g => new { LabId = g.Key, Allocated = g.Sum(x => x.InitialQuantity) })
             .ToDictionaryAsync(x => x.LabId, x => x.Allocated);
         Console.WriteLine($"SUCCESS: Allocated grouped count: {allocatedGrouped.Count}");
@@ -483,7 +483,8 @@ app.Lifetime.ApplicationStarted.Register(() =>
     logger.LogInformation("[FaceStone] Hosting Environment: {Env}", app.Environment.EnvironmentName);
     logger.LogInformation("==================================================================");
 
-    if (app.Environment.IsDevelopment() || string.Equals(Environment.MachineName, "DESKTOP-OVKNQTJ", StringComparison.OrdinalIgnoreCase))
+    if (!args.Contains("--no-launch-browser") && Environment.GetEnvironmentVariable("NO_LAUNCH_BROWSER") != "1" &&
+        (app.Environment.IsDevelopment() || string.Equals(Environment.MachineName, "DESKTOP-OVKNQTJ", StringComparison.OrdinalIgnoreCase)))
     {
         try
         {

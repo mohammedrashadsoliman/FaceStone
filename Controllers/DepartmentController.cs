@@ -21,28 +21,29 @@ public class DepartmentController : ControllerBase
     }
 
     /// <summary>
-    /// Retrieve available departments for the current authenticated user.
-    /// Finance is available to all authenticated employees.
-    /// Transportation is strictly available only to CEO, IT, and Transportation Manager.
+    /// Retrieve available departments for the current user.
+    /// Returns personalized access for authenticated employees or all active departments for guests.
     /// </summary>
     [HttpGet("/api/departments")]
+    [HttpGet("/departments/data")]
+    [HttpGet("/departments/list")]
     [HttpGet("list")]
-    [Authorize]
+    [AllowAnonymous]
     [ProducesResponseType(typeof(ApiResponse<DepartmentListResponseDto>), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public IActionResult GetDepartments()
     {
-        var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
-        var hasFinance = AppRoles.HasFinanceAccess(role);
-        var hasTransportation = AppRoles.HasTransportationAccess(role);
-        var hasStorage = AppRoles.HasStorageAccess(role);
-        var hasManagement = AppRoles.HasManagementAccess(role);
-        var hasControlMonitoring = AppRoles.HasControlMonitoringAccess(role);
-        var hasAttendance = AppRoles.HasAttendanceAccess(role);
-        var hasLaboratory = AppRoles.HasLaboratoryAccess(role);
-        var hasProduction = AppRoles.HasProductionAccess(role);
-        var hasPhysicalLab = AppRoles.HasPhysicalLabAccess(role);
-        var hasChemicalLab = AppRoles.HasChemicalLabAccess(role);
+        var isAuth = User.Identity?.IsAuthenticated == true;
+        var role = isAuth ? (User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty) : "Guest";
+        var hasFinance = !isAuth || AppRoles.HasFinanceAccess(role);
+        var hasTransportation = !isAuth || AppRoles.HasTransportationAccess(role);
+        var hasStorage = !isAuth || AppRoles.HasStorageAccess(role);
+        var hasManagement = !isAuth || AppRoles.HasManagementAccess(role);
+        var hasControlMonitoring = !isAuth || AppRoles.HasControlMonitoringAccess(role);
+        var hasAttendance = !isAuth || AppRoles.HasAttendanceAccess(role);
+        var hasLaboratory = !isAuth || AppRoles.HasLaboratoryAccess(role);
+        var hasProduction = !isAuth || AppRoles.HasProductionAccess(role);
+        var hasPhysicalLab = !isAuth || AppRoles.HasPhysicalLabAccess(role);
+        var hasChemicalLab = !isAuth || AppRoles.HasChemicalLabAccess(role);
         var labRedirectSection = AppRoles.GetDefaultLaboratorySection(role);
         var defaultLabRoute = labRedirectSection == "CHEMICAL" ? "/laboratory/chemical" : "/laboratory/physical";
 
@@ -386,15 +387,24 @@ public class DepartmentController : ControllerBase
 
     /// <summary>
     /// Direct browser route helper for /departments.
+    /// Serves SPA index.html for browser page navigation, or returns the department list for API/JSON callers.
     /// </summary>
     [HttpGet("/departments")]
     public IActionResult HandleDepartmentsDirect()
     {
+        if (Request.Headers.Accept.Any(a => a != null && a.Contains("application/json")) ||
+            Request.Headers.ContainsKey("Authorization") ||
+            Request.Query.ContainsKey("json"))
+        {
+            return GetDepartments();
+        }
+
         if (ShouldServeSpaHtml())
         {
             return ServeSpaIndex();
         }
-        return Ok(ApiResponse.Ok("FaceStone Department Portal."));
+
+        return GetDepartments();
     }
 
     /// <summary>
@@ -637,14 +647,35 @@ public class DepartmentController : ControllerBase
 
     private IActionResult ServeSpaIndex()
     {
-        var webRoot = _env.WebRootPath ?? Path.Combine(_env.ContentRootPath ?? Directory.GetCurrentDirectory(), "wwwroot");
-        var indexPath = Path.Combine(webRoot, "index.html");
-        if (System.IO.File.Exists(indexPath))
+        var candidatePaths = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(_env.WebRootPath))
+            candidatePaths.Add(Path.Combine(_env.WebRootPath, "index.html"));
+
+        if (!string.IsNullOrWhiteSpace(_env.ContentRootPath))
+            candidatePaths.Add(Path.Combine(_env.ContentRootPath, "wwwroot", "index.html"));
+
+        candidatePaths.Add(Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "index.html"));
+
+        try
         {
-            SetNoCacheHeaders();
-            return PhysicalFile(indexPath, "text/html");
+            var baseDir = AppContext.BaseDirectory;
+            candidatePaths.Add(Path.GetFullPath(Path.Combine(baseDir, "..", "..", "..", "wwwroot", "index.html")));
+            candidatePaths.Add(Path.GetFullPath(Path.Combine(baseDir, "wwwroot", "index.html")));
         }
-        return NotFound();
+        catch { }
+
+        foreach (var path in candidatePaths)
+        {
+            if (!string.IsNullOrWhiteSpace(path) && System.IO.File.Exists(path))
+            {
+                SetNoCacheHeaders();
+                return PhysicalFile(path, "text/html");
+            }
+        }
+
+        _logger.LogWarning("ServeSpaIndex: index.html not found in candidate paths. Checked: {Paths}", string.Join("; ", candidatePaths));
+        return NotFound("FaceStone UI index.html not found.");
     }
 
     private bool ShouldServeSpaHtml()
