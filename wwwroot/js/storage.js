@@ -307,7 +307,6 @@
         history.pushState({ view: 'storage', subRoute: '/storage/transfer' }, '', '/storage/transfer');
       }
 
-      await this.prepareTransferForm();
       await this.loadPendingProductionOrders();
     }
 
@@ -3162,55 +3161,129 @@ async prepareTransferForm() {
           }
 
           if (res.data.length === 0) {
-            container.innerHTML = '<div style="text-align: center; padding: 2rem; color: #64748b; font-size: 0.9rem;">لا توجد طلبات أوامر إنتاج معلقة بانتظار النقل حالياً.</div>';
+            container.innerHTML = `
+              <div style="text-align: center; padding: 3rem 1.5rem; background: #f8fafc; border-radius: 10px; border: 1px dashed #cbd5e1;">
+                <div style="font-size: 2.2rem; margin-bottom: 0.5rem;">✅</div>
+                <h4 style="margin: 0 0 0.5rem; color: #1e293b; font-size: 1.05rem; font-weight: 700;">لا توجد طلبات نقل مواد خام معلقة حالياً</h4>
+                <p style="margin: 0; color: #64748b; font-size: 0.85rem;">جميع أوامر الإنتاج الصادرة من المختبر تم استيفاء نقل موادها بالكامل أو لم يتم إصدار أوامر جديدة بعد.</p>
+              </div>
+            `;
             return;
           }
 
           container.innerHTML = `
-            <div style="overflow-x: auto; border: 1px solid #e2e8f0; border-radius: 8px;">
-              <table style="width: 100%; text-align: right; border-collapse: collapse; font-size: 0.85rem;">
-                <thead style="background: #f8fafc;">
-                  <tr>
-                    <th style="padding: 10px 12px; border-bottom: 1px solid #e2e8f0;">رقم أمر الإنتاج</th>
-                    <th style="padding: 10px 12px; border-bottom: 1px solid #e2e8f0;">المنتج النهائي</th>
-                    <th style="padding: 10px 12px; border-bottom: 1px solid #e2e8f0;">الكمية المستهدفة</th>
-                    <th style="padding: 10px 12px; border-bottom: 1px solid #e2e8f0;">المطلوب بالخلطة</th>
-                    <th style="padding: 10px 12px; border-bottom: 1px solid #e2e8f0;">المنقول سابقاً</th>
-                    <th style="padding: 10px 12px; border-bottom: 1px solid #e2e8f0;">المتبقي</th>
-                    <th style="padding: 10px 12px; border-bottom: 1px solid #e2e8f0;">الحالة</th>
-                    <th style="padding: 10px 12px; border-bottom: 1px solid #e2e8f0; text-align: center;">الإجراء</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${res.data.map(o => {
-                    const planned = Number(o.totalPlannedRawMaterialQuantity || 0);
-                    const transferred = Number(o.totalTransferredQuantity || 0);
-                    const rem = Math.max(0, planned - transferred);
-                    const isPart = o.status === 'PARTIALLY_TRANSFERRED';
-                    return `
-                      <tr>
-                        <td style="padding: 10px 12px; font-weight: 800; color: #1d4ed8;">${this.escapeHtml(o.orderNumber)}</td>
-                        <td style="padding: 10px 12px; font-weight: 700;">${this.escapeHtml(o.productName)}</td>
-                        <td style="padding: 10px 12px;">${Number(o.requestedQuantity ?? o.requiredQuantity ?? 0).toFixed(3)} طن</td>
-                        <td style="padding: 10px 12px;">${planned.toFixed(3)} طن</td>
-                        <td style="padding: 10px 12px; color: #059669; font-weight: 600;">${transferred.toFixed(3)} طن</td>
-                        <td style="padding: 10px 12px; color: #d97706; font-weight: 700;">${rem.toFixed(3)} طن</td>
-                        <td style="padding: 10px 12px;">
-                          <span style="background: ${isPart ? '#e0f2fe' : '#fef3c7'}; color: ${isPart ? '#0369a1' : '#b45309'}; padding: 3px 8px; border-radius: 9999px; font-weight: 700; font-size: 0.78rem;">
-                            ${isPart ? '🔄 منقول جزئياً' : '⏳ بانتظار النقل'}
+            <div style="display: flex; flex-direction: column; gap: 1.25rem;">
+              ${res.data.map(o => {
+                const planned = Number(o.totalPlannedRawMaterialQuantity || 0);
+                const transferred = Number(o.totalTransferredQuantity || 0);
+                const rem = Math.max(0, planned - transferred);
+                const isPart = o.status === 'PARTIALLY_TRANSFERRED';
+                const createdDate = o.createdAt ? new Date(o.createdAt).toLocaleDateString('ar-EG', {
+                  year: 'numeric',
+                  month: 'short',
+                  day: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit'
+                }) : 'غير محدد';
+
+                const items = Array.isArray(o.items) ? o.items : [];
+
+                return `
+                  <div class="storage-card" style="border: 1px solid #bfdbfe; border-radius: 10px; background: #ffffff; padding: 1.25rem; box-shadow: 0 2px 5px rgba(0,0,0,0.04);">
+                    <!-- Order Header -->
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1.5px solid #eff6ff; padding-bottom: 0.85rem; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.75rem;">
+                      <div>
+                        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 4px;">
+                          <span style="font-size: 1.1rem; font-weight: 800; color: #1e3a8a; font-family: monospace;">📋 ${this.escapeHtml(o.orderNumber)}</span>
+                          <span style="background: ${isPart ? '#e0f2fe' : '#fef3c7'}; color: ${isPart ? '#0369a1' : '#b45309'}; border: 1px solid ${isPart ? '#bae6fd' : '#fde68a'}; padding: 3px 10px; border-radius: 9999px; font-weight: 700; font-size: 0.78rem;">
+                            ${isPart ? '🔄 منقول جزئياً' : '⏳ بانتظار نقل المستودع'}
                           </span>
-                        </td>
-                        <td style="padding: 10px 12px; text-align: center;">
-                          <button type="button" class="storage-btn-primary" onclick="window.StorageApp.openConfirmTransferModal(${o.id})" style="padding: 6px 14px; font-size: 0.825rem; font-weight: 700; display: inline-flex; align-items: center; gap: 5px;">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-                            <span>تأكيد النقل للإنتاج</span>
-                          </button>
-                        </td>
-                      </tr>
-                    `;
-                  }).join('')}
-                </tbody>
-              </table>
+                        </div>
+                        <div style="display: flex; gap: 15px; font-size: 0.825rem; color: #64748b; flex-wrap: wrap;">
+                          <span>المنتج النهائي: <strong style="color: #0f172a;">${this.escapeHtml(o.productName)}</strong> (${Number(o.requestedQuantity ?? o.requiredQuantity ?? 0).toFixed(3)} طن)</span>
+                          <span>تاريخ الطلب: <strong style="color: #334155;">${createdDate}</strong></span>
+                          ${o.storageLocationName ? `<span>المستودع المصدر: <strong style="color: #334155;">${this.escapeHtml(o.storageLocationName)}</strong></span>` : ''}
+                        </div>
+                      </div>
+
+                      <div>
+                        <button type="button" class="storage-btn-primary" onclick="window.StorageApp.openConfirmTransferModal(${o.id})" style="background: #2563eb; color: #ffffff; border: none; border-radius: 8px; padding: 8px 18px; font-size: 0.875rem; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 2px 4px rgba(37,99,235,0.25);">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+                          <span>تأكيد النقل للإنتاج</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <!-- Raw Materials Table -->
+                    <div style="overflow-x: auto; border: 1px solid #e2e8f0; border-radius: 8px;">
+                      <table style="width: 100%; text-align: right; border-collapse: collapse; font-size: 0.825rem;">
+                        <thead style="background: #f8fafc; color: #475569;">
+                          <tr>
+                            <th style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0;">المادة الخام</th>
+                            <th style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0;">الرقم المرجعي (Lab Ref)</th>
+                            <th style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0;">رقم الدفعة (Batch #)</th>
+                            <th style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0;">الكمية المطلوبة بالخلطة</th>
+                            <th style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0;">المنقول سابقاً</th>
+                            <th style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0;">المتبقي للنقل</th>
+                            <th style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0;">رصيد المستودع المتاح</th>
+                            <th style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; text-align: center;">حالة التوفر</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          ${items.length === 0 ? `
+                            <tr><td colspan="8" style="text-align: center; padding: 1.25rem; color: #94a3b8;">لا توجد بنود مواد خام مسجلة لهذا الأمر.</td></tr>
+                          ` : items.map(it => {
+                            const reqQty = Number(it.requestedQuantity ?? it.requiredQuantity ?? 0);
+                            const prevQty = Number(it.issuedQuantity ?? it.transferredQuantity ?? 0);
+                            const pendingQty = Math.max(0, reqQty - prevQty);
+                            const curStock = Number(it.currentWarehouseBatchQuantity ?? 0);
+                            const isFullyCovered = curStock >= pendingQty;
+                            const isCompletedItem = pendingQty <= 0.0001;
+
+                            return `
+                              <tr style="border-bottom: 1px solid #f1f5f9; background: ${isCompletedItem ? '#f8fafc' : '#ffffff'};">
+                                <td style="padding: 8px 10px; font-weight: 700; color: #1e293b;">
+                                  ${this.escapeHtml(it.materialName || 'خامة')}
+                                  ${it.materialType ? `<span style="font-size: 0.72rem; color: #64748b; display: block;">(${this.escapeHtml(it.materialType)})</span>` : ''}
+                                </td>
+                                <td style="padding: 8px 10px; font-family: monospace; color: #1e40af; font-weight: 700;">
+                                  ${it.productionReferenceNumber ? `REF-${it.productionReferenceNumber}` : (it.sampleCode || '-')}
+                                </td>
+                                <td style="padding: 8px 10px; font-family: monospace; color: #2563eb; font-weight: 600;">
+                                  ${this.escapeHtml(it.batchNumber || '-')}
+                                </td>
+                                <td style="padding: 8px 10px; font-weight: 600;">${reqQty.toFixed(3)} طن</td>
+                                <td style="padding: 8px 10px; color: #059669;">${prevQty.toFixed(3)} طن</td>
+                                <td style="padding: 8px 10px; color: #d97706; font-weight: 700;">${pendingQty.toFixed(3)} طن</td>
+                                <td style="padding: 8px 10px; font-weight: 700; color: ${isFullyCovered || isCompletedItem ? '#0f172a' : '#dc2626'};">
+                                  ${curStock.toFixed(3)} طن
+                                </td>
+                                <td style="padding: 8px 10px; text-align: center;">
+                                  ${isCompletedItem ? `
+                                    <span style="color: #059669; font-weight: 700; font-size: 0.75rem;">✓ تم الاستيفاء</span>
+                                  ` : isFullyCovered ? `
+                                    <span style="background: #dcfce7; color: #15803d; padding: 2px 8px; border-radius: 9999px; font-weight: 700; font-size: 0.72rem;">متوفر بالكامل</span>
+                                  ` : curStock > 0 ? `
+                                    <span style="background: #fef3c7; color: #b45309; padding: 2px 8px; border-radius: 9999px; font-weight: 700; font-size: 0.72rem;">متوفر جزئياً</span>
+                                  ` : `
+                                    <span style="background: #fee2e2; color: #b91c1c; padding: 2px 8px; border-radius: 9999px; font-weight: 700; font-size: 0.72rem;">غير متوفر بالمستودع</span>
+                                  `}
+                                </td>
+                              </tr>
+                            `;
+                          }).join('')}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    ${o.notes || o.productionInstructions ? `
+                      <div style="margin-top: 0.75rem; background: #f8fafc; border: 1px solid #f1f5f9; border-radius: 6px; padding: 0.5rem 0.75rem; font-size: 0.8rem; color: #64748b;">
+                        <strong>ملاحظات وتعليمات المختبر:</strong> ${this.escapeHtml(o.productionInstructions || o.notes)}
+                      </div>
+                    ` : ''}
+                  </div>
+                `;
+              }).join('')}
             </div>
           `;
         } else {

@@ -151,7 +151,7 @@
       this.formTabs.forEach((tab) => {
         tab.addEventListener('click', () => {
           const tabKey = tab.getAttribute('data-tab');
-          if (tabKey && tabKey !== 'trace') this.switchTab(tabKey);
+          if (tabKey && tabKey !== 'trace' && tabKey !== 'inproc') this.switchTab(tabKey);
         });
       });
 
@@ -252,7 +252,7 @@
     // TAB NAVIGATION
     // ======================================================================
     static switchTab(tabKey) {
-      if (!tabKey || tabKey === 'trace') return;
+      if (!tabKey || tabKey === 'trace' || tabKey === 'inproc') return;
       this.activeTab = tabKey;
 
       if (this.formTabs) {
@@ -266,7 +266,6 @@
       const tabMap = {
         raw: this.panelRaw,
         final: this.panelFinal,
-        inproc: this.panelInproc,
         history: this.panelHistory,
         order: this.panelOrder,
         orders: this.panelOrders
@@ -282,9 +281,6 @@
       if (tabKey === 'final' && !this.finalFormLoaded) {
         this.renderFinalCertView();
         this.finalFormLoaded = true;
-      } else if (tabKey === 'inproc' && !this.inprocFormLoaded) {
-        this.renderInProcessView();
-        this.inprocFormLoaded = true;
       } else if (tabKey === 'history') {
         this.loadHistoryList();
       } else if (tabKey === 'order') {
@@ -299,7 +295,7 @@
     }
 
     static goToSlide(index) {
-      const keys = ['raw', 'final', 'inproc', 'history'];
+      const keys = ['raw', 'final', 'history'];
       if (typeof index === 'number' && keys[index]) {
         this.switchTab(keys[index]);
       } else if (typeof index === 'string') {

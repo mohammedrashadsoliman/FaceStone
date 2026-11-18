@@ -1661,16 +1661,16 @@
               <div class="storage-nav-card-icon icon-transfer-theme">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg>
               </div>
-              <span class="storage-nav-card-badge badge-active badge-blue">خط الإنتاج</span>
+              <span class="storage-nav-card-badge badge-active badge-blue">أوامر الإنتاج</span>
             </div>
             <div class="storage-nav-card-body">
-              <h3 class="storage-nav-card-title">تحويل</h3>
-              <span class="storage-nav-card-subtitle">TRANSFER TO PRODUCTION</span>
-              <p class="storage-nav-card-desc">تحويل المواد الخام داخلياً من رصيد المستودع إلى خطوط التشغيل والتصنيع وتوليد أرقام تتبع التشغيل ومتابعة الهالك.</p>
+              <h3 class="storage-nav-card-title">تحويل للإنتاج</h3>
+              <span class="storage-nav-card-subtitle">LAB PRODUCTION TRANSFERS</span>
+              <p class="storage-nav-card-desc">تحويل المواد الخام المطلوبة لأوامر الإنتاج الصادرة من المختبر إلى خط الإنتاج وتأكيد النقل والخصم من رصيد المستودع.</p>
             </div>
             <div class="storage-nav-card-footer">
               <span class="storage-nav-card-action">
-                <span>فتح إذن التحويل</span>
+                <span>فتح طلبات النقل</span>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
               </span>
             </div>
@@ -2632,10 +2632,10 @@
             <div>
               <h3 style="margin: 0; font-size: 1.15rem; font-weight: 800; color: #1e3a8a; display: flex; align-items: center; gap: 8px;">
                 <span>📋</span>
-                <span>طلبات نقل المواد الخام لأوامر الإنتاج (المختبر)</span>
+                <span>طلبات المعمل – نقل المواد الخام لأوامر الإنتاج (Laboratory Requests)</span>
               </h3>
               <p style="margin: 4px 0 0; font-size: 0.85rem; color: #64748b;">
-                أوامر الإنتاج الصادرة من المختبر في انتظار التحويل المادي للمواد الخام إلى خط الإنتاج مع دعم النقل الجزئي والخصم المباشر من رصيد المستودع.
+                طلبات نقل المواد الخام الصادرة من قسم المختبر لأوامر الإنتاج – استعراض البنود والكميات والأرصدة المتاحة وتأكيد النقل الفعلي لخط الإنتاج والخصم اللحظي من رصيد المستودع.
               </p>
             </div>
             <div style="display: flex; align-items: center; gap: 0.75rem;">
@@ -2651,230 +2651,6 @@
           </div>
         </div>
 
-        <!-- Transfer Form Card -->
-        <div class="storage-form-card"><div class="storage-form-card">
-          <form id="storage-transfer-form" novalidate>
-            <!-- 1. Transaction Information Header -->
-            <div style="border-bottom: 2px solid #F1F5F9; padding-bottom: 1.25rem; margin-bottom: 1.5rem;">
-              <h3 style="margin: 0 0 1rem 0; font-size: 1.05rem; font-weight: 800; color: #2563EB; display: flex; align-items: center; gap: 8px;">
-                <span>1. بيانات إذن التحويل للإنتاج</span>
-              </h3>
-              <div class="storage-form-grid-3">
-                <!-- رقم العملية -->
-                <div class="storage-field">
-                  <label class="storage-field-label">
-                    <span>رقم العملية (آلي تسلسلي)</span>
-                    <span class="required">*</span>
-                  </label>
-                  <div class="storage-readonly-box">
-                    <span id="transfer-seq-preview" style="color: #2563EB; font-size: 1.1rem;">#...</span>
-                    <span class="storage-seq-badge">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                      <span>تسلسل تحويل مستقل</span>
-                    </span>
-                  </div>
-                  <span class="storage-field-hint">يبدأ تسلسل التحويل من 1 مستقلاً عن الوارد والصادر</span>
-                </div>
-
-                <!-- التاريخ والوقت -->
-                <div class="storage-field">
-                  <label class="storage-field-label" for="transfer-datetime">
-                    <span>التاريخ والوقت</span>
-                    <span class="required">*</span>
-                  </label>
-                  <input type="datetime-local" id="transfer-datetime" class="storage-input" required />
-                  <span class="storage-field-error" id="err-transfer-datetime"></span>
-                </div>
-
-                <!-- مكان التخزين المصدر -->
-                <div class="storage-field">
-                  <label class="storage-field-label" for="transfer-location-select">
-                    <span>مكان التخزين المصدر</span>
-                    <span class="required">*</span>
-                  </label>
-                  <select id="transfer-location-select" class="storage-select" required>
-                    <option value="" disabled selected>-- اختر مكان التخزين المصدر --</option>
-                  </select>
-                  <span class="storage-field-error" id="err-transfer-location-select"></span>
-                </div>
-              </div>
-
-              <!-- نوع وجهة التحويل ومستودع الوجهة والموظف المسؤول -->
-              <div class="storage-form-grid-3">
-                <div class="storage-field">
-                  <label class="storage-field-label" for="transfer-destination-type">
-                    <span>نوع جهة التحويل</span>
-                    <span class="required">*</span>
-                  </label>
-                  <select id="transfer-destination-type" class="storage-select" style="font-weight: 700; border-color: #2563EB;">
-                    <option value="PRODUCTION" selected>🏭 خطوط الإنتاج والتصنيع (WIP)</option>
-                    <option value="WAREHOUSE">🏢 مستودع آخر (تحويل داخلي بين المستودعات)</option>
-                  </select>
-                  <span class="storage-field-hint">اختر التحويل لخط الإنتاج أو نقل المخزون لمستودع آخر</span>
-                </div>
-
-                <!-- مستودع الوجهة (يظهر فقط عند اختيار تحويل لمستودع آخر) -->
-                <div class="storage-field" id="transfer-dest-warehouse-wrap" style="display: none;">
-                  <label class="storage-field-label" for="transfer-dest-warehouse-select">
-                    <span>مستودع الوجهة المستلم</span>
-                    <span class="required">*</span>
-                  </label>
-                  <select id="transfer-dest-warehouse-select" class="storage-select" style="font-weight: 700; border-color: #059669;">
-                    <option value="" disabled selected>-- اختر مستودع الوجهة --</option>
-                  </select>
-                  <span class="storage-field-error" id="err-transfer-dest-warehouse-select"></span>
-                </div>
-
-                <div class="storage-field">
-                  <label class="storage-field-label">
-                    <span>الموظف المسؤول (المعتمد بالسيرفر)</span>
-                  </label>
-                  <div class="storage-readonly-box">
-                    <span id="transfer-responsible-emp">جاري التحميل...</span>
-                    <span style="font-size: 0.75rem; color: #64748B;">🔒 الحساب الموثق</span>
-                  </div>
-                </div>
-              </div>
-
-              <!-- الرقم المرجعي للإنتاج المرتبط بالتشغيلة -->
-              <div style="margin-top: 1.25rem; padding: 16px; background: #F0FDF4; border: 2px solid #86EFAC; border-radius: 12px;">
-                <label class="storage-field-label" for="transfer-prod-ref-select" style="margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between;">
-                  <span style="font-weight: 800; color: #0F2A5C;">🔬 الرقم المرجعي للإنتاج المرتبط بدورة التشغيل</span>
-                  <button type="button" id="transfer-btn-refresh-refs" class="storage-btn storage-btn-outline" style="padding: 2px 10px; font-size: 0.75rem;" title="تحديث">🔄 تحديث</button>
-                </label>
-                <select id="transfer-prod-ref-select" class="storage-select">
-                  <option value="">-- اختياري: اختر الرقم المرجعي لمتابعة تشغيلة الإنتاج --</option>
-                </select>
-                <div id="transfer-prod-ref-info" style="display: none; margin-top: 8px; padding: 10px 14px; background: rgba(37, 99, 235, 0.08); border: 1px solid rgba(37, 99, 235, 0.25); border-radius: 8px; font-size: 0.85rem; color: #1E40AF;"></div>
-              </div>
-            </div>
-
-            <!-- 2. Two Mutually Exclusive Selection Methods for Production Transfer -->
-            <div class="storage-selection-mode-card" style="background: #EFF6FF; border: 1.5px solid #BFDBFE; border-radius: 12px; padding: 1.25rem; margin-bottom: 1.5rem;">
-              <h3 style="margin: 0 0 0.75rem 0; font-size: 1.05rem; font-weight: 800; color: #1D4ED8; display: flex; align-items: center; gap: 8px;">
-                <span>🔍 2. طريقة اختيار المواد المحولة للإنتاج (طريقتان متنافيتان)</span>
-              </h3>
-              <div style="display: flex; gap: 1.5rem; flex-wrap: wrap; margin-bottom: 1rem;">
-                <label class="storage-check-label is-checked" id="transfer-mode-reference-label" style="border-color: #2563EB; min-width: 250px; cursor: pointer; background: #fff;">
-                  <input type="radio" name="transfer-selection-mode" id="transfer-mode-reference" value="BY_REFERENCE" checked />
-                  <div style="display: flex; flex-direction: column;">
-                    <span style="font-weight: 800; color: #1D4ED8;">🔬 الخيار الأول: التحويل برقم العينة</span>
-                    <span style="font-size: 0.75rem; color: #64748B;">ربط التحويل بالمرجع المعملي ودفعاته المتاحة بالمستودع</span>
-                  </div>
-                </label>
-                <label class="storage-check-label" id="transfer-mode-batch-label" style="border-color: #CBD5E1; min-width: 250px; cursor: pointer; background: #fff;">
-                  <input type="radio" name="transfer-selection-mode" id="transfer-mode-batch" value="BY_BATCH" />
-                  <div style="display: flex; flex-direction: column;">
-                    <span style="font-weight: 800; color: #0F172A;">📦 الخيار الثاني: التحويل بأرقام الدفعات</span>
-                    <span style="font-size: 0.75rem; color: #64748B;">اختيار دفعات مباشرة من رصيد المستودع المصدر</span>
-                  </div>
-                </label>
-              </div>
-
-              <!-- Option 1 Container: By Reference -->
-              <div id="transfer-container-by-reference" style="display: block;">
-                <div style="margin-bottom: 1rem;">
-                  <label class="storage-field-label" for="transfer-ref-select" style="margin-bottom: 6px; font-weight: 700; color: #1D4ED8;">
-                    <span>اختر رقم العينة / المرجع المعملي المتاح في المستودع المصدر:</span>
-                    <span class="required">*</span>
-                  </label>
-                  <select id="transfer-ref-select" class="storage-select" style="font-weight: 700;">
-                    <option value="">-- اختر مكان التخزين المصدر أولاً لتحميل العينات المتاحة --</option>
-                  </select>
-                  <span class="storage-field-error" id="err-transfer-ref-select"></span>
-                </div>
-
-                <div id="transfer-ref-batches-wrap" style="display: none;">
-                  <div class="storage-table-wrapper">
-                    <table class="storage-qty-table" id="transfer-ref-batches-table">
-                      <thead>
-                        <tr>
-                          <th style="width: 20%;">رقم الدفعة</th>
-                          <th style="width: 25%;">اسم الصنف</th>
-                          <th style="width: 20%;">الرصيد المتاح (طن)</th>
-                          <th style="width: 20%;">الكمية المحولة (طن) <span class="required">*</span></th>
-                          <th style="width: 15%; text-align: center;">كود التتبع</th>
-                        </tr>
-                      </thead>
-                      <tbody id="transfer-ref-batches-tbody">
-                        <!-- Populated via JS -->
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Option 2 Container: By Direct Batches -->
-              <div id="transfer-container-by-batch" style="display: none;">
-                <div style="margin-bottom: 0.75rem;">
-                  <label class="storage-field-label" style="margin-bottom: 6px; font-weight: 700; color: #0F172A;">
-                    <span>الدفعات المتاحة بالمستودع المصدر (حدد الدفعات المراد تحويلها للإنتاج):</span>
-                    <span class="required">*</span>
-                  </label>
-                </div>
-                <div class="storage-table-wrapper">
-                  <table class="storage-qty-table" id="transfer-all-batches-table">
-                    <thead>
-                      <tr>
-                        <th style="width: 8%; text-align: center;">اختيار</th>
-                        <th style="width: 18%;">رقم الدفعة</th>
-                        <th style="width: 18%;">رقم العينة / المرجع</th>
-                        <th style="width: 22%;">اسم الصنف</th>
-                        <th style="width: 16%;">الرصيد المتاح (طن)</th>
-                        <th style="width: 18%;">الكمية المحولة (طن)</th>
-                      </tr>
-                    </thead>
-                    <tbody id="transfer-all-batches-tbody">
-                      <tr>
-                        <td colspan="6" style="text-align: center; padding: 2rem; color: #94A3B8;">
-                          اختر مكان التخزين المصدر أولاً لعرض الدفعات المتاحة
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <!-- Transfer Summary Badge -->
-              <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-top: 1rem; background: #FFFFFF; border: 1px solid #BFDBFE; border-radius: 8px; padding: 10px 16px;">
-                <div style="display: flex; align-items: center; gap: 16px; font-size: 0.85rem;">
-                  <span>الدفعات المحددة: <strong id="transfer-total-items-badge" style="color: #2563EB;">0</strong></span>
-                  <span>إجمالي المحول للإنتاج: <strong id="transfer-total-qty-badge" style="color: #2563EB; font-size: 1.05rem;">0.000 طن</strong></span>
-                </div>
-                <div id="transfer-balance-status-badge">
-                  <span style="font-size: 0.8rem; color: #64748B;">لم يتم إدخال كميات</span>
-                </div>
-              </div>
-              <span class="storage-field-error" id="err-transfer-items" style="display: block; margin-top: 6px;"></span>
-
-              <!-- Legacy hidden elements -->
-              <div id="transfer-legacy-wrap" style="display: none;">
-                <div id="transfer-materials-checklist"></div>
-                <table id="transfer-quantities-table">
-                  <tbody id="transfer-quantities-tbody"></tbody>
-                </table>
-              </div>
-            </div>
-
-            <!-- 4. Notes -->
-            <div class="storage-field" style="margin-bottom: 1.5rem;">
-              <label class="storage-field-label" for="transfer-notes">ملاحظات أمر التشغيل والتحويل (اختياري)</label>
-              <textarea id="transfer-notes" class="storage-textarea" rows="2" placeholder="أية ملاحظات إضافية تخص دفعة التشغيل أو الوردية..."></textarea>
-            </div>
-
-            <!-- Form Actions -->
-            <div class="storage-form-actions">
-              <button type="button" class="storage-btn-secondary" id="btn-transfer-reset">
-                <span>مسح الحقول</span>
-              </button>
-              <button type="submit" class="storage-btn-primary" id="btn-transfer-submit" style="background: #2563EB; border-color: #1D4ED8; padding: 10px 32px;">
-                <span class="storage-btn-spinner" id="transfer-spinner" style="display: none;"></span>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-                <span>حفظ إذن التحويل للإنتاج</span>
-              </button>
-            </div>
-          </form>
-        </div>
       </div>
 
           <!-- WAREHOUSE CONFIRM ORDER TRANSFER MODAL -->
@@ -2928,6 +2704,8 @@
         </form>
       </div>
     </div>
+
+
 
       <!-- Modal: Record Production Output & Waste Calculation -->
       <div class="storage-modal-backdrop" id="storage-record-wip-modal" role="dialog" aria-modal="true" style="display: none;">
@@ -9894,12 +9672,6 @@
           <span class="lab-tab-title">شهادة مطابقة المنتج النهائي</span>
         </button>
 
-        <button type="button" class="lab-form-tab" id="lab-form-tab-inproc" data-tab="inproc" role="tab" aria-selected="false" aria-controls="lab-panel-inproc">
-          <span class="lab-tab-icon">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>
-          </span>
-          <span class="lab-tab-title">فحص التشغيل (In-Process)</span>
-        </button>
 
         <button type="button" class="lab-form-tab" id="lab-form-tab-history" data-tab="history" role="tab" aria-selected="false" aria-controls="lab-panel-history">
           <span class="lab-tab-icon">
@@ -9944,10 +9716,6 @@
         <div id="lab-final-container"></div>
       </section>
 
-      <!-- FORM 3: IN-PROCESS QC TESTING (نموذج فحص التشغيل المستقل) -->
-      <section class="lab-panel" id="lab-panel-inproc" role="tabpanel" aria-labelledby="lab-form-tab-inproc" style="display: none;">
-        <div id="lab-inproc-container"></div>
-      </section>
 
       <!-- VIEW 4: REPORTS HISTORY (سجل الفحوصات والتقارير المعتمدة) -->
       <section class="lab-panel" id="lab-panel-history" role="tabpanel" aria-labelledby="lab-form-tab-history" style="display: none;">
